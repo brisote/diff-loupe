@@ -81,10 +81,6 @@ export class Backend {
     return this.transport.pickFolder();
   }
 
-  uninstallInfo(): Promise<string[]> {
-    return this.run("uninstall_info", () => this.transport.uninstallInfo());
-  }
-
   openLink(url: string): Promise<void> {
     return this.run("open_link", () => this.transport.openLink(url));
   }

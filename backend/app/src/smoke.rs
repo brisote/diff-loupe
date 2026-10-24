@@ -33,9 +33,8 @@ setTimeout(async () => {
   const item = [...document.querySelectorAll('[role="menuitem"]')].find((row) => row.textContent.includes("Uninstall"));
   steps.push(`item ${!!item}`);
   item?.click();
-  for (let tries = 0; tries < 20 && !document.querySelector('[aria-label="Files to delete"]'); tries += 1)
+  for (let tries = 0; tries < 20 && !document.querySelector('[role="dialog"][aria-label="Uninstall Diffloupe"]'); tries += 1)
     await wait(250);
-  steps.push(`list ${document.querySelector('[aria-label="Files to delete"]')?.textContent ?? "none"}`);
   const uninstall = [...document.querySelectorAll('[role="dialog"] button')].find((b) => b.textContent === "Uninstall");
   steps.push(`uninstall ${!!uninstall} ${uninstall?.disabled}`);
   uninstall?.click();
