@@ -1,4 +1,4 @@
-use crate::api::CommitArgs;
+use crate::api::{CommitArgs, RollbackArgs};
 use crate::error::{Error, Result};
 use crate::shellenv::ShellEnv;
 use gix::bstr::ByteSlice;
@@ -6,7 +6,7 @@ use serde::Serialize;
 use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::os::unix::process::CommandExt;
-use std::path::Path;
+use std::path::{Component, Path};
 use std::process::{Command, Output, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -321,6 +321,103 @@ pub fn commit(env: &ShellEnv, root: &Path, args: &CommitArgs) -> Result<CommitRe
         short: id.chars().take(8).collect(),
         id,
     })
+}
+
+pub fn rollback(env: &ShellEnv, root: &Path, args: &RollbackArgs) -> Result<()> {
+    if args.files.is_empty() {
+        return Err(Error::InvalidArgs(
+            "Pick at least one file to roll back.".into(),
+        ));
+    }
+    if let Some(path) = args.files.iter().find(|path| !inside(path)) {
+        return Err(Error::InvalidArgs(format!(
+            "{path} is not a file of this repository."
+        )));
+    }
+    if merging(env, root) {
+        return Err(Error::GitRefused(
+            "A merge is in progress. Commit or abort it before rolling back files.".into(),
+        ));
+    }
+    let known = in_head(env, root, &args.files)?;
+    let (restore, added): (Vec<&String>, Vec<&String>) = args
+        .files
+        .iter()
+        .partition(|path| known.contains(path.as_str()));
+    if !added.is_empty() {
+        let mut command = env.git(root);
+        command
+            .args([
+                "--literal-pathspecs",
+                "rm",
+                "--cached",
+                "-f",
+                "-q",
+                "--ignore-unmatch",
+                "--",
+            ])
+            .args(&added);
+        checked(command.output()?)?;
+    }
+    if !restore.is_empty() {
+        let mut command = env.git(root);
+        command
+            .args([
+                "--literal-pathspecs",
+                "restore",
+                "--source=HEAD",
+                "--staged",
+                "--worktree",
+                "--",
+            ])
+            .args(&restore);
+        checked(command.output()?)?;
+    }
+    if args.delete_added {
+        for path in added.iter().filter(|path| on_disk(root, path)) {
+            std::fs::remove_file(root.join(path))?;
+        }
+    }
+    Ok(())
+}
+
+fn inside(path: &str) -> bool {
+    !path.is_empty()
+        && Path::new(path)
+            .components()
+            .all(|part| matches!(part, Component::Normal(_)))
+}
+
+fn in_head(
+    env: &ShellEnv,
+    root: &Path,
+    files: &[String],
+) -> Result<std::collections::HashSet<String>> {
+    if git(env, root, &["rev-parse", "-q", "--verify", "HEAD"]).is_err() {
+        return Ok(Default::default());
+    }
+    let mut command = env.git(root);
+    command
+        .args([
+            "--literal-pathspecs",
+            "ls-tree",
+            "-r",
+            "-z",
+            "--name-only",
+            "HEAD",
+            "--",
+        ])
+        .args(files);
+    let output = command.output()?;
+    if !output.status.success() {
+        return Err(failure(&output));
+    }
+    Ok(output
+        .stdout
+        .split(|byte| *byte == 0)
+        .filter(|name| !name.is_empty())
+        .map(|name| String::from_utf8_lossy(name).to_string())
+        .collect())
 }
 
 fn commit_only(env: &ShellEnv, root: &Path, args: &CommitArgs) -> Result<()> {

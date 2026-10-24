@@ -109,7 +109,7 @@ describe("ChangesView", () => {
       within(toolbar)
         .getAllByRole("button")
         .map((button) => button.title),
-    ).toEqual(["Refresh", "Commit… ⌘K", "Rollback"]);
+    ).toEqual(["Refresh", "Commit… ⌘K", "Rollback…"]);
   });
 
   it("says when the working tree has no changes", async () => {

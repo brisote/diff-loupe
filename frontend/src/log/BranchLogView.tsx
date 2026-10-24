@@ -83,22 +83,23 @@ export function BranchLogView() {
           <span className="dl-empty-title">Loading the branch history</span>
           <span>The commits show here as soon as they are read.</span>
         </div>
-      ) : !log.target ? (
-        <div className="dl-empty app-fill">
-          <span className="dl-empty-title">No target branch</span>
-          <span>Pick a target branch to list the commits that are only on this branch.</span>
-        </div>
       ) : log.entries.length === 0 ? (
         <div className="dl-empty app-fill">
           <span className="dl-empty-title">No commits on this branch yet</span>
-          <span>Every commit on this branch is also on {log.target}.</span>
+          <span>
+            {log.target
+              ? `Every commit on this branch is also on ${log.target}.`
+              : "The branch has no commits."}
+          </span>
         </div>
       ) : (
         <>
           <div className="dl-row dl-row-group app-log-head">
             <span>Branch commit history</span>
             <span className="dl-row-count">
-              {commitCount(log.entries.filter((entry) => !entry.merged).length)}
+              {log.truncated
+                ? `Latest ${commitCount(log.entries.length)}`
+                : commitCount(log.entries.filter((entry) => !entry.merged).length)}
             </span>
           </div>
           <CommitList entries={entries} target={target} files={files} />

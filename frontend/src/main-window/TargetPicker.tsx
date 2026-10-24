@@ -18,7 +18,10 @@ export function targetSections(
         .sort((a, b) => Number(!a.startsWith("origin/")) - Number(!b.startsWith("origin/")))
     : [];
   return [
-    { title: "Default", names: defaultBranch ? [defaultBranch, ...twins] : [] },
+    {
+      title: "Default",
+      names: defaultBranch ? [defaultBranch, ...twins].filter((name) => name !== current) : [],
+    },
     { title: "Local", names: local.filter((name) => !skip(name)) },
     { title: "Remote", names: remote.filter((name) => !twins.includes(name)) },
   ];
