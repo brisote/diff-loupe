@@ -26,6 +26,11 @@ describe("branch sections", () => {
       { title: "Remote", names: ["origin/HYDRA-249", "origin/gs/main"] },
     ]);
     expect(targetSections(null, null, ["dev"], [])[0]).toEqual({ title: "Default", names: [] });
+    expect(targetSections("main", "main", ["gs/a", "main"], ["origin/main"])).toEqual([
+      { title: "Default", names: ["origin/main"] },
+      { title: "Local", names: ["gs/a"] },
+      { title: "Remote", names: [] },
+    ]);
   });
 
   it("filters by any part of the name and drops empty sections", () => {

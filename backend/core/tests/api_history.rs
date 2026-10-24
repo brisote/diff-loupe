@@ -252,23 +252,22 @@ fn a_bad_commit_id_is_refused() {
     assert_eq!(serde_json::to_value(err.code).unwrap(), "invalidArgs");
 }
 
-#[test]
-fn five_hundred_commits_load_fast() {
-    let repo = TempRepo::with_commit();
-    repo.branch("gs/long");
-    let script: String = (0..500)
+fn import_commits(repo: &TempRepo, branch: &str, count: i64) {
+    let script: String = (0..count)
         .map(|n| {
             let message = format!("Commit {n}\n");
             let content = format!("{n}\n");
             format!(
-                "commit refs/heads/gs/long\ncommitter Ada <ada@example.com> {} +0000\ndata {}\n{message}M 100644 inline f{n}.txt\ndata {}\n{content}\n",
+                "commit refs/heads/{branch}\ncommitter Ada <ada@example.com> {} +0000\ndata {}\n{message}M 100644 inline f{n}.txt\ndata {}\n{content}\n",
                 1_700_000_000 + n,
                 message.len(),
                 content.len()
             )
         })
         .collect();
-    let script = format!("reset refs/heads/gs/long\nfrom refs/heads/main\n\n{script}");
+    let base = repo.git(&["rev-parse", "main"]);
+    let base = base.trim();
+    let script = format!("reset refs/heads/{branch}\nfrom {base}\n\n{script}");
     let mut child = std::process::Command::new("git")
         .current_dir(repo.path())
         .args(["fast-import", "--quiet", "--force"])
@@ -284,6 +283,13 @@ fn five_hundred_commits_load_fast() {
         .unwrap();
     assert!(child.wait().unwrap().success());
     repo.git(&["reset", "-q", "--hard"]);
+}
+
+#[test]
+fn five_hundred_commits_load_fast() {
+    let repo = TempRepo::with_commit();
+    repo.branch("gs/long");
+    import_commits(&repo, "gs/long", 500);
     let (_data, core, _events, path) = open(&repo);
     let start = Instant::now();
     let entries = log(&core, &path);
@@ -341,6 +347,7 @@ fn a_merge_row_works_in_a_second_clone_of_the_same_project() {
         ],
     );
     diffloupe_core::testutil::git_in(&clone, &["branch", "-q", "main", "origin/main"]);
+    diffloupe_core::testutil::git_in(&clone, &["remote", "set-head", "origin", "main"]);
     let (_data, core, _events, path) = open(&repo);
     let merge = log(&core, &path)[1]["id"].clone();
     let args = |path: &Value| json!({ "path": path, "file": "src/Invoice.kt", "commit": merge });
@@ -405,4 +412,67 @@ fn a_merge_of_local_main_ahead_of_origin_is_a_merge_row() {
         ["Merge branch 'main' into gs/feature", "Add a"]
     );
     assert_eq!(entries[0]["merged"], true);
+}
+
+#[test]
+fn the_default_branch_lists_its_own_history_newest_first() {
+    let repo = TempRepo::with_commit();
+    repo.write("b.txt", "b\n");
+    repo.commit_all("Second");
+    let (_data, core, _events, path) = open(&repo);
+    let log = core
+        .dispatch("branch_log", json!({ "path": path }))
+        .unwrap();
+    assert_eq!(log["target"], Value::Null);
+    assert_eq!(log["truncated"], false);
+    let entries = log["entries"].as_array().unwrap();
+    assert_eq!(subjects(entries)[0], "Second");
+    assert_eq!(entries.len(), 2);
+    assert_eq!(entries[0]["files"], 1);
+}
+
+#[test]
+fn a_stored_target_equal_to_the_current_branch_falls_back_to_the_default() {
+    let repo = TempRepo::with_commit();
+    repo.branch("gs/feature");
+    repo.write("f.txt", "f\n");
+    repo.commit_all("Feature work");
+    let (_data, core, _events, path) = open(&repo);
+    core.dispatch(
+        "set_target",
+        json!({ "path": path, "target": "gs/feature" }),
+    )
+    .unwrap();
+    let info = core.dispatch("open_repo", json!({ "path": path })).unwrap();
+    assert_eq!(info["target"], "main");
+    let log = core
+        .dispatch("branch_log", json!({ "path": path }))
+        .unwrap();
+    assert_eq!(log["target"], "main");
+    assert_eq!(
+        subjects(log["entries"].as_array().unwrap()),
+        ["Feature work"]
+    );
+}
+
+#[test]
+fn a_long_default_branch_shows_its_latest_five_hundred_commits() {
+    let repo = TempRepo::with_commit();
+    import_commits(&repo, "main", 600);
+    let (_data, core, _events, path) = open(&repo);
+    let start = Instant::now();
+    let log = core
+        .dispatch("branch_log", json!({ "path": path }))
+        .unwrap();
+    let took = start.elapsed();
+    let entries = log["entries"].as_array().unwrap();
+    assert_eq!(entries.len(), 500);
+    assert_eq!(log["truncated"], true);
+    assert_eq!(entries[0]["subject"], "Commit 599");
+    let limit = if std::env::var("CI").is_ok() {
+        450
+    } else {
+        150
+    };
+    assert!(took < Duration::from_millis(limit), "took {took:?}");
 }

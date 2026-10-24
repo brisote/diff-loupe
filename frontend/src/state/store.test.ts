@@ -167,7 +167,7 @@ describe("actions", () => {
         target = (args as { target: string }).target;
         return null;
       },
-      branch_log: () => ({ target, entries: [] }),
+      branch_log: () => ({ target, entries: [], truncated: false }),
     });
     const store = createAppStore(new Backend(core));
     await store.getState().start();

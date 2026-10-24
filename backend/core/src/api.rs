@@ -126,6 +126,16 @@ pub struct CommitArgs {
 #[derive(Debug, Clone, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
+pub struct RollbackArgs {
+    pub path: String,
+    pub files: Vec<String>,
+    #[serde(default)]
+    pub delete_added: bool,
+}
+
+#[derive(Debug, Clone, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
 pub struct BranchArgs {
     pub path: String,
     pub name: String,
