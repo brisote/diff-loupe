@@ -88,6 +88,13 @@ install_diffloupe() {
   fi
   mv "$staged" "$target/$app" || fail "the app cannot be moved into $target."
   staged=""
+  mdimport "$target/$app" >/dev/null 2>&1 &
+  indexing=$!
+  tries=0
+  while kill -0 "$indexing" 2>/dev/null && [ "$tries" -lt 10 ]; do
+    sleep 0.5
+    tries=$((tries + 1))
+  done
 
   say "Diffloupe ${version} is installed. Open it with: open \"$target/$app\""
 }
