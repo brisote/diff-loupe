@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { type ApiError, toApiError } from "../api";
 import { Dialog } from "../lib/dialog";
 import { Icon } from "../lib/icon";
@@ -7,21 +7,9 @@ import { useApp } from "../state/context";
 export function UninstallDialog() {
   const backend = useApp((state) => state.backend);
   const showDialog = useApp((state) => state.showDialog);
-  const [locations, setLocations] = useState<string[] | null>(null);
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<ApiError | null>(null);
   const close = () => showDialog(null);
-
-  useEffect(() => {
-    let live = true;
-    backend.uninstallInfo().then(
-      (found) => live && setLocations(found),
-      (failure) => live && setError(toApiError(failure)),
-    );
-    return () => {
-      live = false;
-    };
-  }, [backend]);
 
   const uninstall = async () => {
     setRunning(true);
@@ -41,13 +29,6 @@ export function UninstallDialog() {
         This deletes Diffloupe's own files from this Mac, moves the app to the Trash and quits. Your
         repositories are not touched, and neither is data that other apps keep.
       </p>
-      {locations && locations.length > 0 && (
-        <ul className="app-uninstall-list" aria-label="Files to delete">
-          {locations.map((path) => (
-            <li key={path}>{path}</li>
-          ))}
-        </ul>
-      )}
       {error && (
         <div className="app-uninstall-error">
           <div className="dl-banner is-error" role="alert">
@@ -64,7 +45,7 @@ export function UninstallDialog() {
         <button
           className="dl-btn dl-btn-primary"
           type="button"
-          disabled={running || (locations === null && error === null)}
+          disabled={running}
           onClick={() => void uninstall()}
         >
           {running ? "Uninstalling…" : "Uninstall"}

@@ -55,7 +55,6 @@ export function bridgeTransport(url: string): Transport {
     kind: "bridge",
     send,
     pickFolder: () => send("pick_folder", null) as Promise<string | null>,
-    uninstallInfo: () => send("uninstall_info", null) as Promise<string[]>,
     uninstall: async () => {
       await send("uninstall", null);
     },

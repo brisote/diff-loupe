@@ -1,12 +1,11 @@
 use diffloupe_core::Core;
 use diffloupe_core::events::{CoreEvent, EventSink};
-use diffloupe_core::footprint;
 use diffloupe_core::shellenv::ShellEnv;
 use futures_util::{SinkExt, StreamExt};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use tokio::net::{TcpListener, TcpStream};
@@ -19,7 +18,6 @@ use tokio_tungstenite::tungstenite::http::StatusCode;
 
 pub struct Bridge {
     core: Core,
-    data_dir: PathBuf,
     pick: Mutex<Option<String>>,
     uninstalled: AtomicBool,
     installed: Mutex<Option<String>>,
@@ -54,7 +52,6 @@ impl Bridge {
         let core = Core::new(data_dir, env, Arc::new(Broadcast(push.clone())))?;
         Ok(Arc::new(Bridge {
             core,
-            data_dir: data_dir.to_path_buf(),
             pick: Mutex::new(pick),
             uninstalled: AtomicBool::new(false),
             installed: Mutex::new(None),
@@ -108,12 +105,6 @@ impl Bridge {
                 }
                 Ok(Value::Null)
             }
-            "uninstall_info" => Ok(json!(
-                footprint::present(std::slice::from_ref(&self.data_dir))
-                    .iter()
-                    .map(|path| path.display().to_string())
-                    .collect::<Vec<_>>()
-            )),
             "uninstall" => {
                 self.uninstalled.store(true, Ordering::SeqCst);
                 Ok(Value::Null)

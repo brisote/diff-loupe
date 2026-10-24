@@ -9,7 +9,7 @@ use diffloupe_core::events::{CoreEvent, EventSink};
 use diffloupe_core::footprint;
 use diffloupe_core::shellenv::ShellEnv;
 use serde_json::{Value, json};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -60,16 +60,6 @@ fn open_link(url: String) -> Result<(), String> {
         .map_err(|e| e.to_string())?;
     std::thread::spawn(move || child.wait());
     Ok(())
-}
-
-#[tauri::command]
-fn uninstall_info(app: AppHandle, data: State<'_, DataDir>) -> Result<Vec<String>, String> {
-    let home = app.path().home_dir().map_err(|e| e.to_string())?;
-    let locations = footprint::locations(&home, &data.0, &user_dirs());
-    Ok(footprint::present(&locations)
-        .iter()
-        .map(|path| shown(&home, path))
-        .collect())
 }
 
 #[tauri::command]
@@ -181,13 +171,6 @@ fn touches_system() -> bool {
         return false;
     }
     true
-}
-
-fn shown(home: &Path, path: &Path) -> String {
-    match path.strip_prefix(home) {
-        Ok(rest) => format!("~/{}", rest.display()),
-        Err(_) => path.display().to_string(),
-    }
 }
 
 fn clean_up_after_exit(locations: &[PathBuf], defaults: Option<&str>) -> Result<(), String> {
@@ -380,7 +363,6 @@ impl RegisterCommands for tauri::Builder<tauri::Wry> {
             dispatch,
             pick_folder,
             open_link,
-            uninstall_info,
             uninstall,
             install_update,
             smoke::smoke_report,
@@ -394,7 +376,6 @@ impl RegisterCommands for tauri::Builder<tauri::Wry> {
             dispatch,
             pick_folder,
             open_link,
-            uninstall_info,
             uninstall,
             install_update
         ])
