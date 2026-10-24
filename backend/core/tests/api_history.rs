@@ -55,7 +55,7 @@ fn branch_with_conflict_fix() -> TempRepo {
 }
 
 #[test]
-fn the_log_lists_branch_commits_and_one_row_for_a_merge_from_main() {
+fn the_log_lists_the_branch_history_with_merges_as_normal_rows() {
     let repo = branch_with_conflict_fix();
     let (_data, core, events, path) = open(&repo);
     let entries = log(&core, &path);
@@ -64,14 +64,15 @@ fn the_log_lists_branch_commits_and_one_row_for_a_merge_from_main() {
         [
             "Tidy the export",
             "Merge branch 'main' into gs/invoice-export",
-            "Export invoices as CSV"
+            "Export invoices as CSV",
+            "Add invoice"
         ]
     );
-    assert_eq!(entries[1]["merged"], true);
-    assert_eq!(entries[0]["merged"], false);
+    assert_eq!(entries[1]["files"], 2);
     assert_eq!(entries[2]["files"], 2);
     assert_eq!(entries[2]["author"], "Ada Lovelace");
     assert_eq!(entries[2]["short"].as_str().unwrap().len(), 8);
+    assert!(entries[0].get("merged").is_none());
     assert!(events.take().iter().any(|event| matches!(
         event,
         CoreEvent::Task { label, .. } if label == "Reading branch history"
@@ -79,14 +80,13 @@ fn the_log_lists_branch_commits_and_one_row_for_a_merge_from_main() {
 }
 
 #[test]
-fn the_merge_row_shows_only_the_conflict_fix() {
+fn a_merge_commit_shows_its_changes_against_its_first_parent() {
     let repo = branch_with_conflict_fix();
     let (_data, core, _events, path) = open(&repo);
     let merge = log(&core, &path)[1]["id"].clone();
     let details = core
         .dispatch("commit_details", json!({ "path": path, "id": merge }))
         .unwrap();
-    assert_eq!(details["merged"], true);
     assert_eq!(details["parents"].as_array().unwrap().len(), 2);
     let files: Vec<&str> = details["files"]
         .as_array()
@@ -94,78 +94,24 @@ fn the_merge_row_shows_only_the_conflict_fix() {
         .iter()
         .map(|f| f["path"].as_str().unwrap())
         .collect();
-    assert_eq!(files, ["src/Invoice.kt"]);
+    assert_eq!(files, ["docs/Tax.md", "src/Invoice.kt"]);
     let diff = core
         .dispatch(
             "diff",
             json!({ "path": path, "file": "src/Invoice.kt", "commit": merge }),
         )
         .unwrap();
-    assert_eq!(diff["left"]["title"], "Automatic merge");
-    assert_eq!(diff["left"]["revision"], Value::Null);
-    assert_eq!(diff["right"]["title"], "Merge commit");
-    assert_eq!(diff["right"]["revision"], merge.as_str().unwrap()[..8]);
-    let left = diff["left"]["text"].as_str().unwrap();
-    assert!(left.contains("<<<<<<< gs/invoice-export\n"), "{left}");
-    assert!(left.contains(">>>>>>> main\n"), "{left}");
+    assert_eq!(diff["left"]["text"], "val total = 2\nval tax = 0\n");
     assert_eq!(diff["right"]["text"], "val total = 5\nval tax = 0\n");
+    assert_eq!(diff["right"]["revision"], merge.as_str().unwrap()[..8]);
 }
 
 #[test]
-fn a_clean_merge_from_main_has_no_files() {
-    let repo = TempRepo::with_commit();
-    repo.branch("gs/clean");
-    repo.write("a.txt", "a\n");
-    repo.commit_all("Add a");
-    repo.switch("main");
-    repo.write("b.txt", "b\n");
-    repo.commit_all("Add b");
-    repo.switch("gs/clean");
-    repo.git(&["merge", "-q", "--no-edit", "main"]);
-    let (_data, core, _events, path) = open(&repo);
-    let merge = log(&core, &path)[0]["id"].clone();
-    let details = core
-        .dispatch("commit_details", json!({ "path": path, "id": merge }))
-        .unwrap();
-    assert_eq!(details["merged"], true);
-    assert_eq!(details["files"], json!([]));
-}
-
-#[test]
-fn a_merge_from_another_branch_is_a_normal_row() {
-    let repo = TempRepo::with_commit();
-    repo.branch("gs/feature");
-    repo.write("a.txt", "a\n");
-    repo.commit_all("Add a");
-    repo.branch("gs/helper");
-    repo.write("helper.txt", "help\n");
-    repo.commit_all("Add a helper");
-    repo.switch("gs/feature");
-    repo.git(&["merge", "-q", "--no-ff", "--no-edit", "gs/helper"]);
-    let (_data, core, _events, path) = open(&repo);
-    let entries = log(&core, &path);
-    assert_eq!(
-        subjects(&entries),
-        ["Merge branch 'gs/helper' into gs/feature", "Add a"]
-    );
-    assert_eq!(entries[0]["merged"], false);
-    assert_eq!(entries[0]["files"], 1);
-    let diff = core
-        .dispatch(
-            "diff",
-            json!({ "path": path, "file": "helper.txt", "commit": entries[0]["id"] }),
-        )
-        .unwrap();
-    assert_eq!(diff["left"]["exists"], false);
-    assert_eq!(diff["right"]["text"], "help\n");
-}
-
-#[test]
-fn a_new_branch_has_no_commits() {
+fn a_new_branch_lists_the_history_it_starts_from() {
     let repo = TempRepo::with_commit();
     repo.branch("gs/empty");
     let (_data, core, _events, path) = open(&repo);
-    assert!(log(&core, &path).is_empty());
+    assert_eq!(subjects(&log(&core, &path)), ["Initial commit"]);
 }
 
 #[test]
@@ -176,7 +122,7 @@ fn a_repository_without_commits_has_an_empty_log() {
 }
 
 #[test]
-fn a_different_target_changes_the_listed_commits() {
+fn the_target_does_not_change_the_log() {
     let repo = TempRepo::with_commit();
     repo.branch("develop");
     repo.write("d.txt", "d\n");
@@ -185,13 +131,13 @@ fn a_different_target_changes_the_listed_commits() {
     repo.write("f.txt", "f\n");
     repo.commit_all("Feature work");
     let (_data, core, _events, path) = open(&repo);
-    assert_eq!(
-        subjects(&log(&core, &path)),
-        ["Feature work", "Develop work"]
-    );
-    core.dispatch("set_target", json!({ "path": path, "target": "develop" }))
-        .unwrap();
-    assert_eq!(subjects(&log(&core, &path)), ["Feature work"]);
+    let all = ["Feature work", "Develop work", "Initial commit"];
+    assert_eq!(subjects(&log(&core, &path)), all);
+    for target in ["develop", "nowhere"] {
+        core.dispatch("set_target", json!({ "path": path, "target": target }))
+            .unwrap();
+        assert_eq!(subjects(&log(&core, &path)), all);
+    }
 }
 
 #[test]
@@ -332,35 +278,6 @@ fn a_renamed_file_keeps_its_old_path() {
 }
 
 #[test]
-fn a_merge_row_works_in_a_second_clone_of_the_same_project() {
-    let repo = branch_with_conflict_fix();
-    let copy = tempfile::tempdir().unwrap();
-    let clone = copy.path().join("acme-billing");
-    diffloupe_core::testutil::git_in(
-        copy.path(),
-        &[
-            "clone",
-            "-q",
-            "--no-local",
-            &repo.path().display().to_string(),
-            "acme-billing",
-        ],
-    );
-    diffloupe_core::testutil::git_in(&clone, &["branch", "-q", "main", "origin/main"]);
-    diffloupe_core::testutil::git_in(&clone, &["remote", "set-head", "origin", "main"]);
-    let (_data, core, _events, path) = open(&repo);
-    let merge = log(&core, &path)[1]["id"].clone();
-    let args = |path: &Value| json!({ "path": path, "file": "src/Invoice.kt", "commit": merge });
-    core.dispatch("diff", args(&path)).unwrap();
-    let other = core
-        .dispatch("open_repo", json!({ "path": clone }))
-        .unwrap()["path"]
-        .clone();
-    let diff = core.dispatch("diff", args(&other)).unwrap();
-    assert_eq!(diff["left"]["title"], "Automatic merge");
-}
-
-#[test]
 fn the_log_is_read_again_only_when_history_moves() {
     let repo = branch_with_conflict_fix();
     let (_data, core, events, path) = open(&repo);
@@ -379,42 +296,6 @@ fn the_log_is_read_again_only_when_history_moves() {
 }
 
 #[test]
-fn a_target_that_does_not_exist_is_reported() {
-    let repo = TempRepo::with_commit();
-    repo.branch("gs/feature");
-    let (_data, core, _events, path) = open(&repo);
-    core.dispatch("set_target", json!({ "path": path, "target": "release" }))
-        .unwrap();
-    let err = core
-        .dispatch("branch_log", json!({ "path": path }))
-        .unwrap_err();
-    assert_eq!(serde_json::to_value(err.code).unwrap(), "targetNotFound");
-    assert!(err.message.contains("release"));
-}
-
-#[test]
-fn a_merge_of_local_main_ahead_of_origin_is_a_merge_row() {
-    let repo = TempRepo::with_commit();
-    repo.bare_remote();
-    repo.git(&["push", "-q", "origin", "main"]);
-    repo.branch("gs/feature");
-    repo.write("a.txt", "a\n");
-    repo.commit_all("Add a");
-    repo.switch("main");
-    repo.write("b.txt", "b\n");
-    repo.commit_all("Local main work");
-    repo.switch("gs/feature");
-    repo.git(&["merge", "-q", "--no-edit", "main"]);
-    let (_data, core, _events, path) = open(&repo);
-    let entries = log(&core, &path);
-    assert_eq!(
-        subjects(&entries),
-        ["Merge branch 'main' into gs/feature", "Add a"]
-    );
-    assert_eq!(entries[0]["merged"], true);
-}
-
-#[test]
 fn the_default_branch_lists_its_own_history_newest_first() {
     let repo = TempRepo::with_commit();
     repo.write("b.txt", "b\n");
@@ -423,7 +304,7 @@ fn the_default_branch_lists_its_own_history_newest_first() {
     let log = core
         .dispatch("branch_log", json!({ "path": path }))
         .unwrap();
-    assert_eq!(log["target"], Value::Null);
+    assert!(log.get("target").is_none());
     assert_eq!(log["truncated"], false);
     let entries = log["entries"].as_array().unwrap();
     assert_eq!(subjects(entries)[0], "Second");
@@ -435,8 +316,6 @@ fn the_default_branch_lists_its_own_history_newest_first() {
 fn a_stored_target_equal_to_the_current_branch_falls_back_to_the_default() {
     let repo = TempRepo::with_commit();
     repo.branch("gs/feature");
-    repo.write("f.txt", "f\n");
-    repo.commit_all("Feature work");
     let (_data, core, _events, path) = open(&repo);
     core.dispatch(
         "set_target",
@@ -445,14 +324,6 @@ fn a_stored_target_equal_to_the_current_branch_falls_back_to_the_default() {
     .unwrap();
     let info = core.dispatch("open_repo", json!({ "path": path })).unwrap();
     assert_eq!(info["target"], "main");
-    let log = core
-        .dispatch("branch_log", json!({ "path": path }))
-        .unwrap();
-    assert_eq!(log["target"], "main");
-    assert_eq!(
-        subjects(log["entries"].as_array().unwrap()),
-        ["Feature work"]
-    );
 }
 
 #[test]

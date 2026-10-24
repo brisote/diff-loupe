@@ -1,6 +1,6 @@
 # Diffloupe
 
-Diffloupe is a Mac app for reviewing git changes. Pick the branch you work on and a target branch, and it shows every change between them: side-by-side and unified diffs with changed words marked, the branch's own commits, rendered Markdown diffs, a 3-pane merge window, commit and push, and a terminal. Your code stays on your Mac.
+Diffloupe is a Mac app for reviewing git changes. Pick the branch you work on and a target branch, and it shows every change between them: side-by-side and unified diffs with changed words marked, the branch's commit history, rendered Markdown diffs, a 3-pane merge window, commit and push, and a terminal. Your code stays on your Mac.
 
 ![Diffloupe showing an API document rendered side by side, with its changes marked](website/src/assets/screens/markdown-light.png)
 
