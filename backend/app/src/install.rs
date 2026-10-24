@@ -167,7 +167,7 @@ rm -rf -- "$old"
 if [ -e "$old" ]; then failed
 elif ! mv -- "$bundle" "$old"; then failed
 elif ! mv -- "$staged" "$bundle"; then mv -- "$old" "$bundle"; failed
-else rm -rf -- "$old" "$downloads"
+else rm -rf -- "$old" "$downloads"; /usr/bin/mdimport "$bundle" >/dev/null 2>&1 &
 fi
 [ "$reopen" = 1 ] && [ -d "$bundle" ] && /usr/bin/open -n "$@" "$bundle""#,
         )
