@@ -9,7 +9,7 @@ for (const path of [...pages.map((target) => target.path), missing.path]) {
     for (const heading of await page.locator("main :is(h1, h2, h3)").all())
       await expect(heading).toBeVisible();
     const scripts = await page
-      .locator("script")
+      .locator('script:not([type="application/ld+json"])')
       .evaluateAll((elements) =>
         elements.map((element) => element.getAttribute("src") ?? "inline"),
       );
