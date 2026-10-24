@@ -45,7 +45,7 @@ const merge = entry("b", "Merge branch 'main' into gs/invoice-export", true);
 function core(entries: () => LogEntry[]) {
   return fakeCore({
     current_repo: () => ({ ...repoInfo("acme-billing", "gs/invoice-export"), lastTab: "log" }),
-    branch_log: () => ({ target: "main", entries: entries() }),
+    branch_log: () => ({ target: "main", entries: entries(), truncated: false }),
     commit_details: (args) => {
       const id = (args as { id: string }).id;
       const found = entries().find((e) => e.id === id);
@@ -91,6 +91,17 @@ describe("BranchLogView", () => {
     expect(screen.getAllByText("2 hours ago")).toHaveLength(2);
   });
 
+  it("lists the branch's own history when there is no target", async () => {
+    const transport = fakeCore({
+      current_repo: () => ({ ...repoInfo("acme-billing", "main"), target: null, lastTab: "log" }),
+      branch_log: () => ({ target: null, entries: [skip, merge], truncated: true }),
+    });
+    await renderWithStore(<BranchLogView />, transport);
+    expect(await screen.findByText("Latest 2 commits")).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: /Skip empty invoices/ })).toBeInTheDocument();
+    expect(screen.queryByText("No target branch")).not.toBeInTheDocument();
+  });
+
   it("drops the selection when the commit leaves the history", async () => {
     let entries = [skip, merge];
     const { store } = await renderWithStore(
@@ -113,7 +124,7 @@ describe("BranchLogView", () => {
     const pending: (() => void)[] = [];
     const transport = fakeCore({
       current_repo: () => ({ ...repoInfo("acme-billing"), lastTab: "log" }),
-      branch_log: () => ({ target: "main", entries: [skip, other] }),
+      branch_log: () => ({ target: "main", entries: [skip, other], truncated: false }),
       commit_details: (args) => {
         const id = (args as { id: string }).id;
         const found = { ...details(id === skip.id ? skip : other), files: [file] };

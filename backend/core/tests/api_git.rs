@@ -674,3 +674,137 @@ fn a_staged_file_replaced_by_a_folder_commits_only_the_deletion() {
         "docs/guide.md"
     );
 }
+
+fn rollback(
+    core: &Core,
+    path: &Value,
+    files: &[&str],
+    delete_added: bool,
+) -> Result<Value, String> {
+    core.dispatch(
+        "rollback",
+        json!({ "path": path, "files": files, "deleteAdded": delete_added }),
+    )
+    .map_err(|e| e.message)
+}
+
+#[test]
+fn rollback_restores_changed_staged_and_deleted_files_from_head() {
+    let repo = three_changes();
+    repo.git(&["add", "b.txt"]);
+    repo.write("b.txt", "three\n");
+    repo.remove("c.txt");
+    let (_data, core, _events, path) = open(&repo);
+    rollback(&core, &path, &["a.txt", "b.txt", "c.txt"], false).unwrap();
+    for name in ["a.txt", "b.txt", "c.txt"] {
+        assert_eq!(fs::read_to_string(repo.path().join(name)).unwrap(), "one\n");
+    }
+    assert!(changed(&core, &path).is_empty());
+}
+
+#[test]
+fn rollback_leaves_files_it_was_not_given() {
+    let repo = three_changes();
+    let (_data, core, _events, path) = open(&repo);
+    rollback(&core, &path, &["a.txt"], false).unwrap();
+    assert_eq!(changed(&core, &path), ["b.txt", "c.txt"]);
+}
+
+#[test]
+fn an_added_file_is_kept_unless_its_copy_is_deleted() {
+    let repo = TempRepo::with_commit();
+    repo.write("new.txt", "new\n");
+    repo.write("gone.txt", "gone\n");
+    repo.git(&["add", "new.txt", "gone.txt"]);
+    let (_data, core, _events, path) = open(&repo);
+    rollback(&core, &path, &["new.txt"], false).unwrap();
+    assert_eq!(
+        fs::read_to_string(repo.path().join("new.txt")).unwrap(),
+        "new\n"
+    );
+    assert_eq!(
+        repo.git(&["status", "--porcelain", "--", "new.txt"]).trim(),
+        "?? new.txt"
+    );
+    rollback(&core, &path, &["gone.txt"], true).unwrap();
+    assert!(!repo.path().join("gone.txt").exists());
+}
+
+#[test]
+fn a_renamed_file_returns_to_its_old_name() {
+    let repo = TempRepo::with_commit();
+    repo.write("old.txt", "text\n");
+    repo.commit_all("Add old");
+    repo.git(&["mv", "old.txt", "new.txt"]);
+    let (_data, core, _events, path) = open(&repo);
+    rollback(&core, &path, &["old.txt", "new.txt"], true).unwrap();
+    assert!(repo.path().join("old.txt").exists());
+    assert!(!repo.path().join("new.txt").exists());
+    assert!(changed(&core, &path).is_empty());
+}
+
+#[test]
+fn rollback_refuses_no_files_outside_paths_and_a_merge_in_progress() {
+    let repo = TempRepo::with_commit();
+    repo.write("a.txt", "base\n");
+    repo.commit_all("Add a");
+    repo.branch("gs/side");
+    repo.write("a.txt", "side\n");
+    repo.commit_all("Side");
+    repo.switch("main");
+    repo.write("a.txt", "main\n");
+    repo.commit_all("Main");
+    let (_data, core, _events, path) = open(&repo);
+    assert!(
+        rollback(&core, &path, &[], false)
+            .unwrap_err()
+            .contains("Pick at least one file")
+    );
+    assert!(
+        rollback(&core, &path, &["../a.txt"], true)
+            .unwrap_err()
+            .contains("not a file of this repository")
+    );
+    assert!(repo.git_fails(&["merge", "-q", "gs/side"]));
+    let error = rollback(&core, &path, &["a.txt"], false).unwrap_err();
+    assert!(error.contains("A merge is in progress"), "{error}");
+    assert!(
+        fs::read_to_string(repo.path().join("a.txt"))
+            .unwrap()
+            .contains("<<<<<<<")
+    );
+}
+
+#[test]
+fn rollback_works_before_the_first_commit() {
+    let repo = TempRepo::new();
+    repo.write("first.txt", "first\n");
+    repo.git(&["add", "first.txt"]);
+    let (_data, core, _events, path) = open(&repo);
+    rollback(&core, &path, &["first.txt"], false).unwrap();
+    assert_eq!(repo.git(&["status", "--porcelain"]).trim(), "?? first.txt");
+}
+
+#[test]
+fn files_edited_again_after_staging_roll_back_too() {
+    let repo = TempRepo::with_commit();
+    repo.write("old.txt", "text\n");
+    repo.commit_all("Add old");
+    repo.write("n.txt", "one\n");
+    repo.git(&["add", "n.txt"]);
+    repo.write("n.txt", "two\n");
+    repo.git(&["mv", "old.txt", "new.txt"]);
+    repo.write("new.txt", "edited\n");
+    repo.git(&["add", "new.txt"]);
+    repo.write("new.txt", "edited again\n");
+    let (_data, core, _events, path) = open(&repo);
+    rollback(&core, &path, &["n.txt", "old.txt", "new.txt"], false).unwrap();
+    assert_eq!(
+        fs::read_to_string(repo.path().join("old.txt")).unwrap(),
+        "text\n"
+    );
+    let status = repo.git(&["status", "--porcelain"]);
+    let mut lines: Vec<&str> = status.lines().map(str::trim).collect();
+    lines.sort();
+    assert_eq!(lines, ["?? n.txt", "?? new.txt"]);
+}

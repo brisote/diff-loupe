@@ -150,7 +150,8 @@ fn the_first_read_belongs_to_opening() {
 #[test]
 fn the_chosen_target_is_remembered_per_repository() {
     let repo = TempRepo::with_commit();
-    repo.branch("develop");
+    repo.git(&["branch", "develop"]);
+    repo.branch("gs/feature");
     let (_data, core, _events) = open(&repo);
     let path = core.dispatch("current_repo", Value::Null).unwrap()["path"].clone();
     core.dispatch("set_target", json!({"path": path, "target": "develop"}))
@@ -263,7 +264,8 @@ fn a_linked_worktree_sees_ref_changes_in_the_main_repository() {
 #[test]
 fn target_and_view_paths_are_stored_canonically() {
     let repo = TempRepo::with_commit();
-    repo.branch("develop");
+    repo.git(&["branch", "develop"]);
+    repo.branch("gs/feature");
     let (_data, core, _events) = open(&repo);
     let spelled = format!("{}/./", repo.path().display());
     core.dispatch("set_target", json!({"path": spelled, "target": "develop"}))
@@ -437,11 +439,11 @@ fn changes_compare_the_working_tree_with_the_merge_base_of_the_target() {
 }
 
 #[test]
-fn the_branch_itself_or_a_missing_target_compares_with_head() {
+fn a_missing_target_compares_with_head_and_the_branch_itself_falls_back_to_the_default() {
     let repo = branched();
     let (_data, core, _events) = open(&repo);
     let path = core.dispatch("current_repo", Value::Null).unwrap()["path"].clone();
-    core.dispatch("set_target", json!({ "path": path, "target": "gs/export" }))
+    core.dispatch("set_target", json!({ "path": path, "target": "nowhere" }))
         .unwrap();
     let local = [
         ("Export.kt".to_string(), "modified".to_string(), true),
@@ -455,9 +457,9 @@ fn the_branch_itself_or_a_missing_target_compares_with_head() {
         )
         .unwrap();
     assert_eq!(diff["left"]["text"], "fun export() = 1\n");
-    core.dispatch("set_target", json!({ "path": path, "target": "nowhere" }))
+    core.dispatch("set_target", json!({ "path": path, "target": "gs/export" }))
         .unwrap();
-    assert_eq!(summary(&status(&core)), local);
+    assert_eq!(status(&core).len(), 5);
     core.dispatch("set_target", json!({ "path": path, "target": "main" }))
         .unwrap();
     assert_eq!(status(&core).len(), 5);
