@@ -107,9 +107,8 @@ test("the settings menu opens About and Uninstall", async ({ page, workspace, st
   await page.getByRole("button", { name: "Settings menu" }).click();
   await page.getByRole("menuitem", { name: "Uninstall Diffloupe…" }).click();
   const uninstall = page.getByRole("dialog", { name: "Uninstall Diffloupe" });
-  await expect(uninstall.getByRole("list", { name: "Files to delete" })).toContainText(
-    app.bridge.dataDir,
-  );
+  await expect(uninstall).toContainText("deletes Diffloupe's own files");
+  await expect(uninstall.getByRole("list")).toHaveCount(0);
   await page.keyboard.press("Escape");
   await expect(uninstall).toBeHidden();
   expect(await app.bridge.call("devbridge_uninstalled")).toBe(false);

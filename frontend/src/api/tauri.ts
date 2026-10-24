@@ -22,7 +22,6 @@ export function tauriTransport(): Transport {
     kind: "tauri",
     send: (cmd, args) => invoke("dispatch", { cmd, args }),
     pickFolder: () => invoke<string | null>("pick_folder"),
-    uninstallInfo: () => invoke<string[]>("uninstall_info"),
     uninstall: () => invoke<void>("uninstall"),
     openLink: (url) => invoke<void>("open_link", { url }),
     installUpdate: () => invoke<void>("install_update"),

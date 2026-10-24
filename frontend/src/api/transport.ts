@@ -7,7 +7,6 @@ export interface Transport {
   readonly kind: "tauri" | "bridge";
   send(cmd: string, args: unknown): Promise<unknown>;
   pickFolder(): Promise<string | null>;
-  uninstallInfo(): Promise<string[]>;
   uninstall(): Promise<void>;
   openLink(url: string): Promise<void>;
   installUpdate(): Promise<void>;
