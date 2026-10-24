@@ -365,21 +365,6 @@ button {
   margin-top: 8vh;
 }
 
-.app-uninstall-list {
-  max-height: 160px;
-  margin: var(--space-12) var(--space-16) 0;
-  padding: var(--space-8) var(--space-12);
-  overflow: auto;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-4);
-  background: var(--panel-bg);
-  color: var(--text-secondary);
-  font-family: var(--font-mono);
-  font-size: 12px;
-  line-height: 18px;
-  list-style: none;
-}
-
 .app-uninstall-error {
   padding: var(--space-12) var(--space-16) 0;
 }

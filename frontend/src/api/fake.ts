@@ -7,13 +7,11 @@ export class FakeTransport implements Transport {
   readonly kind = "bridge" as const;
   readonly calls: { cmd: string; args: unknown }[] = [];
   picked: string | null = null;
-  removable: string[] = [];
   uninstalled = false;
   uninstallError: unknown = null;
   installed = false;
   installs = 0;
   installError: unknown = null;
-  uninstallInfoError: unknown = null;
   readonly opened: string[] = [];
   private readonly events = new Set<Listener<CoreEvent>>();
   private readonly drops = new Set<Listener<string>>();
@@ -29,11 +27,6 @@ export class FakeTransport implements Transport {
 
   async pickFolder() {
     return this.picked;
-  }
-
-  async uninstallInfo() {
-    if (this.uninstallInfoError) throw this.uninstallInfoError;
-    return this.removable;
   }
 
   async openLink(url: string) {
