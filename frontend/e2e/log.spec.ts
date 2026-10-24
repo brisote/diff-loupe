@@ -10,7 +10,7 @@ async function openLog(page: Page) {
 const commits = (page: Page) =>
   page.getByRole("listbox", { name: "Branch commits" }).getByRole("option");
 
-test("the log lists the branch's own commits with a row for the merge from main", async ({
+test("the log lists the branch's history with the merge from main as a plain row", async ({
   page,
   workspace,
   startApp,
@@ -20,17 +20,20 @@ test("the log lists the branch's own commits with a row for the merge from main"
   await startApp({ open: [repo] });
   await openLog(page);
   await expect(page.getByText("Branch commit history")).toBeVisible();
-  await expect(page.getByText("4 commits", { exact: true })).toBeVisible();
+  await expect(page.getByText("7 commits", { exact: true })).toBeVisible();
   await expect(commits(page)).toHaveText([
     /Skip empty invoices before export\s*2 files\s*Ada Lovelace\s*2 hours ago/,
     /Round totals half-even to two decimals\s*2 files\s*Ada Lovelace\s*Yesterday/,
-    /^Merged main\s*Yesterday$/,
+    /Merge branch 'main' into gs\/invoice-export\s*2 files\s*Ada Lovelace\s*Yesterday/,
     /Add CSV writer for invoices\s*3 files\s*Ada Lovelace\s*3 days ago/,
     /Scaffold the billing export module\s*6 files\s*Grace Hopper\s*5 days ago/,
+    /Add the totals calculator/,
+    /Initial commit/,
   ]);
   await expect(page.getByText("Use the net price for totals")).toHaveCount(0);
   await expect(page.getByText(/Uncommitted|All branch changes/)).toHaveCount(0);
   await expect(page.getByText("Pick a commit")).toHaveCount(2);
+  await expect(page.getByRole("button", { name: "Target branch" })).toHaveCount(0);
 });
 
 test("a commit shows its message, files and diffs", async ({ page, workspace, startApp }) => {
@@ -55,50 +58,31 @@ test("a commit shows its message, files and diffs", async ({ page, workspace, st
   await expect(diff.locator(".dl-filehead-hash")).toHaveCount(2);
 });
 
-test("the merge row shows only what the merge changed", async ({ page, workspace, startApp }) => {
-  const repo = logRepo(workspace);
-  await page.clock.setFixedTime(logNow);
-  await startApp({ open: [repo] });
-  await openLog(page);
-  await commits(page).filter({ hasText: "Merged main" }).click();
-  await expect(page.getByText(/beyond git's automatic merge/)).toBeVisible();
-  await expect(page.getByText("Changed by the merge")).toBeVisible();
-  const files = page.getByRole("listbox", { name: "Changed files" });
-  await expect(files.getByRole("option")).toHaveText([/^TotalsCalculator\.kt/]);
-  const diff = page.getByRole("region", { name: "Side-by-side diff" });
-  await expect(diff.getByText("Automatic merge")).toBeVisible();
-  await expect(diff.getByText("with conflict markers")).toBeVisible();
-  await expect(diff.getByText("Merge commit")).toBeVisible();
-  await expect(diff.getByText(/^<<<<<<< /)).toBeVisible();
-  await expect(page.getByText("2 differences", { exact: true })).toBeVisible();
-  await expect(page.getByText("Use the net price for totals")).toHaveCount(0);
-});
-
-test("a clean merge says so, and a new branch has no commits", async ({
+test("a merge commit shows its changes against its first parent", async ({
   page,
   workspace,
   startApp,
 }) => {
-  const repo = workspace.repo("acme-billing", "gs/clean");
-  workspace.write(repo, "a.txt", "a\n");
-  git(repo, "add", "-A");
-  git(repo, "commit", "-q", "-m", "Add a");
-  git(repo, "switch", "-q", "main");
-  workspace.write(repo, "b.txt", "b\n");
-  git(repo, "add", "-A");
-  git(repo, "commit", "-q", "-m", "Add b");
-  git(repo, "switch", "-q", "gs/clean");
-  git(repo, "merge", "-q", "--no-edit", "main");
-  const fresh = workspace.repo("payments-api", "gs/new");
-  await startApp({ open: [fresh, repo] });
+  const repo = logRepo(workspace);
+  await page.clock.setFixedTime(logNow);
+  await startApp({ open: [repo] });
   await openLog(page);
-  await commits(page).filter({ hasText: "Merged main" }).click();
-  await expect(page.getByText("Clean merge: no manual changes")).toHaveCount(2);
-  await page.getByRole("button", { name: "Recent projects" }).click();
-  await page.getByRole("option", { name: "payments-api" }).click();
-  await page.getByRole("tab", { name: "Branch log" }).click();
-  await expect(page.getByText("No commits on this branch yet")).toBeVisible();
-  await expect(page.getByText("Every commit on this branch is also on main.")).toBeVisible();
+  await commits(page).filter({ hasText: "Merge branch 'main'" }).click();
+  await expect(page.getByText("Changed files", { exact: true })).toBeVisible();
+  const files = page.getByRole("listbox", { name: "Changed files" });
+  await expect(files.getByRole("option")).toHaveText([/^TotalsCalculator\.kt/, /^tax\.md/]);
+  const details = page.getByRole("region", { name: "Commit details" });
+  await expect(details.getByText(/parents/)).toBeVisible();
+  const diff = page.getByRole("region", { name: "Side-by-side diff" });
+  await expect(diff.getByText("Automatic merge")).toHaveCount(0);
+  await expect(diff.getByText(/netPrice/).first()).toBeVisible();
+});
+
+test("a new branch lists the history it starts from", async ({ page, workspace, startApp }) => {
+  const fresh = workspace.repo("payments-api", "gs/new");
+  await startApp({ open: [fresh] });
+  await openLog(page);
+  await expect(commits(page)).toHaveText([/Initial commit/]);
 });
 
 test("arrow keys walk the history, Enter moves to the files, and the filter narrows the list", async ({
@@ -116,7 +100,7 @@ test("arrow keys walk the history, Enter moves to the files, and the filter narr
   await expect(list.getByRole("option", { selected: true })).toHaveText(/Skip empty invoices/);
   await page.keyboard.press("ArrowDown");
   await page.keyboard.press("ArrowDown");
-  await expect(list.getByRole("option", { selected: true })).toHaveText(/Merged main/);
+  await expect(list.getByRole("option", { selected: true })).toHaveText(/Merge branch 'main'/);
   await page.keyboard.press("ArrowUp");
   await expect(list.getByRole("option", { selected: true })).toHaveText(/Round totals/);
   const files = page.getByRole("listbox", { name: "Changed files" });
@@ -147,7 +131,7 @@ test("a new commit shows in the log and the selection survives the refresh", asy
   await expect(commits(page).first()).toHaveText(/Describe the work in progress/, {
     timeout: 5000,
   });
-  await expect(page.getByText("5 commits", { exact: true })).toBeVisible();
+  await expect(page.getByText("8 commits", { exact: true })).toBeVisible();
   await expect(commits(page).filter({ hasText: "Round totals" })).toHaveAttribute(
     "aria-selected",
     "true",

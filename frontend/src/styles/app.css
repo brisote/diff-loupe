@@ -685,10 +685,6 @@ button {
   padding: 10px var(--space-16) var(--space-4);
 }
 
-.app-log-message.is-merge {
-  gap: var(--space-8);
-}
-
 .app-log-meta {
   color: var(--text-muted);
   font-size: 12px;

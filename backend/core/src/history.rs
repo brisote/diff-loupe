@@ -2,7 +2,6 @@ use crate::diff::Options;
 use crate::error::{Error, Result};
 use crate::events::{EventSink, Task};
 use crate::filediff::{DiffTarget, FileDiff, Source, compare_sources};
-use crate::shellenv::ShellEnv;
 use crate::status::ChangeKind;
 use gix::bstr::ByteSlice;
 use gix::object::tree::diff::ChangeDetached;
@@ -23,19 +22,17 @@ pub struct LogEntry {
     #[ts(type = "number")]
     pub time: i64,
     pub files: u32,
-    pub merged: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct BranchLog {
-    pub target: Option<String>,
     pub entries: Vec<LogEntry>,
     pub truncated: bool,
 }
 
-pub const UNTARGETED_LOG_LIMIT: usize = 500;
+pub const LOG_LIMIT: usize = 500;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
@@ -59,7 +56,6 @@ pub struct CommitDetails {
     #[ts(type = "number")]
     pub time: i64,
     pub parents: Vec<String>,
-    pub merged: bool,
     pub files: Vec<CommitFile>,
 }
 
@@ -121,49 +117,14 @@ pub fn merge_base(repo: &gix::Repository, target: &str) -> Result<Option<gix::Ob
     Ok(best)
 }
 
-pub fn branch_log(repo: &gix::Repository, target: Option<&str>) -> Result<BranchLog> {
-    let empty = BranchLog {
-        target: target.map(str::to_string),
-        entries: Vec::new(),
-        truncated: false,
-    };
+pub fn branch_log(repo: &gix::Repository) -> Result<BranchLog> {
     let Ok(head) = repo.head_id() else {
-        return Ok(empty);
+        return Ok(BranchLog {
+            entries: Vec::new(),
+            truncated: false,
+        });
     };
-    let Some(name) = target else {
-        return untargeted_log(repo, head.detach());
-    };
-    let tips = target_tips(repo, name);
-    if tips.is_empty() {
-        return Err(Error::TargetNotFound(name.to_string()));
-    }
-    let walk = repo
-        .rev_walk([head.detach()])
-        .first_parent_only()
-        .with_hidden(tips.iter().copied())
-        .all()
-        .map_err(git_error)?;
-    let mut entries = Vec::new();
-    for info in walk {
-        let info = info.map_err(git_error)?;
-        let commit = repo.find_commit(info.id).map_err(git_error)?;
-        let parents: Vec<gix::ObjectId> = commit.parent_ids().map(|id| id.detach()).collect();
-        let merged = is_target_merge(repo, &parents, &tips);
-        let files = if merged {
-            0
-        } else {
-            changes(repo, &commit, parents.first().copied())?.len() as u32
-        };
-        entries.push(entry(&commit, files, merged)?);
-    }
-    Ok(BranchLog {
-        target: target.map(str::to_string),
-        entries,
-        truncated: false,
-    })
-}
-
-fn untargeted_log(repo: &gix::Repository, head: gix::ObjectId) -> Result<BranchLog> {
+    let head = head.detach();
     let walk = repo
         .rev_walk([head])
         .first_parent_only()
@@ -172,7 +133,7 @@ fn untargeted_log(repo: &gix::Repository, head: gix::ObjectId) -> Result<BranchL
     let mut ids = Vec::new();
     let mut truncated = false;
     for info in walk {
-        if ids.len() == UNTARGETED_LOG_LIMIT {
+        if ids.len() == LOG_LIMIT {
             truncated = true;
             break;
         }
@@ -194,7 +155,7 @@ fn untargeted_log(repo: &gix::Repository, head: gix::ObjectId) -> Result<BranchL
                             let commit = repo.find_commit(*id).map_err(git_error)?;
                             let parent = commit.parent_ids().next().map(|id| id.detach());
                             let files = changes(&repo, &commit, parent)?.len() as u32;
-                            entry(&commit, files, false)
+                            entry(&commit, files)
                         })
                         .collect()
                 })
@@ -210,26 +171,12 @@ fn untargeted_log(repo: &gix::Repository, head: gix::ObjectId) -> Result<BranchL
             .collect::<Result<Vec<Vec<LogEntry>>>>()
     })?;
     Ok(BranchLog {
-        target: None,
         entries: entries.into_iter().flatten().collect(),
         truncated,
     })
 }
 
-fn is_target_merge(
-    repo: &gix::Repository,
-    parents: &[gix::ObjectId],
-    tips: &[gix::ObjectId],
-) -> bool {
-    let Some(second) = parents.get(1) else {
-        return false;
-    };
-    tips.iter().any(
-        |tip| matches!(repo.merge_base(*second, *tip), Ok(Some(base)) if base.detach() == *second),
-    )
-}
-
-fn entry(commit: &gix::Commit<'_>, files: u32, merged: bool) -> Result<LogEntry> {
+fn entry(commit: &gix::Commit<'_>, files: u32) -> Result<LogEntry> {
     let message = commit.message().map_err(git_error)?;
     let author = commit.author().map_err(git_error)?;
     Ok(LogEntry {
@@ -239,30 +186,13 @@ fn entry(commit: &gix::Commit<'_>, files: u32, merged: bool) -> Result<LogEntry>
         author: author.name.to_str_lossy().into_owned(),
         time: author.time().map(|t| t.seconds).unwrap_or_default(),
         files,
-        merged,
     })
 }
 
-pub fn commit_details(
-    repo: &gix::Repository,
-    context: &CommitDiff<'_>,
-    id: &str,
-) -> Result<CommitDetails> {
+pub fn commit_details(repo: &gix::Repository, id: &str) -> Result<CommitDetails> {
     let commit = find(repo, id)?;
     let parents: Vec<gix::ObjectId> = commit.parent_ids().map(|id| id.detach()).collect();
-    let merged = is_target_merge(repo, &parents, &context.tips(repo));
-    let files = if merged {
-        let automatic = context
-            .cache
-            .automatic(repo, context.env, context.root, &parents)?;
-        tree_changes(
-            repo,
-            Some(automatic),
-            commit.tree_id().map_err(git_error)?.detach(),
-        )?
-    } else {
-        changes(repo, &commit, parents.first().copied())?
-    };
+    let files = changes(repo, &commit, parents.first().copied())?;
     let message = commit.message().map_err(git_error)?;
     let author = commit.author().map_err(git_error)?;
     let body = message
@@ -278,25 +208,17 @@ pub fn commit_details(
         email: author.email.to_str_lossy().into_owned(),
         time: author.time().map(|t| t.seconds).unwrap_or_default(),
         parents: parents.iter().map(|id| id.to_string()).collect(),
-        merged,
         files,
     })
 }
 
 const CACHED_DIFFS: usize = 256;
 
-type MergeKey = (PathBuf, gix::ObjectId, gix::ObjectId);
-type DiffKey = (PathBuf, String, DiffTarget, Options, Option<String>);
-type LogKey = (
-    PathBuf,
-    Option<gix::ObjectId>,
-    Option<String>,
-    Vec<gix::ObjectId>,
-);
+type DiffKey = (PathBuf, String, DiffTarget, Options);
+type LogKey = (PathBuf, Option<gix::ObjectId>);
 
 #[derive(Default)]
 pub struct HistoryCache {
-    merges: Mutex<HashMap<MergeKey, gix::ObjectId>>,
     diffs: Mutex<HashMap<DiffKey, Arc<FileDiff>>>,
     log: Mutex<Option<(LogKey, Arc<BranchLog>)>>,
 }
@@ -306,16 +228,11 @@ impl HistoryCache {
         &self,
         repo: &gix::Repository,
         root: &Path,
-        target: Option<&str>,
         events: &dyn EventSink,
     ) -> Result<Arc<BranchLog>> {
         let key = (
             root.to_path_buf(),
             repo.head_id().ok().map(|id| id.detach()),
-            target.map(str::to_string),
-            target
-                .map(|name| target_tips(repo, name))
-                .unwrap_or_default(),
         );
         if let Ok(log) = self.log.lock()
             && let Some((cached, hit)) = log.as_ref()
@@ -325,71 +242,20 @@ impl HistoryCache {
         }
         let id = format!("branch-log:{}", root.display());
         let _task = Task::start(events, &id, "Reading branch history".to_string());
-        let log = Arc::new(branch_log(repo, target)?);
+        let log = Arc::new(branch_log(repo)?);
         if let Ok(mut slot) = self.log.lock() {
             *slot = Some((key, log.clone()));
         }
         Ok(log)
     }
-
-    fn automatic(
-        &self,
-        repo: &gix::Repository,
-        env: &ShellEnv,
-        root: &Path,
-        parents: &[gix::ObjectId],
-    ) -> Result<gix::ObjectId> {
-        let [first, second, ..] = parents else {
-            return Err(Error::InvalidArgs("a merge needs two parents".into()));
-        };
-        let key = (root.to_path_buf(), *first, *second);
-        let cached = self.merges.lock().ok().and_then(|t| t.get(&key).copied());
-        if let Some(tree) = cached.filter(|tree| repo.has_object(tree)) {
-            return Ok(tree);
-        }
-        let tree = automatic_merge(env, root, parents)?;
-        if let Ok(mut trees) = self.merges.lock() {
-            trees.insert(key, tree);
-        }
-        Ok(tree)
-    }
 }
 
 pub struct CommitDiff<'a> {
-    pub env: &'a ShellEnv,
     pub root: &'a Path,
     pub cache: &'a HistoryCache,
-    pub target_branch: Option<&'a str>,
 }
 
 impl CommitDiff<'_> {
-    fn tips(&self, repo: &gix::Repository) -> Vec<gix::ObjectId> {
-        self.target_branch
-            .map(|name| target_tips(repo, name))
-            .unwrap_or_default()
-    }
-
-    fn marker_labels(
-        &self,
-        repo: &gix::Repository,
-        parents: &[gix::ObjectId],
-    ) -> Vec<(String, String)> {
-        let branch = repo
-            .head_name()
-            .ok()
-            .flatten()
-            .map(|name| name.shorten().to_string());
-        let mut labels = Vec::new();
-        if let Some(first) = parents.first() {
-            let label = branch.unwrap_or_else(|| first.to_hex_with_len(8).to_string());
-            labels.push((first.to_string(), label));
-        }
-        if let (Some(second), Some(target)) = (parents.get(1), self.target_branch) {
-            labels.push((second.to_string(), target.to_string()));
-        }
-        labels
-    }
-
     pub fn diff(
         &self,
         repo: &gix::Repository,
@@ -402,7 +268,6 @@ impl CommitDiff<'_> {
             id.to_string(),
             target.clone(),
             options,
-            self.target_branch.map(str::to_string),
         );
         if let Some(hit) = self
             .cache
@@ -431,53 +296,24 @@ impl CommitDiff<'_> {
         options: Options,
     ) -> Result<FileDiff> {
         let commit = find(repo, id)?;
-        let parents: Vec<gix::ObjectId> = commit.parent_ids().map(|id| id.detach()).collect();
-        let tree = commit.tree_id().map_err(git_error)?.detach();
-        let (left, right) = if is_target_merge(repo, &parents, &self.tips(repo)) {
-            let automatic = self.cache.automatic(repo, self.env, self.root, &parents)?;
-            (
-                Source::Tree {
-                    id: automatic,
-                    revision: None,
-                    title: Some("Automatic merge".into()),
-                    markers: self.marker_labels(repo, &parents),
-                },
-                Source::Tree {
-                    id: tree,
-                    revision: Some(commit.id.to_hex_with_len(8).to_string()),
-                    title: Some("Merge commit".into()),
-                    markers: Vec::new(),
-                },
-            )
-        } else {
-            let left = match parents.first() {
-                Some(parent) => Source::Tree {
-                    id: repo
-                        .find_commit(*parent)
-                        .map_err(git_error)?
-                        .tree_id()
-                        .map_err(git_error)?
-                        .detach(),
-                    revision: Some(parent.to_hex_with_len(8).to_string()),
-                    title: None,
-                    markers: Vec::new(),
-                },
-                None => Source::Tree {
-                    id: gix::ObjectId::empty_tree(repo.object_hash()),
-                    revision: None,
-                    title: None,
-                    markers: Vec::new(),
-                },
-            };
-            (
-                left,
-                Source::Tree {
-                    id: tree,
-                    revision: Some(commit.id.to_hex_with_len(8).to_string()),
-                    title: None,
-                    markers: Vec::new(),
-                },
-            )
+        let left = match commit.parent_ids().next().map(|id| id.detach()) {
+            Some(parent) => Source::Tree {
+                id: repo
+                    .find_commit(parent)
+                    .map_err(git_error)?
+                    .tree_id()
+                    .map_err(git_error)?
+                    .detach(),
+                revision: Some(parent.to_hex_with_len(8).to_string()),
+            },
+            None => Source::Tree {
+                id: gix::ObjectId::empty_tree(repo.object_hash()),
+                revision: None,
+            },
+        };
+        let right = Source::Tree {
+            id: commit.tree_id().map_err(git_error)?.detach(),
+            revision: Some(commit.id.to_hex_with_len(8).to_string()),
         };
         compare_sources(repo, self.root, &left, &right, target, options)
     }
@@ -487,26 +323,6 @@ pub fn find<'r>(repo: &'r gix::Repository, id: &str) -> Result<gix::Commit<'r>> 
     let object = gix::ObjectId::from_hex(id.as_bytes())
         .map_err(|_| Error::InvalidArgs(format!("{id} is not a commit id")))?;
     repo.find_commit(object).map_err(git_error)
-}
-
-fn automatic_merge(
-    env: &ShellEnv,
-    root: &Path,
-    parents: &[gix::ObjectId],
-) -> Result<gix::ObjectId> {
-    let [first, second, ..] = parents else {
-        return Err(Error::InvalidArgs("a merge needs two parents".into()));
-    };
-    let output = env
-        .git(root)
-        .args(["merge-tree", "--write-tree", "--no-messages"])
-        .arg(first.to_string())
-        .arg(second.to_string())
-        .output()?;
-    let text = String::from_utf8_lossy(&output.stdout);
-    let tree = text.lines().next().unwrap_or_default().trim();
-    gix::ObjectId::from_hex(tree.as_bytes())
-        .map_err(|_| Error::Git(String::from_utf8_lossy(&output.stderr).trim().to_string()))
 }
 
 fn changes(

@@ -2,7 +2,7 @@
   "scenes": [
     {
       "name": "branch-log",
-      "description": "The Branch log with the branch's own commits, a merge row and the diff of one commit.",
+      "description": "The Branch log with the branch's commits and the diff of one commit.",
       "width": 2880,
       "height": 1800
     },
