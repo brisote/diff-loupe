@@ -23,6 +23,7 @@ import type { RecentRepo } from "./generated/RecentRepo";
 import type { RepoInfo } from "./generated/RepoInfo";
 import type { ReportEnv } from "./generated/ReportEnv";
 import type { RepoViewArgs } from "./generated/RepoViewArgs";
+import type { RollbackArgs } from "./generated/RollbackArgs";
 import type { Settings } from "./generated/Settings";
 import type { SettingsArgs } from "./generated/SettingsArgs";
 import type { StatusArgs } from "./generated/StatusArgs";
@@ -59,6 +60,7 @@ export type Commands = {
   switch_branch: [BranchArgs, RepoInfo];
   fetch: [PathArgs, null];
   commit: [CommitArgs, CommitResult];
+  rollback: [RollbackArgs, null];
   commit_messages: [PathArgs, string[]];
   head_message: [PathArgs, string | null];
   push: [PathArgs, PushResult];

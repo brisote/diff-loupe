@@ -56,7 +56,9 @@ test("the Branch picker lists branches and switching updates Changes and the Bra
   workspace.write(repo, "invoice.txt", "invoice\n");
   await (await openBranches(page)).getByRole("option", { name: "main", exact: true }).click();
   await expect(page.getByRole("button", { name: "Current branch" })).toHaveText("main");
-  await expect(page.getByText("No commits on this branch yet")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Target branch" })).toContainText("none");
+  await expect(page.getByRole("option", { name: /Initial commit/ })).toBeVisible();
+  await expect(page.getByRole("option", { name: /Add invoices/ })).toHaveCount(0);
   await page.getByRole("tab", { name: "Changes" }).click();
   await expect(page.getByText("No changes", { exact: true }).first()).toBeVisible();
   expect(git(repo, "branch", "--show-current")).toBe("main");
@@ -301,4 +303,62 @@ test("the target sets what Changes compares, and Commit offers only uncommitted 
   await expect(page.getByRole("button", { name: "Target branch" })).toContainText("release");
   await expect(tree.getByRole("treeitem", { name: "Totals.kt" })).toHaveCount(0);
   await expect(tree.getByRole("treeitem", { name: "Notes.kt" })).toBeVisible();
+});
+
+test("on the default branch the log shows its own history and the target cannot be the current branch", async ({
+  page,
+  workspace,
+  startApp,
+}) => {
+  const repo = workspace.repo("acme-billing");
+  workspace.write(repo, "a.txt", "a\n");
+  git(repo, "add", "-A");
+  git(repo, "commit", "-q", "-m", "Add a");
+  git(repo, "branch", "develop");
+  await startApp({ open: [repo] });
+  await expect(page.getByRole("button", { name: "Target branch" })).toContainText("none");
+  await page.getByRole("tab", { name: "Branch log" }).click();
+  await expect(
+    page.getByRole("listbox", { name: "Branch commits" }).getByRole("option"),
+  ).toHaveText([/Add a/, /Initial commit/]);
+  await page.getByRole("button", { name: "Target branch" }).click();
+  const picker = page.getByRole("dialog", { name: "Target branch" });
+  await expect(picker.getByRole("option")).toHaveText(["develop"]);
+});
+
+test("Rollback restores the ticked files and keeps the others", async ({
+  page,
+  workspace,
+  startApp,
+}) => {
+  const repo = workspace.repo("acme-billing");
+  workspace.write(repo, "a.txt", "one\n");
+  workspace.write(repo, "b.txt", "one\n");
+  git(repo, "add", "-A");
+  git(repo, "commit", "-q", "-m", "Add files");
+  workspace.write(repo, "a.txt", "two\n");
+  workspace.write(repo, "b.txt", "two\n");
+  workspace.write(repo, "added.txt", "new\n");
+  git(repo, "add", "added.txt");
+  await startApp({ open: [repo] });
+  await changesTree(page).getByRole("treeitem", { name: "a.txt", exact: true }).click();
+  await page.getByRole("button", { name: "Rollback…" }).click();
+  const dialog = page.getByRole("dialog", { name: "Rollback Changes" });
+  await expect(dialog.getByRole("checkbox", { name: "a.txt" })).toBeChecked();
+  await expect(dialog.getByRole("checkbox", { name: "b.txt" })).not.toBeChecked();
+  await dialog.getByRole("checkbox", { name: "added.txt" }).check({ force: true });
+  await dialog
+    .getByRole("checkbox", { name: "Delete local copies of added files" })
+    .check({ force: true });
+  await dialog.getByRole("button", { name: "Rollback" }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(
+    changesTree(page).getByRole("treeitem", { name: "b.txt", exact: true }),
+  ).toBeVisible();
+  await expect(changesTree(page).getByRole("treeitem", { name: "a.txt", exact: true })).toHaveCount(
+    0,
+  );
+  expect(readFileSync(join(repo, "a.txt"), "utf8")).toBe("one\n");
+  expect(readFileSync(join(repo, "b.txt"), "utf8")).toBe("two\n");
+  expect(git(repo, "status", "--porcelain")).toBe("M b.txt");
 });

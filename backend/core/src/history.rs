@@ -32,7 +32,10 @@ pub struct LogEntry {
 pub struct BranchLog {
     pub target: Option<String>,
     pub entries: Vec<LogEntry>,
+    pub truncated: bool,
 }
+
+pub const UNTARGETED_LOG_LIMIT: usize = 500;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
@@ -122,9 +125,13 @@ pub fn branch_log(repo: &gix::Repository, target: Option<&str>) -> Result<Branch
     let empty = BranchLog {
         target: target.map(str::to_string),
         entries: Vec::new(),
+        truncated: false,
     };
-    let (Ok(head), Some(name)) = (repo.head_id(), target) else {
+    let Ok(head) = repo.head_id() else {
         return Ok(empty);
+    };
+    let Some(name) = target else {
+        return untargeted_log(repo, head.detach());
     };
     let tips = target_tips(repo, name);
     if tips.is_empty() {
@@ -152,6 +159,60 @@ pub fn branch_log(repo: &gix::Repository, target: Option<&str>) -> Result<Branch
     Ok(BranchLog {
         target: target.map(str::to_string),
         entries,
+        truncated: false,
+    })
+}
+
+fn untargeted_log(repo: &gix::Repository, head: gix::ObjectId) -> Result<BranchLog> {
+    let walk = repo
+        .rev_walk([head])
+        .first_parent_only()
+        .all()
+        .map_err(git_error)?;
+    let mut ids = Vec::new();
+    let mut truncated = false;
+    for info in walk {
+        if ids.len() == UNTARGETED_LOG_LIMIT {
+            truncated = true;
+            break;
+        }
+        ids.push(info.map_err(git_error)?.id);
+    }
+    let shared = repo.clone().into_sync();
+    let threads = std::thread::available_parallelism().map_or(4, |n| n.get().min(8));
+    let chunk = ids.len().div_ceil(threads).max(1);
+    let entries = std::thread::scope(|scope| {
+        let workers: Vec<_> = ids
+            .chunks(chunk)
+            .map(|part| {
+                let shared = &shared;
+                scope.spawn(move || -> Result<Vec<LogEntry>> {
+                    let mut repo = shared.to_thread_local();
+                    repo.object_cache_size_if_unset(64 * 1024 * 1024);
+                    part.iter()
+                        .map(|id| {
+                            let commit = repo.find_commit(*id).map_err(git_error)?;
+                            let parent = commit.parent_ids().next().map(|id| id.detach());
+                            let files = changes(&repo, &commit, parent)?.len() as u32;
+                            entry(&commit, files, false)
+                        })
+                        .collect()
+                })
+            })
+            .collect();
+        workers
+            .into_iter()
+            .map(|worker| {
+                worker.join().map_err(|_| {
+                    Error::InvalidArgs("the branch history could not be read".into())
+                })?
+            })
+            .collect::<Result<Vec<Vec<LogEntry>>>>()
+    })?;
+    Ok(BranchLog {
+        target: None,
+        entries: entries.into_iter().flatten().collect(),
+        truncated,
     })
 }
 

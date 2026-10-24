@@ -64,6 +64,7 @@ export type Dialog =
   | "about"
   | "uninstall"
   | "commit"
+  | "rollback"
   | "conflicts"
   | "abortMerge"
   | "merge";
@@ -149,6 +150,8 @@ const endedNotice: ApiError = {
   message: "The shell stopped right after it started. Check the shell in your login settings.",
   path: null,
 };
+
+export type RollbackInput = { files: string[]; deleteAdded: boolean };
 
 export type CommitInput = {
   message: string;
@@ -274,6 +277,7 @@ export type AppState = {
   switchBranch: (name: string) => Promise<void>;
   fetchRemote: () => Promise<void>;
   commitChanges: (input: CommitInput) => Promise<void>;
+  rollbackChanges: (input: RollbackInput) => Promise<void>;
   push: () => Promise<void>;
   pull: () => Promise<void>;
   mergeTarget: () => Promise<void>;
@@ -913,6 +917,14 @@ export function createAppStore(backend: Backend) {
         void get().loadStatus();
         void get().loadLog();
         if (push) await get().push();
+      },
+
+      rollbackChanges: async ({ files, deleteAdded }) => {
+        const path = get().repo?.path;
+        if (!path) return;
+        await backend.call("rollback", { path, files, deleteAdded });
+        set({ dialog: null });
+        void get().loadStatus();
       },
 
       push: async () => {

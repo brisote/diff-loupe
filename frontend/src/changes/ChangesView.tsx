@@ -8,6 +8,7 @@ import {
   buildRows,
   fileCount,
   type GroupId,
+  isTracked,
   type ListRow,
   nextFile,
   selectionKey,
@@ -28,6 +29,7 @@ export function ChangesView() {
   const loadStatus = useApp((state) => state.loadStatus);
   const select = useApp((state) => state.select);
   const showDialog = useApp((state) => state.showDialog);
+  const merging = useApp((state) => Boolean(state.merge?.operation));
   const [collapsed, setCollapsed] = useState<ReadonlySet<GroupId>>(new Set());
   const loaded = changes !== null;
 
@@ -69,7 +71,14 @@ export function ChangesView() {
         >
           <Icon name="vcs-commit" />
         </button>
-        <button className="dl-tbtn" type="button" aria-label="Rollback" title="Rollback" disabled>
+        <button
+          className="dl-tbtn"
+          type="button"
+          aria-label="Rollback…"
+          title={merging ? "Commit or abort the merge first" : "Rollback…"}
+          disabled={merging || !uncommitted?.some(isTracked)}
+          onClick={() => showDialog("rollback")}
+        >
           <Icon name="vcs-revert" />
         </button>
       </div>

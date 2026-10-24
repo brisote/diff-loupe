@@ -3,6 +3,7 @@ import { isApiError } from "./api";
 import { AboutDialog } from "./dialogs/AboutDialog";
 import { CommitDialog } from "./dialogs/CommitDialog";
 import { ErrorReportDialog } from "./dialogs/ErrorReportDialog";
+import { RollbackDialog } from "./dialogs/RollbackDialog";
 import { SettingsDialog } from "./dialogs/SettingsDialog";
 import { UninstallDialog } from "./dialogs/UninstallDialog";
 import { Boundary } from "./lib/boundary";
@@ -137,6 +138,7 @@ export function App() {
         {dialog === "about" && <AboutDialog />}
         {dialog === "uninstall" && <UninstallDialog />}
         {dialog === "commit" && hasRepo && <CommitDialog />}
+        {dialog === "rollback" && hasRepo && <RollbackDialog />}
         {dialog === "conflicts" && hasRepo && <ConflictsDialog />}
         {dialog === "abortMerge" && hasRepo && <AbortMergeDialog />}
         {dialog === "merge" && hasRepo && <MergeDialog />}
