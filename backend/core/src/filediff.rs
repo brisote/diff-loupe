@@ -129,8 +129,6 @@ pub enum Source {
     Tree {
         id: gix::ObjectId,
         revision: Option<String>,
-        title: Option<String>,
-        markers: Vec<(String, String)>,
     },
 }
 
@@ -151,8 +149,6 @@ pub fn changes_diff(
                 .map_err(git_error)?
                 .detach(),
             revision: Some(id.to_hex_with_len(8).to_string()),
-            title: None,
-            markers: Vec::new(),
         },
         None => Source::Head,
     };
@@ -233,12 +229,9 @@ fn read(repo: &gix::Repository, root: &Path, source: &Source, path: &str) -> Res
             let tree = repo.head_tree().map_err(git_error)?;
             read_tree(repo, &tree, path)
         }
-        Source::Tree { id, markers, .. } => {
+        Source::Tree { id, .. } => {
             let tree = repo.find_tree(*id).map_err(git_error)?;
-            Ok(match read_tree(repo, &tree, path)? {
-                Read::Bytes(bytes) if !markers.is_empty() => Read::Bytes(relabel(bytes, markers)),
-                other => other,
-            })
+            read_tree(repo, &tree, path)
         }
     }
 }
@@ -253,9 +246,7 @@ fn labels(repo: &gix::Repository, source: &Source) -> (Option<String>, Option<St
                 .map(|head| head.to_hex_with_len(8).to_string()),
             None,
         ),
-        Source::Tree {
-            revision, title, ..
-        } => (revision.clone(), title.clone()),
+        Source::Tree { revision, .. } => (revision.clone(), None),
     }
 }
 
@@ -263,25 +254,6 @@ pub fn worktree_size(root: &Path, path: &str) -> Option<u64> {
     std::fs::symlink_metadata(root.join(path))
         .ok()
         .map(|meta| meta.len())
-}
-
-fn relabel(bytes: Vec<u8>, markers: &[(String, String)]) -> Vec<u8> {
-    let text = match String::from_utf8(bytes) {
-        Ok(text) => text,
-        Err(error) => return error.into_bytes(),
-    };
-    let mut out = String::with_capacity(text.len());
-    for line in text.split_inclusive('\n') {
-        let body = line.trim_end_matches(['\r', '\n']);
-        let ending = &line[body.len()..];
-        let renamed = ["<<<<<<< ", ">>>>>>> "].iter().find_map(|prefix| {
-            let label = body.strip_prefix(prefix)?;
-            let (_, to) = markers.iter().find(|(from, _)| from == label)?;
-            Some(format!("{prefix}{to}{ending}"))
-        });
-        out.push_str(renamed.as_deref().unwrap_or(line));
-    }
-    out.into_bytes()
 }
 
 fn read_tree(repo: &gix::Repository, tree: &gix::Tree<'_>, path: &str) -> Result<Read> {
@@ -386,29 +358,4 @@ fn is_image(path: &str) -> bool {
 
 fn git_error(error: impl std::fmt::Display) -> Error {
     Error::Git(error.to_string())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::relabel;
-
-    #[test]
-    fn relabel_names_both_sides_of_a_conflict() {
-        let text = "a\n<<<<<<< 1111\nours\r\n=======\ntheirs\n>>>>>>> 2222\r\n>>>>>>> 3333\n";
-        let markers = vec![
-            ("1111".to_string(), "gs/feature".to_string()),
-            ("2222".to_string(), "main".to_string()),
-        ];
-        let out = String::from_utf8(relabel(text.as_bytes().to_vec(), &markers)).unwrap();
-        assert_eq!(
-            out,
-            "a\n<<<<<<< gs/feature\nours\r\n=======\ntheirs\n>>>>>>> main\r\n>>>>>>> 3333\n"
-        );
-    }
-
-    #[test]
-    fn relabel_leaves_other_bytes_alone() {
-        let bytes = vec![0xff, b'\n'];
-        assert_eq!(relabel(bytes.clone(), &[("a".into(), "b".into())]), bytes);
-    }
 }

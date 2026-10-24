@@ -546,8 +546,10 @@ impl Core {
             old_path: args.old_path,
         };
         if let Some(id) = args.commit {
-            let branch = self.target_branch(&root)?;
-            let context = self.commit_context(&root, branch.as_deref());
+            let context = CommitDiff {
+                root: &root,
+                cache: &self.history,
+            };
             return context.diff(&repo.to_thread_local(), &id, &target, self.diff_options()?);
         }
         let repo = repo.to_thread_local();
@@ -583,29 +585,13 @@ impl Core {
 
     fn branch_log(&self, path: &str) -> Result<Arc<BranchLog>> {
         let (repo, root, _) = self.open_root(path)?;
-        let branch = self.target_branch(&root)?;
-        self.history.branch_log(
-            &repo.to_thread_local(),
-            &root,
-            branch.as_deref(),
-            self.events.as_ref(),
-        )
+        self.history
+            .branch_log(&repo.to_thread_local(), &root, self.events.as_ref())
     }
 
     fn commit_details(&self, args: CommitIdArgs) -> Result<CommitDetails> {
-        let (repo, root, _) = self.open_root(&args.path)?;
-        let branch = self.target_branch(&root)?;
-        let context = self.commit_context(&root, branch.as_deref());
-        history::commit_details(&repo.to_thread_local(), &context, &args.id)
-    }
-
-    fn commit_context<'a>(&'a self, root: &'a Path, branch: Option<&'a str>) -> CommitDiff<'a> {
-        CommitDiff {
-            env: &self.env,
-            root,
-            cache: &self.history,
-            target_branch: branch,
-        }
+        let (repo, _, _) = self.open_root(&args.path)?;
+        history::commit_details(&repo.to_thread_local(), &args.id)
     }
 
     fn target_branch(&self, root: &Path) -> Result<Option<String>> {

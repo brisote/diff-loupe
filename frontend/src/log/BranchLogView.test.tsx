@@ -16,14 +16,13 @@ afterAll(() => {
   vi.useRealTimers();
 });
 
-const entry = (id: string, subject: string, merged = false): LogEntry => ({
+const entry = (id: string, subject: string): LogEntry => ({
   id: id.repeat(40).slice(0, 40),
   short: id.repeat(8).slice(0, 8),
   subject,
   author: "Ada Lovelace",
   time: now - 7200,
   files: 2,
-  merged,
 });
 
 const details = (log: LogEntry): CommitDetails => ({
@@ -35,17 +34,16 @@ const details = (log: LogEntry): CommitDetails => ({
   email: "ada@example.com",
   time: log.time,
   parents: [],
-  merged: log.merged,
   files: [],
 });
 
 const skip = entry("a", "Skip empty invoices before export");
-const merge = entry("b", "Merge branch 'main' into gs/invoice-export", true);
+const merge = entry("b", "Merge branch 'main' into gs/invoice-export");
 
 function core(entries: () => LogEntry[]) {
   return fakeCore({
     current_repo: () => ({ ...repoInfo("acme-billing", "gs/invoice-export"), lastTab: "log" }),
-    branch_log: () => ({ target: "main", entries: entries(), truncated: false }),
+    branch_log: () => ({ entries: entries(), truncated: false }),
     commit_details: (args) => {
       const id = (args as { id: string }).id;
       const found = entries().find((e) => e.id === id);
@@ -56,13 +54,13 @@ function core(entries: () => LogEntry[]) {
 }
 
 describe("matches", () => {
-  it("finds commits by subject, hash or author, and merge rows by their label", () => {
-    expect(matches(skip, "EMPTY", "main")).toBe(true);
-    expect(matches(skip, "aaaa", "main")).toBe(true);
-    expect(matches(skip, "lovelace", "main")).toBe(true);
-    expect(matches(skip, "grace", "main")).toBe(false);
-    expect(matches(merge, "merged main", "main")).toBe(true);
-    expect(matches(merge, "", "main")).toBe(true);
+  it("finds commits by subject, hash or author", () => {
+    expect(matches(skip, "EMPTY")).toBe(true);
+    expect(matches(skip, "aaaa")).toBe(true);
+    expect(matches(skip, "lovelace")).toBe(true);
+    expect(matches(skip, "grace")).toBe(false);
+    expect(matches(merge, "merge branch")).toBe(true);
+    expect(matches(merge, "")).toBe(true);
   });
 
   it("counts commits", () => {
@@ -81,25 +79,36 @@ describe("BranchLogView", () => {
     expect(screen.getByText("Loading the branch history")).toBeInTheDocument();
   });
 
-  it("counts only commit rows and labels the merge row with the target", async () => {
+  it("lists every commit, merges included, as a plain row", async () => {
     await renderWithStore(
       <BranchLogView />,
       core(() => [skip, merge]),
     );
-    expect(await screen.findByText("1 commit")).toBeInTheDocument();
-    expect(screen.getByRole("option", { name: "Merged main" })).toBeInTheDocument();
+    expect(await screen.findByText("2 commits")).toBeInTheDocument();
+    expect(
+      screen.getByRole("option", { name: "Merge branch 'main' into gs/invoice-export" }),
+    ).toBeInTheDocument();
     expect(screen.getAllByText("2 hours ago")).toHaveLength(2);
+    expect(screen.getAllByText("Ada Lovelace")).toHaveLength(2);
   });
 
-  it("lists the branch's own history when there is no target", async () => {
+  it("says when the branch has no commits", async () => {
+    const transport = fakeCore({
+      current_repo: () => ({ ...repoInfo("acme-billing", "main"), lastTab: "log" }),
+      branch_log: () => ({ entries: [], truncated: false }),
+    });
+    await renderWithStore(<BranchLogView />, transport);
+    expect(await screen.findByText("No commits yet")).toBeInTheDocument();
+    expect(screen.getByText("The branch has no commits.")).toBeInTheDocument();
+  });
+
+  it("says when it shows only the latest commits", async () => {
     const transport = fakeCore({
       current_repo: () => ({ ...repoInfo("acme-billing", "main"), target: null, lastTab: "log" }),
-      branch_log: () => ({ target: null, entries: [skip, merge], truncated: true }),
+      branch_log: () => ({ entries: [skip, merge], truncated: true }),
     });
     await renderWithStore(<BranchLogView />, transport);
     expect(await screen.findByText("Latest 2 commits")).toBeInTheDocument();
-    expect(screen.getByRole("option", { name: /Skip empty invoices/ })).toBeInTheDocument();
-    expect(screen.queryByText("No target branch")).not.toBeInTheDocument();
   });
 
   it("drops the selection when the commit leaves the history", async () => {
@@ -108,7 +117,7 @@ describe("BranchLogView", () => {
       <BranchLogView />,
       core(() => entries),
     );
-    await screen.findByText("1 commit");
+    await screen.findByText("2 commits");
     act(() => store.getState().selectCommit(skip.id));
     await screen.findByText("This commit changes no files");
     entries = [merge];
@@ -124,7 +133,7 @@ describe("BranchLogView", () => {
     const pending: (() => void)[] = [];
     const transport = fakeCore({
       current_repo: () => ({ ...repoInfo("acme-billing"), lastTab: "log" }),
-      branch_log: () => ({ target: "main", entries: [skip, other], truncated: false }),
+      branch_log: () => ({ entries: [skip, other], truncated: false }),
       commit_details: (args) => {
         const id = (args as { id: string }).id;
         const found = { ...details(id === skip.id ? skip : other), files: [file] };

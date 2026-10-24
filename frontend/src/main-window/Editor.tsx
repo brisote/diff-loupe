@@ -72,12 +72,7 @@ function useLogSource(): Source {
     !logCommit || !commit
       ? { title: "Pick a commit", text: "Its files and diffs show here." }
       : commit.files.length === 0
-        ? commit.merged
-          ? {
-              title: "Clean merge: no manual changes",
-              text: "git merged both branches on its own.",
-            }
-          : { title: "No changed files", text: "This commit changes no files." }
+        ? { title: "No changed files", text: "This commit changes no files." }
         : selection === null
           ? { title: "Select a file to see its changes", text: "Pick a file in the commit." }
           : null;
