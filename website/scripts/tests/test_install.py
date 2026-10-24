@@ -4,6 +4,7 @@ import shutil
 import stat
 import subprocess
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -47,6 +48,7 @@ esac
 exec /bin/mv "$@"
 """,
     "xattr": 'log xattr "$@"',
+    "mdimport": 'log mdimport "$@"; [ -z "${FAKE_MDIMPORT_HANG:-}" ] || sleep 8; [ -d "$1" ] && [ -z "${FAKE_MDIMPORT_FAIL:-}" ]',
 }
 
 
@@ -137,6 +139,21 @@ class InstallTest(unittest.TestCase):
         self.assertIn("-readonly", self.calls())
         self.assertIn("hdiutil detach", self.calls())
         self.assertEqual(list(self.temp.iterdir()), [])
+        self.assertIn("Diffloupe 0.2.0 is installed", result.stdout)
+        self.assertIn(f"mdimport {self.apps}/Diffloupe.app", self.calls())
+
+    def test_a_failed_spotlight_import_still_installs_the_app(self):
+        result = self.run_script(FAKE_MDIMPORT_FAIL="1")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stderr, "")
+        self.assertIn("mdimport", self.calls())
+        self.assertEqual((self.apps / "Diffloupe.app/Contents/version").read_text(), "0.2.0\n")
+
+    def test_a_stuck_spotlight_import_does_not_hold_the_install(self):
+        started = time.monotonic()
+        result = self.run_script(FAKE_MDIMPORT_HANG="1")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertLess(time.monotonic() - started, 20)
         self.assertIn("Diffloupe 0.2.0 is installed", result.stdout)
 
     def test_the_script_runs_in_a_plain_and_a_utf8_locale(self):
