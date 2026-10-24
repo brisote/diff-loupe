@@ -92,7 +92,8 @@ def newer_data(home: Path) -> list[bool]:
         db.execute("PRAGMA user_version = 99")
     log = home / "stderr.log"
     with log.open("w") as err:
-        process = subprocess.Popen([str(APP)], env={**os.environ, "HOME": str(home)}, stdout=subprocess.DEVNULL, stderr=err)
+        env = {**os.environ, "HOME": str(home), "DIFFLOUPE_SMOKE_REPORT": str(home / "report.json")}
+        process = subprocess.Popen([str(APP)], env=env, stdout=subprocess.DEVNULL, stderr=err)
         time.sleep(6)
         waiting = process.poll() is None
         process.kill()
@@ -175,8 +176,7 @@ def main() -> int:
         subprocess.run(["cargo", "build", "-q", "-p", "diffloupe-devbridge"], cwd=BACKEND, check=True)
 
     running = subprocess.run(["pgrep", "-f", "Diffloupe.app/Contents/MacOS/diffloupe"], capture_output=True, text=True)
-    if running.stdout.strip():
-        raise SystemExit("Quit the running Diffloupe first: it shares the single-instance socket with this test.")
+    installed_open = bool(running.stdout.strip())
 
     results: list[bool] = []
     with tempfile.TemporaryDirectory(prefix="diffloupe-smoke-") as tmp:
@@ -212,7 +212,10 @@ def main() -> int:
         seed_data(data, repo)
         finder = finder_report(Path(tmp) / "finder.json", f"DIFFLOUPE_SMOKE_DATA_DIR={data}")
         results.append(check("started like Finder, git runs", "Billing.kt" in finder["text"], finder["text"][:300]))
-        results.append(single_instance(home))
+        if installed_open:
+            print("skip  a second start hands over and exits: quit the running Diffloupe to run this check")
+        else:
+            results.append(single_instance(home))
         results += newer_data(Path(tmp) / "newer-home")
         results += uninstall(home)
     return 0 if all(results) else 1
