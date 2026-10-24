@@ -1,0 +1,23 @@
+{
+  "name": "diffloupe",
+  "private": true,
+  "version": "0.2.0",
+  "type": "module",
+  "packageManager": "pnpm@11.21.0",
+  "scripts": {
+    "dev": "tauri dev",
+    "dev:bridge": "python3 backend/scripts/dev_bridge.py",
+    "vite": "pnpm --dir frontend vite",
+    "build": "pnpm --dir frontend build",
+    "tauri": "tauri",
+    "test": "cargo test --manifest-path backend/Cargo.toml --workspace && pnpm --dir frontend test",
+    "e2e": "cargo build --manifest-path backend/Cargo.toml -p diffloupe-devbridge && pnpm --dir frontend e2e",
+    "lint": "cargo fmt --manifest-path backend/Cargo.toml --all --check && cargo clippy --manifest-path backend/Cargo.toml --workspace --all-targets -- -D warnings && biome check . && pnpm --dir frontend typecheck",
+    "format": "cargo fmt --manifest-path backend/Cargo.toml --all && biome check --write .",
+    "types": "python3 backend/scripts/types.py"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.5.15",
+    "@tauri-apps/cli": "2.12.3"
+  }
+}

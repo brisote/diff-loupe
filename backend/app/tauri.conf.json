@@ -1,0 +1,62 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Diffloupe",
+  "version": "0.2.0",
+  "identifier": "com.diffloupe.app",
+  "build": {
+    "beforeDevCommand": "pnpm -w run vite",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "pnpm -w run build",
+    "frontendDist": "../../frontend/dist"
+  },
+  "app": {
+    "withGlobalTauri": false,
+    "windows": [
+      {
+        "label": "main",
+        "title": "Diffloupe",
+        "width": 1440,
+        "height": 900,
+        "minWidth": 960,
+        "minHeight": 600,
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true,
+        "trafficLightPosition": {
+          "x": 14,
+          "y": 20
+        },
+        "incognito": true,
+        "dragDropEnabled": true
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src ipc: http://ipc.localhost",
+      "devCsp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self' ipc: http://ipc.localhost ws://localhost:1420",
+      "freezePrototype": true,
+      "dangerousDisableAssetCspModification": ["style-src"]
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["app", "dmg"],
+    "category": "DeveloperTool",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.png"
+    ],
+    "macOS": {
+      "minimumSystemVersion": "13.0",
+      "signingIdentity": "-"
+    },
+    "resources": {
+      "../../LICENSE": "licenses/LICENSE",
+      "../../NOTICE": "licenses/NOTICE",
+      "../../frontend/src/assets/icons/LICENSE": "licenses/Apache-2.0.txt",
+      "../../frontend/src/styles/fonts/Inter-OFL.txt": "licenses/Inter-OFL.txt",
+      "../../frontend/src/styles/fonts/JetBrainsMono-OFL.txt": "licenses/JetBrainsMono-OFL.txt"
+    }
+  }
+}

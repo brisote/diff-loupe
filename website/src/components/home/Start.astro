@@ -1,0 +1,43 @@
+---
+import Icon from "../Icon.astro";
+
+const steps = ["Paste the command", "Open Diffloupe", "Pick a repository"];
+const questions = [
+  [
+    "What is Diffloupe?",
+    "Diffloupe is a Mac app for reviewing git changes. It shows what your branch changes compared with the branch it will merge into, with side-by-side diffs, the branch log, rendered Markdown and a 3-pane merge window.",
+  ],
+  ["What do I need?", "A Mac with Apple silicon and macOS 13 or later."],
+  [
+    "Why install with a Terminal command?",
+    "Diffloupe is not notarised by Apple yet, so macOS stops a copy downloaded in a browser at its first start. The command installs it without that dialog, and it checks the download first.",
+  ],
+  [
+    "Where does my code go?",
+    "Nowhere. Your repositories and settings stay on your Mac. Diffloupe is open source, so you can check every line of what it does.",
+  ],
+  [
+    "How do I update?",
+    "Diffloupe tells you when a new version is out and installs it with one click, keeping your settings. Running the install command again works too.",
+  ],
+  [
+    "How do I remove it?",
+    "Choose Uninstall Diffloupe… in the settings menu. It removes the app and the data it stored.",
+  ],
+];
+---
+<section class="start" id="faq" aria-label="Quick start and questions">
+  <div class="quick">
+    <p class="eyebrow">Quick start</p>
+    <h2>Ready in under a minute</h2>
+    <ol class="steps">
+      {steps.map((step, index) => <li><span class="step-num">{index + 1}</span>{step}</li>)}
+    </ol>
+    <span class="sticker">No account needed.</span>
+  </div>
+  <div class="faq">
+    {questions.map(([question, answer], index) => (
+      <details open={index === 0}><summary>{question}<Icon name="chevron-down" /></summary><p class="faq-a">{answer}</p></details>
+    ))}
+  </div>
+</section>

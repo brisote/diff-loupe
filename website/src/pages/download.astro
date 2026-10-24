@@ -1,0 +1,115 @@
+---
+import Icon from "../components/Icon.astro";
+import StarPanel from "../components/StarPanel.astro";
+import Base from "../layouts/Base.astro";
+import { formatDate, formatSize, latestRelease } from "../lib/release";
+import "../styles/download.css";
+
+const release = await latestRelease();
+const size = formatSize(release.dmg.size);
+const curl = "curl -fsSL ";
+const pipe = "https://diffloupe.com/install.sh | bash";
+const command = curl + pipe;
+const xattr = "xattr -dr com.apple.quarantine /Applications/Diffloupe.app";
+const benefits = [
+  {
+    icon: "shield-outline",
+    title: "Stays on your Mac",
+    text: "No account and no trackers. The code is open source, and everything stays on your Mac.",
+  },
+  {
+    icon: "check",
+    title: "A checked download",
+    text: "The command compares the download's SHA-256 checksum before it installs anything.",
+  },
+  {
+    icon: "refresh",
+    title: "Updates itself",
+    text: "Diffloupe offers each new version and installs it with one click. Your settings stay.",
+  },
+] as const;
+---
+<Base title="Download · Diffloupe" description="Install Diffloupe with one Terminal command, or download the disk image. For Macs with Apple silicon and macOS 13 or later." current="download">
+  <div class="wrap">
+    <section class="dl-hero" aria-labelledby="download-title">
+      <span class="dl-glow" aria-hidden="true"></span>
+      <div>
+        <p class="eyebrow">Get Diffloupe for Mac</p>
+        <h1 class="h1-page" id="download-title">One command.<br />Every change.</h1>
+        <p class="sub">Paste the command into Terminal. It downloads the latest release, checks it, and puts Diffloupe in your Applications folder.</p>
+        <ul class="chips" aria-label="Requirements">
+          <li class="chip"><Icon name="laptop" />macOS 13 or later</li>
+          <li class="chip"><Icon name="chip" />Apple silicon</li>
+          <li class="chip"><Icon name="no-account" />No account</li>
+        </ul>
+        <dl class="stats">
+          <div class="stat">
+            <dt class="eyebrow-mono">Version</dt>
+            <dd><p class="stat-value">{release.version}</p><p class="stat-sub">{formatDate(release.date)}</p></dd>
+          </div>
+          <div class="stat">
+            <dt class="eyebrow-mono">Download</dt>
+            <dd><p class="stat-value">{size}</p><p class="stat-sub">Disk image, checked by SHA-256</p></dd>
+          </div>
+        </dl>
+      </div>
+      <div class="install">
+        <div class="install-card">
+          <div class="install-in">
+            <div class="install-top">
+              <div>
+                <p class="eyebrow-mono">One-line install</p>
+                <h2 class="install-title">Paste this in Terminal.</h2>
+              </div>
+              <span class="install-icon" aria-hidden="true"><Icon name="terminal" /></span>
+            </div>
+            <div class="cmd cmd-dark">
+              <code><span class="prompt">$ </span>{curl}<span class="cmd-url">{pipe}</span></code>
+              <button class="icon-btn" type="button" aria-label="Copy the install command" data-copy={command}><Icon name="copy" size="sm" /></button>
+            </div>
+            <p class="install-note">The script checks the download's SHA-256 checksum, installs into Applications and keeps your settings. Read it first at <a href="/install.sh">diffloupe.com/install.sh</a>.</p>
+            <button class="btn btn-light" type="button" data-copy={command}><Icon name="copy" size="sm" /><span data-label aria-live="polite">Copy command</span></button>
+            <p class="or">OR</p>
+            <a class="install-alt" href="#manual">Download the disk image instead</a>
+          </div>
+        </div>
+        <p class="install-caption">For Macs with Apple silicon and macOS 13 or later.</p>
+        <StarPanel />
+      </div>
+    </section>
+  </div>
+
+  <section class="manual" id="manual" aria-labelledby="manual-title">
+    <div class="wrap wrap-rows manual-in">
+      <div>
+        <p class="eyebrow">Manual install</p>
+        <h2 class="h2-steps" id="manual-title">Prefer the disk image?</h2>
+        <p class="small">Download the .dmg and install it by hand. Diffloupe is free, and Apple's developer account costs about €100 a year, so the app is not notarised yet. macOS asks you once before the first start.</p>
+        <a class="btn btn-outline btn-lg" href={release.dmg.url} data-download><Icon name="download" size="sm" />Download {release.dmg.name}</a>
+        <p class="manual-meta">{size} · Apple silicon · macOS 13 or later</p>
+        <StarPanel />
+      </div>
+      <ol class="dl-steps">
+        <li class="dl-step"><span class="dl-step-num">01</span><div><h3>Open the disk image</h3><p>Double-click {release.dmg.name} in your Downloads folder.</p></div></li>
+        <li class="dl-step"><span class="dl-step-num">02</span><div><h3>Drag Diffloupe to Applications</h3><p>Move the icon into Applications, then eject the disk image.</p></div></li>
+        <li class="dl-step"><span class="dl-step-num">03</span><div><h3>Allow the first start</h3><p>macOS says it cannot check the app. Allow it in one of two ways:</p>
+          <div class="cmd cmd-light"><code>System Settings → Privacy &amp; Security → Open Anyway</code><span class="icon-btn" aria-hidden="true"><Icon name="settings" size="sm" /></span></div>
+          <p class="or or-light">OR</p>
+          <div class="cmd cmd-light"><code>{xattr}</code><button class="icon-btn" type="button" aria-label="Copy the xattr command" data-copy={xattr}><Icon name="copy" size="sm" /></button></div>
+        </div></li>
+      </ol>
+    </div>
+  </section>
+
+  <div class="wrap">
+    <section class="benefits" aria-label="Why install this way">
+      {benefits.map((benefit) => <div class="benefit"><Icon name={benefit.icon} /><h3>{benefit.title}</h3><p>{benefit.text}</p></div>)}
+    </section>
+  </div>
+  <script>
+    import { copyButtons } from "../scripts/copy";
+    import { starPanels } from "../scripts/star";
+    copyButtons();
+    starPanels();
+  </script>
+</Base>

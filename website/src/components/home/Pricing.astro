@@ -1,0 +1,43 @@
+---
+import Icon from "../Icon.astro";
+
+const questions = [
+  ["Does Diffloupe cost anything?", "No. Every feature in this release is free to use."],
+  ["Do I need an account?", "No. Diffloupe has no accounts. Install it and open a repository."],
+  ["Will there be a paid plan?", "Perhaps later, for new features. This page will show it first."],
+];
+const ticks = [
+  "Side-by-side and unified diffs",
+  "Branch log and rendered Markdown",
+  "The 3-pane merge window",
+  "Commit, push and a terminal",
+  "No account, open source",
+];
+---
+<section class="pricing" id="pricing" aria-labelledby="pricing-title">
+  <div>
+    <span class="chip chip-section"><Icon name="tag" />Pricing</span>
+    <h2 class="h2" id="pricing-title">Free to use today.</h2>
+    <p class="sub">Download Diffloupe and use every feature at no cost. There is no account to create and no trial that runs out.</p>
+    <div class="faq-mini">
+      {questions.map(([question, answer]) => (
+        <details><summary><span class="plus"><Icon name="plus" /></span>{question}</summary><p class="faq-a">{answer}</p></details>
+      ))}
+    </div>
+  </div>
+  <div class="plans">
+    <span class="plans-tag">One plan, no account</span>
+    <div class="plan">
+      <div>
+        <h3 class="plan-name">Free plan</h3>
+        <p class="plan-desc">Everything Diffloupe does today, on every Mac you use.</p>
+        <p class="plan-price"><b>$0</b><span>today</span></p>
+        <a class="btn btn-primary" href="/download/"><Icon name="download" size="sm" />Download free</a>
+      </div>
+      <ul class="ticks">
+        {ticks.map((tick) => <li><span class="tick"><Icon name="check" /></span>{tick}</li>)}
+      </ul>
+    </div>
+    <p class="plans-note">Paid features may be added later.</p>
+  </div>
+</section>

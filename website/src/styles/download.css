@@ -1,0 +1,19 @@
+.stat dd {
+  margin: 0;
+}
+.cmd-url {
+  white-space: nowrap;
+}
+.or-light + .cmd {
+  margin-top: 0;
+}
+@media (prefers-color-scheme: dark) {
+  .site .install-in > .or {
+    color: oklch(1 0 0 / 0.6);
+  }
+}
+@media (scripting: enabled) {
+  .star-panel:not([data-shown]) {
+    display: none;
+  }
+}

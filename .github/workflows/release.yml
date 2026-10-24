@@ -1,0 +1,104 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    name: Check the release
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Rust toolchain
+        run: rustup show active-toolchain || rustup toolchain install
+
+      - name: Tag, versions, changelog and store fixtures
+        env:
+          TAG: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
+        run: python3 backend/scripts/release_check.py --only checks ${TAG:+--tag "$TAG"} --notes release-notes.md
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-notes
+          path: release-notes.md
+          retention-days: 7
+
+  dmg:
+    name: Build the .dmg
+    needs: checks
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Rust toolchain
+        run: rustup show active-toolchain || rustup toolchain install
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install packages
+        run: pnpm install --frozen-lockfile
+
+      - name: Build and check the app and the .dmg
+        run: python3 backend/scripts/release_check.py --only build
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: diffloupe-dmg
+          path: backend/target/release/bundle/dmg/*.dmg
+          retention-days: 7
+
+  publish:
+    name: Publish the release
+    if: github.ref_type == 'tag'
+    needs: dmg
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+
+      - name: Name the disk image and write its checksum
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          name="Diffloupe-${TAG#v}.dmg"
+          mv Diffloupe_*.dmg "$name"
+          sha256sum "$name" > "$name.sha256"
+          cat "$name.sha256"
+          echo "DMG=$name" >> "$GITHUB_ENV"
+
+      - name: Create or update the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            gh release upload "$TAG" "$DMG" "$DMG.sha256" --repo "$GITHUB_REPOSITORY" --clobber
+          else
+            gh release create "$TAG" "$DMG" "$DMG.sha256" --repo "$GITHUB_REPOSITORY" \
+              --title "Diffloupe ${TAG#v}" --notes-file release-notes.md
+          fi

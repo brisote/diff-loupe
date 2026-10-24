@@ -1,0 +1,36 @@
+{
+  "releases": [
+    {
+      "tag_name": "v0.2.0",
+      "published_at": "2026-11-03T09:30:00Z",
+      "draft": false,
+      "prerelease": false,
+      "assets": [
+        {
+          "name": "Diffloupe-0.2.0.dmg",
+          "size": 11812345,
+          "browser_download_url": "https://github.com/brisote/diff-loupe/releases/download/v0.2.0/Diffloupe-0.2.0.dmg"
+        },
+        {
+          "name": "Diffloupe-0.2.0.dmg.sha256",
+          "size": 86,
+          "browser_download_url": "https://github.com/brisote/diff-loupe/releases/download/v0.2.0/Diffloupe-0.2.0.dmg.sha256"
+        }
+      ]
+    },
+    {
+      "tag_name": "v0.1.0",
+      "published_at": "2026-10-12T14:00:00Z",
+      "draft": false,
+      "prerelease": false,
+      "assets": [
+        {
+          "name": "Diffloupe_0.1.0_aarch64.dmg",
+          "size": 11523456,
+          "browser_download_url": "https://github.com/brisote/diff-loupe/releases/download/v0.1.0/Diffloupe_0.1.0_aarch64.dmg"
+        }
+      ]
+    }
+  ],
+  "checksum": "3f1c9a7e5b2d4f6081a9c3e5d7f9b1a3c5e7092b4d6f8a1c3e5b7d9f0a2c4e6b  Diffloupe-0.2.0.dmg\n"
+}

@@ -1,0 +1,30 @@
+---
+import { repository } from "../lib/links";
+import Icon from "./Icon.astro";
+
+interface Props {
+  current?: "home" | "download" | "changelog" | "privacy";
+}
+
+const { current } = Astro.props;
+const links = [
+  { href: "/", label: "Home", page: "home" },
+  { href: "/#pricing", label: "Pricing" },
+  { href: "/changelog/", label: "Changelog", page: "changelog" },
+  { href: "/privacy/", label: "Privacy", page: "privacy" },
+];
+---
+<header class="header">
+  <div class="wrap header-in">
+    <a class="brand" href="/"><img src="/icon.png" alt="" width="36" height="36" /><span>Diffloupe</span></a>
+    <nav class="nav" aria-label="Main">
+      {links.map((link) => (
+        <a href={link.href} aria-current={current !== undefined && link.page === current ? "page" : undefined}>{link.label}</a>
+      ))}
+    </nav>
+    <div class="header-actions">
+      <a class="btn btn-outline btn-gh" href={repository} aria-label="Diffloupe on GitHub"><Icon name="github" size="sm" /><span class="btn-label">GitHub</span></a>
+      <a class="btn btn-primary" href="/download/" aria-current={current === "download" ? "page" : undefined}><Icon name="download" size="sm" />Download</a>
+    </div>
+  </div>
+</header>

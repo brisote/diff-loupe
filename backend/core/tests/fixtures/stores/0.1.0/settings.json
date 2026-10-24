@@ -1,0 +1,14 @@
+{
+  "agent": {
+    "claudePath": "/opt/tools/claude"
+  },
+  "diff": {
+    "collapseUnchanged": false,
+    "highlight": "words",
+    "markdown": "renderedSideBySide",
+    "syncScroll": true,
+    "viewer": "unified",
+    "whitespace": "trim"
+  },
+  "version": 0
+}

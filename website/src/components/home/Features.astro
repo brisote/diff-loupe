@@ -1,0 +1,113 @@
+---
+import Icon from "../Icon.astro";
+import Shot from "../Shot.astro";
+
+const rows = [
+  {
+    title: "Review markdown in rendered preview",
+    scene: "markdown",
+    alt: "An API document rendered side by side, with changed table cells, a removed section and a new section marked",
+    points: [
+      ["book", "Rendered side by side or inline"],
+      ["eye", "Changed words marked in the text"],
+      ["table", "Tables, lists and code blocks too"],
+      ["code", "The raw text one click away"],
+    ],
+  },
+  {
+    title: "Finish a merge in three panes",
+    scene: "merge",
+    alt: "The 3-pane merge window with yours, the result and theirs",
+    points: [
+      ["columns", "Yours, the result and theirs side by side"],
+      ["check", "Take one change or a whole side"],
+      ["file", "Every conflicted file in one list"],
+      ["commit", "Commit the merge when it is done"],
+    ],
+  },
+  {
+    title: "See what your branch changed",
+    scene: "changes",
+    alt: "The Changes list next to the side-by-side diff of a Kotlin file",
+    points: [
+      ["branch", "Compares against the branch of your choice"],
+      ["refresh", "Refreshes live while you edit"],
+      ["folder", "Staged, changed and unversioned files apart"],
+      ["split", "A side-by-side diff with linked changes"],
+    ],
+  },
+  {
+    title: "Read it in one column or split view",
+    scene: "unified",
+    alt: "The same change in the unified view",
+    points: [
+      ["rows", "One click between side-by-side and unified"],
+      ["eye", "Word highlights inside changed lines"],
+      ["fold", "Unchanged lines fold away"],
+      ["arrow-down", "Jump to the next change or file"],
+    ],
+  },
+  {
+    title: "Compare with any branch",
+    scene: "target-picker",
+    alt: "The Target picker with local and remote branches",
+    points: [
+      ["branch", "Local and remote branches in one picker"],
+      ["refresh", "The list follows the new target at once"],
+      ["folder", "The target always shown above the list"],
+    ],
+  },
+  {
+    title: "Read the branch's own history",
+    scene: "branch-log",
+    alt: "The branch log with one commit's diff",
+    points: [
+      ["commit", "Only the commits your branch adds"],
+      ["merge", "Merges from the target as divider rows"],
+      ["file", "Each commit's message and files"],
+      ["split", "The diff of a commit, file by file"],
+    ],
+  },
+  {
+    title: "Commit and push in one step",
+    scene: "commit",
+    alt: "The commit dialog with files picked and a message",
+    points: [
+      ["check", "Choose the files one by one"],
+      ["commit", "Commit, or commit and push"],
+      ["branch", "Switch branches from the toolbar"],
+      ["alert", "A clear message when a push is rejected"],
+    ],
+  },
+  {
+    title: "A terminal when you need one",
+    scene: "terminal",
+    alt: "The terminal docked under the diff, running git status",
+    points: [
+      ["terminal", "Docked under the diff"],
+      ["folder", "Starts in the repository folder"],
+      ["keyboard", "Opens and closes with one shortcut"],
+    ],
+  },
+] as const;
+---
+<section id="features" aria-labelledby="features-title">
+  <div class="wrap rows-intro">
+    <span class="icon-circle"><Icon name="layers" /></span>
+    <h2 class="h2" id="features-title">Built around the review</h2>
+    <p class="sub">Changes, diffs, history, documentation, merges, commits and a terminal. Eight views in one window, all reading the same repository.</p>
+  </div>
+  <div class="wrap wrap-rows">
+    {rows.map((row) => (
+      <article class="row" data-reveal>
+        <div class="row-text">
+          <h3 class="h3-row">{row.title}</h3>
+          <ul class="points">
+            {row.points.map(([icon, text]) => <li><Icon name={icon} />{text}</li>)}
+          </ul>
+        </div>
+        <figure class="stage"><div class="window"><Shot scene={row.scene} alt={row.alt} sizes="(max-width: 767px) calc(100vw - 64px), 504px" /></div></figure>
+      </article>
+    ))}
+  </div>
+</section>

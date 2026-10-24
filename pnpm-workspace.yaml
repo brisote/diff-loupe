@@ -1,0 +1,4 @@
+packages:
+  - frontend
+patchedDependencies:
+  '@codemirror/legacy-modes@6.5.5': frontend/patches/@codemirror__legacy-modes@6.5.5.patch

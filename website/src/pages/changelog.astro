@@ -1,0 +1,39 @@
+---
+import Icon from "../components/Icon.astro";
+import Base from "../layouts/Base.astro";
+import { changelogEntries } from "../lib/changelog";
+import { formatDate } from "../lib/release";
+
+const entries = await changelogEntries();
+---
+<Base title="Changelog · Diffloupe" description="Every public release of Diffloupe, newest first." current="changelog">
+  <div class="wrap wrap-wide">
+    <div class="doc-head">
+      <div>
+        <h1 class="h1-doc">Changelog</h1>
+        <p class="sub">Every public release of Diffloupe, newest first.</p>
+      </div>
+      <span class="count">{entries.length} {entries.length === 1 ? "release" : "releases"}</span>
+    </div>
+    {entries.map((entry) => {
+      const id = `release-${entry.version.replaceAll(".", "-")}`;
+      return (
+        <article class="release" aria-labelledby={id}>
+          <div>
+            <p class="release-date">{formatDate(entry.date)}</p>
+            <p class="release-tags"><span class="tag-version">v{entry.version}</span>{entry.latest && <span>Latest</span>}</p>
+            <div class="release-links">
+              {entry.latest && <a href="/download/"><Icon name="download" />Download</a>}
+              <a href={entry.dmg}><Icon name="folder" />Disk image</a>
+            </div>
+          </div>
+          <div class="release-body">
+            <h2 id={id}>Diffloupe {entry.version}</h2>
+            <Fragment set:html={entry.html} />
+          </div>
+        </article>
+      );
+    })}
+    <div class="doc-more"><a class="btn btn-outline" href="/download/"><Icon name="download" size="sm" />Download the latest release</a></div>
+  </div>
+</Base>

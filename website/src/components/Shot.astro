@@ -1,0 +1,42 @@
+---
+import { getImage } from "astro:assets";
+import { screen } from "../lib/screens";
+
+interface Props {
+  scene: string;
+  alt: string;
+  sizes: string;
+  eager?: boolean;
+  class?: string;
+}
+
+const { scene, alt, sizes, eager, class: className } = Astro.props;
+const shot = screen(scene);
+const widths = [800, 1200, 1680, 2400, 2880];
+const formats = ["avif", "webp"] as const;
+
+async function sources(image: ImageMetadata) {
+  return Promise.all(
+    formats.map(async (format) => ({
+      type: `image/${format}`,
+      srcset: (await getImage({ src: image, widths, format })).srcSet.attribute,
+    })),
+  );
+}
+
+const [light, dark, fallback] = await Promise.all([
+  sources(shot.light),
+  sources(shot.dark),
+  getImage({ src: shot.light, width: 1680, format: "webp" }),
+]);
+---
+<picture>
+  {dark.map((source) => <source media="(prefers-color-scheme: dark)" type={source.type} srcset={source.srcset} sizes={sizes} />)}
+  {light.map((source) => <source type={source.type} srcset={source.srcset} sizes={sizes} />)}
+  <img class={className} src={fallback.src} alt={alt} width={shot.width} height={shot.height} loading={eager ? "eager" : "lazy"} decoding="async" fetchpriority={eager ? "high" : undefined} />
+</picture>
+<style>
+  picture {
+    display: contents;
+  }
+</style>

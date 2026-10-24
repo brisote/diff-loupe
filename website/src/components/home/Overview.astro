@@ -1,0 +1,56 @@
+---
+import Shot from "../Shot.astro";
+
+const tiles = [
+  {
+    scene: "changes",
+    crop: "crop-list",
+    sizes: "1224px",
+    title: "Changes list",
+    alt: "The Changes list with staged, changed and unversioned files",
+    text: "Staged, changed and new files in one list that refreshes as you edit.",
+  },
+  {
+    scene: "changes",
+    crop: "crop-words",
+    sizes: "874px",
+    title: "Word highlights",
+    alt: "Changed words highlighted inside a line of Kotlin",
+    text: "Changed words stand out inside each line, and unchanged code folds away.",
+  },
+  {
+    scene: "branch-log",
+    crop: "crop-list",
+    sizes: "1224px",
+    title: "Branch log",
+    alt: "The branch log with the branch's commits and a merge row",
+    text: "Only your branch's own commits, with merges from the target shown as dividers.",
+  },
+  {
+    scene: "merge",
+    crop: "crop-window",
+    sizes: "366px",
+    title: "3-pane merge",
+    alt: "The 3-pane merge window with yours, the result and theirs",
+    text: "Yours, the result and theirs side by side when a merge has conflicts.",
+  },
+];
+---
+<section class="band" aria-labelledby="overview">
+  <div class="wrap">
+    <div class="band-head">
+      <span class="chip chip-section">Mac only · Open source</span>
+      <h2 class="h2" id="overview">Every change in one window</h2>
+      <p class="sub">Pick any two branches: the one you work on and a target to compare it with. Diffloupe shows every change between them, and keeps the view current while you work.</p>
+    </div>
+    <div class="grid4">
+      {tiles.map((tile) => (
+        <div class="grid4-cell" data-reveal>
+          <div class="tile-wrap"><div class="tile"><Shot scene={tile.scene} class={tile.crop} alt={tile.alt} sizes={tile.sizes} /></div></div>
+          <h3 class="eyebrow cap">{tile.title}</h3>
+          <p class="cap-text">{tile.text}</p>
+        </div>
+      ))}
+    </div>
+  </div>
+</section>

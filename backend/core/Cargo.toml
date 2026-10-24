@@ -1,0 +1,29 @@
+[package]
+name = "diffloupe-core"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[features]
+testutil = ["dep:tempfile"]
+
+[dependencies]
+gix.workspace = true
+imara-diff.workspace = true
+notify.workspace = true
+portable-pty.workspace = true
+rusqlite.workspace = true
+rustix.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
+ts-rs.workspace = true
+tempfile = { workspace = true, optional = true }
+
+[dev-dependencies]
+tempfile.workspace = true
+diffloupe-core = { path = ".", features = ["testutil"] }
+
+[lints]
+workspace = true

@@ -1,0 +1,45 @@
+---
+import Icon from "../Icon.astro";
+
+const cases = [
+  {
+    icon: "pull-request",
+    label: "Before a pull request",
+    title: "Catch it before review",
+    text: "Walk through every file your branch changes, and fix what you find before anyone else reads it.",
+  },
+  {
+    icon: "merge",
+    label: "After a merge",
+    title: "Finish the merge calmly",
+    text: "See each conflict in three panes, take the right lines, then commit the merge in the same window.",
+  },
+  {
+    icon: "book",
+    label: "Documentation",
+    title: "Read docs as readers will",
+    text: "Review changes to a README or a guide rendered as a page, with every changed word marked.",
+  },
+  {
+    icon: "branch",
+    label: "Open source",
+    title: "Read every line",
+    text: "The source is on GitHub, so you can see exactly what Diffloupe does with your code.",
+  },
+] as const;
+---
+<section class="cases" aria-labelledby="cases-title">
+  <div class="wrap wrap-rows center">
+    <span class="icon-circle"><Icon name="compass" /></span>
+    <h2 class="h2" id="cases-title">Made for everyday reviews</h2>
+    <div class="cases-grid">
+      {cases.map((item) => (
+        <div class="case" data-reveal>
+          <p class="case-label"><Icon name={item.icon} />{item.label}</p>
+          <h3 class="case-title">{item.title}</h3>
+          <p class="case-text">{item.text}</p>
+        </div>
+      ))}
+    </div>
+  </div>
+</section>

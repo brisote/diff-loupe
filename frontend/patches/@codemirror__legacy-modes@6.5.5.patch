@@ -1,0 +1,28 @@
+diff --git a/mode/clike.cjs b/mode/clike.cjs
+index 6454d2249dc94f2a072f8e09f0e76df8c0f49a06..a2b492873d969336dec6b60067c7b4df404397e8 100644
+--- a/mode/clike.cjs
++++ b/mode/clike.cjs
+@@ -247,7 +247,8 @@ function clike(parserConfig) {
+ }
+ function words(str) {
+   var obj = {}, words = str.split(" ");
+-  for (var i = 0; i < words.length; ++i) obj[words[i]] = true;
++  for (var i = 0; i < words.length; ++i)
++    Object.defineProperty(obj, words[i], {value: true, enumerable: true, writable: true, configurable: true});
+   return obj;
+ }
+ function contains(words, word) {
+diff --git a/mode/clike.js b/mode/clike.js
+index 9974860170130dfbccbb8ce8b3843a3da9323746..72e909de3e3dd9c32d619f43eb66a84b9e91bdaa 100644
+--- a/mode/clike.js
++++ b/mode/clike.js
+@@ -244,7 +244,8 @@ export function clike(parserConfig) {
+ 
+ function words(str) {
+   var obj = {}, words = str.split(" ");
+-  for (var i = 0; i < words.length; ++i) obj[words[i]] = true;
++  for (var i = 0; i < words.length; ++i)
++    Object.defineProperty(obj, words[i], {value: true, enumerable: true, writable: true, configurable: true});
+   return obj;
+ }
+ function contains(words, word) {

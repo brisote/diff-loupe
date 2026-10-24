@@ -1,0 +1,44 @@
+.how .h2 {
+  margin-top: 20px;
+}
+.how .center .sub {
+  max-width: 600px;
+  margin: 16px auto 0;
+}
+.cases-grid {
+  text-align: left;
+}
+.tile .crop-list {
+  width: 1224px;
+  height: auto;
+  left: -34px;
+  top: -110px;
+}
+.tile .crop-words {
+  width: 874px;
+  height: auto;
+  left: -461px;
+  top: -182px;
+}
+.tile .crop-window {
+  width: 366px;
+  height: auto;
+  left: -13px;
+  top: -26px;
+}
+.faq details[open] summary .i {
+  transform: rotate(180deg);
+}
+@media screen and (prefers-reduced-motion: no-preference) {
+  .js-reveal [data-reveal] {
+    opacity: 0;
+    transform: translateY(16px);
+    transition:
+      opacity 0.6s ease,
+      transform 0.6s ease;
+  }
+  .js-reveal [data-reveal].is-in {
+    opacity: 1;
+    transform: none;
+  }
+}

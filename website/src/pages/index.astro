@@ -1,0 +1,28 @@
+---
+import Cases from "../components/home/Cases.astro";
+import Closing from "../components/home/Closing.astro";
+import Features from "../components/home/Features.astro";
+import Hero from "../components/home/Hero.astro";
+import How from "../components/home/How.astro";
+import Overview from "../components/home/Overview.astro";
+import Pricing from "../components/home/Pricing.astro";
+import Start from "../components/home/Start.astro";
+import Base from "../layouts/Base.astro";
+import "../styles/home.css";
+---
+<Base title="Diffloupe · Review git changes on your Mac" description="Diffloupe is a Mac app for reviewing git changes: side-by-side diffs, the branch log, rendered Markdown and a 3-pane merge window. Your code stays on your Mac." current="home">
+  <Hero />
+  <How />
+  <Overview />
+  <Features />
+  <Cases />
+  <div class="wrap wrap-wide">
+    <Pricing />
+    <Start />
+    <Closing />
+  </div>
+  <script>
+    import { reveal } from "../scripts/reveal";
+    reveal();
+  </script>
+</Base>
