@@ -100,10 +100,6 @@ test("branch log screens", async ({ page, workspace, startApp }) => {
   await page.getByRole("region", { name: "Side-by-side diff" }).waitFor();
   await page.waitForTimeout(300);
   await shoot(page, "BranchLog");
-  await page.getByRole("option", { name: "Merged main" }).click();
-  await page.getByText("Merge commit").waitFor();
-  await page.waitForTimeout(300);
-  await shoot(page, "MergeDivider");
 });
 
 test("git action screens", async ({ page, workspace, startApp }) => {

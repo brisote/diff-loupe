@@ -56,7 +56,7 @@ test("the Branch picker lists branches and switching updates Changes and the Bra
   workspace.write(repo, "invoice.txt", "invoice\n");
   await (await openBranches(page)).getByRole("option", { name: "main", exact: true }).click();
   await expect(page.getByRole("button", { name: "Current branch" })).toHaveText("main");
-  await expect(page.getByRole("button", { name: "Target branch" })).toContainText("none");
+  await expect(page.getByRole("button", { name: "Target branch" })).toHaveCount(0);
   await expect(page.getByRole("option", { name: /Initial commit/ })).toBeVisible();
   await expect(page.getByRole("option", { name: /Add invoices/ })).toHaveCount(0);
   await page.getByRole("tab", { name: "Changes" }).click();
@@ -88,7 +88,7 @@ test("a refused checkout shows git's message", async ({ page, workspace, startAp
   await expect(page.getByRole("button", { name: "Current branch" })).toHaveText("main");
 });
 
-test("the Target picker changes the Branch log and leaves the files alone", async ({
+test("the Target picker leaves the Branch log and the files alone", async ({
   page,
   workspace,
   startApp,
@@ -105,18 +105,21 @@ test("the Target picker changes the Branch log and leaves the files alone", asyn
   workspace.write(repo, "f.txt", "local edit\n");
   const head = git(repo, "rev-parse", "HEAD");
   await startApp({ open: [repo] });
+  const history = [/Feature work/, /Develop work/, /Initial commit/];
   await page.getByRole("tab", { name: "Branch log" }).click();
   await expect(
     page.getByRole("listbox", { name: "Branch commits" }).getByRole("option"),
-  ).toHaveText([/Feature work/, /Develop work/]);
+  ).toHaveText(history);
+  await page.getByRole("tab", { name: "Changes" }).click();
   await page.getByRole("button", { name: "Target branch" }).click();
   const picker = page.getByRole("dialog", { name: "Target branch" });
   await expect(picker.getByRole("option")).toHaveText([/main\s*default/, "develop"]);
   await picker.getByRole("option", { name: "develop" }).click();
   await expect(page.getByRole("button", { name: "Target branch" })).toContainText("develop");
+  await page.getByRole("tab", { name: "Branch log" }).click();
   await expect(
     page.getByRole("listbox", { name: "Branch commits" }).getByRole("option"),
-  ).toHaveText([/Feature work/]);
+  ).toHaveText(history);
   expect(git(repo, "rev-parse", "HEAD")).toBe(head);
   expect(git(repo, "branch", "--show-current")).toBe("gs/feature");
   expect(readFileSync(join(repo, "f.txt"), "utf8")).toBe("local edit\n");
@@ -321,6 +324,7 @@ test("on the default branch the log shows its own history and the target cannot 
   await expect(
     page.getByRole("listbox", { name: "Branch commits" }).getByRole("option"),
   ).toHaveText([/Add a/, /Initial commit/]);
+  await page.getByRole("tab", { name: "Changes" }).click();
   await page.getByRole("button", { name: "Target branch" }).click();
   const picker = page.getByRole("dialog", { name: "Target branch" });
   await expect(picker.getByRole("option")).toHaveText(["develop"]);

@@ -681,8 +681,8 @@ export function createAppStore(backend: Backend) {
         await backend.call("set_target", { path: repo.path, target });
         const current = get().repo;
         if (current?.path !== repo.path) return;
-        set({ repo: { ...current, target }, log: null, logError: null });
-        await Promise.all([get().loadLog(), get().loadStatus()]);
+        set({ repo: { ...current, target } });
+        await get().loadStatus();
       },
 
       loadStatus: () => {
@@ -784,10 +784,9 @@ export function createAppStore(backend: Backend) {
               const log = await backend.call("branch_log", { path });
               if (get().repo?.path !== path) continue;
               set({ log, logError: null });
-              const { logCommit, commit } = get();
-              const entry = log.entries.find((e) => e.id === logCommit);
-              if (logCommit && !entry) get().selectCommit(null);
-              else if (entry && commit && entry.merged !== commit.merged) void loadCommit();
+              const { logCommit } = get();
+              if (logCommit && !log.entries.some((e) => e.id === logCommit))
+                get().selectCommit(null);
             } catch (error) {
               const failure = toApiError(error);
               if (get().repo?.path === path && failure.code !== "notOpen")

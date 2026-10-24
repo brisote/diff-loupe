@@ -159,26 +159,20 @@ describe("start", () => {
 });
 
 describe("actions", () => {
-  it("saves a new target and reloads the branch log and the changes for it", async () => {
-    let target = "main";
+  it("saves a new target and reloads only the changes for it", async () => {
     const core = fakeCore({
       current_repo: () => repoInfo("acme-billing"),
-      set_target: (args) => {
-        target = (args as { target: string }).target;
-        return null;
-      },
-      branch_log: () => ({ target, entries: [], truncated: false }),
+      set_target: () => null,
+      branch_log: () => ({ entries: [], truncated: false }),
     });
     const store = createAppStore(new Backend(core));
     await store.getState().start();
     await store.getState().setTarget("develop");
     expect(store.getState().repo?.target).toBe("develop");
-    expect(store.getState().log?.target).toBe("develop");
     const after = core.calls.map((call) => call.cmd);
     const set = after.lastIndexOf("set_target");
-    expect(after.slice(set + 1)).toEqual(
-      expect.arrayContaining(["branch_log", "status", "merge_state"]),
-    );
+    expect(after.slice(set + 1)).toEqual(expect.arrayContaining(["status", "merge_state"]));
+    expect(after.slice(set + 1)).not.toContain("branch_log");
   });
 
   it("reloads the commit diff when the whitespace setting changes", async () => {
@@ -186,7 +180,7 @@ describe("actions", () => {
     const core = fakeCore({
       current_repo: () => ({ ...repoInfo("acme-billing"), lastTab: "log" }),
       branch_log: () => ({
-        target: "main",
+        truncated: false,
         entries: [
           {
             id,
@@ -195,7 +189,6 @@ describe("actions", () => {
             author: "Ada",
             time: 0,
             files: 1,
-            merged: false,
           },
         ],
       }),
@@ -208,7 +201,6 @@ describe("actions", () => {
         email: "ada@example.com",
         time: 0,
         parents: [],
-        merged: false,
         files: [{ path: "a.txt", oldPath: null, kind: "modified" }],
       }),
       diff: () => new Promise(() => undefined),

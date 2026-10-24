@@ -4,7 +4,7 @@ Rules for every agent and person who changes Diffloupe. Follow them on every cha
 
 ## What Diffloupe is
 
-A macOS desktop app for reviewing git changes, built with Tauri 2: a Rust core and a React + TypeScript UI in the system WebView. Its look is a calm, IDE-style interface of rounded panels on a quiet background, with a branch-only commit history and rendered Markdown diffs. There is no server and no command-line interface: Diffloupe is used only through its window.
+A macOS desktop app for reviewing git changes, built with Tauri 2: a Rust core and a React + TypeScript UI in the system WebView. Its look is a calm, IDE-style interface of rounded panels on a quiet background, with the branch's commit history and rendered Markdown diffs. There is no server and no command-line interface: Diffloupe is used only through its window.
 
 ## Layout
 

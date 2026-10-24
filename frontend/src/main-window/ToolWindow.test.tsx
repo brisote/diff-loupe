@@ -1,4 +1,4 @@
-import { screen } from "@testing-library/react";
+import { act, screen } from "@testing-library/react";
 import { expect, it } from "vitest";
 import { fakeCore, renderWithStore, repoInfo } from "../test/render";
 import { ToolWindow } from "./ToolWindow";
@@ -20,4 +20,15 @@ it("marks the default branch target", async () => {
     "title",
     "main (default branch)",
   );
+});
+
+it("shows the target only on the Changes tab", async () => {
+  const saved = { ...repoInfo("acme-billing", "gs/invoice-export"), lastTab: "log" as const };
+  const { store } = await renderWithStore(
+    <ToolWindow width={400} />,
+    fakeCore({ current_repo: () => saved }),
+  );
+  expect(screen.queryByRole("button", { name: "Target branch" })).not.toBeInTheDocument();
+  await act(() => store.getState().setTab("changes"));
+  expect(screen.getByRole("button", { name: "Target branch" })).toBeInTheDocument();
 });

@@ -21,29 +21,22 @@ export function commitCount(count: number): string {
   return count === 1 ? "1 commit" : `${count} commits`;
 }
 
-export function matches(entry: LogEntry, filter: string, target: string | null): boolean {
+export function matches(entry: LogEntry, filter: string): boolean {
   const wanted = filter.trim().toLowerCase();
   if (!wanted) return true;
-  const text = entry.merged
-    ? `${mergedLabel(target)} ${entry.subject}`
-    : `${entry.short} ${entry.subject} ${entry.author}`;
+  const text = `${entry.short} ${entry.subject} ${entry.author}`;
   return text.toLowerCase().includes(wanted) || entry.id.startsWith(wanted);
-}
-
-function mergedLabel(target: string | null): string {
-  return `Merged ${target ?? "the target branch"}`;
 }
 
 export function BranchLogView() {
   const log = useApp((state) => state.log);
   const logError = useApp((state) => state.logError);
-  const target = useApp((state) => state.log?.target ?? state.repo?.target ?? null);
   const loadLog = useApp((state) => state.loadLog);
   const [filter, setFilter] = useState("");
   const files = useRef<HTMLDivElement>(null);
   const entries = useMemo(
-    () => (log ? log.entries.filter((entry) => matches(entry, filter, target)) : []),
-    [log, filter, target],
+    () => (log ? log.entries.filter((entry) => matches(entry, filter)) : []),
+    [log, filter],
   );
 
   return (
@@ -85,12 +78,8 @@ export function BranchLogView() {
         </div>
       ) : log.entries.length === 0 ? (
         <div className="dl-empty app-fill">
-          <span className="dl-empty-title">No commits on this branch yet</span>
-          <span>
-            {log.target
-              ? `Every commit on this branch is also on ${log.target}.`
-              : "The branch has no commits."}
-          </span>
+          <span className="dl-empty-title">No commits yet</span>
+          <span>The branch has no commits.</span>
         </div>
       ) : (
         <>
@@ -99,12 +88,12 @@ export function BranchLogView() {
             <span className="dl-row-count">
               {log.truncated
                 ? `Latest ${commitCount(log.entries.length)}`
-                : commitCount(log.entries.filter((entry) => !entry.merged).length)}
+                : commitCount(log.entries.length)}
             </span>
           </div>
-          <CommitList entries={entries} target={target} files={files} />
+          <CommitList entries={entries} files={files} />
           <div className="app-log-split" />
-          <CommitPane files={files} target={target} />
+          <CommitPane files={files} />
         </>
       )}
     </>
@@ -113,11 +102,10 @@ export function BranchLogView() {
 
 type ListProps = {
   entries: LogEntry[];
-  target: string | null;
   files: RefObject<HTMLDivElement | null>;
 };
 
-function CommitList({ entries, target, files }: ListProps) {
+function CommitList({ entries, files }: ListProps) {
   const selected = useApp((state) => state.logCommit);
   const selectCommit = useApp((state) => state.selectCommit);
   const scroller = useRef<HTMLDivElement>(null);
@@ -176,26 +164,24 @@ function CommitList({ entries, target, files }: ListProps) {
           const entry = entries[item.index];
           if (!entry) return null;
           const isSelected = entry.id === selected;
-          const label = entry.merged ? mergedLabel(target) : entry.subject;
           return (
             <div
               key={entry.id}
               id={`commit-row-${item.index}`}
-              className={`dl-row dl-commit app-virtual-row ${entry.merged ? "is-merge" : ""} ${isSelected ? "is-selected" : ""}`}
+              className={`dl-row dl-commit app-virtual-row ${isSelected ? "is-selected" : ""}`}
               role="option"
               aria-selected={isSelected}
-              aria-label={label}
-              title={entry.merged ? entry.subject : undefined}
+              aria-label={entry.subject}
               style={{ transform: `translateY(${item.start}px)` }}
               tabIndex={-1}
               onMouseDown={keepFocus}
               onClick={() => selectCommit(entry.id)}
               onKeyDown={(event) => onActivateKey(event, () => selectCommit(entry.id))}
             >
-              {!entry.merged && <span className="dl-commit-hash">{entry.short}</span>}
-              <span className="dl-commit-subject">{label}</span>
-              {!entry.merged && <span className="dl-commit-meta">{fileCount(entry.files)}</span>}
-              {!entry.merged && <span className="dl-commit-meta">{entry.author}</span>}
+              <span className="dl-commit-hash">{entry.short}</span>
+              <span className="dl-commit-subject">{entry.subject}</span>
+              <span className="dl-commit-meta">{fileCount(entry.files)}</span>
+              <span className="dl-commit-meta">{entry.author}</span>
               <span className="dl-commit-meta">{relativeDate(entry.time)}</span>
             </div>
           );
@@ -205,13 +191,7 @@ function CommitList({ entries, target, files }: ListProps) {
   );
 }
 
-function CommitPane({
-  files,
-  target,
-}: {
-  files: RefObject<HTMLDivElement | null>;
-  target: string | null;
-}) {
+function CommitPane({ files }: { files: RefObject<HTMLDivElement | null> }) {
   const commit = useApp((state) => state.commit);
   const commitError = useApp((state) => state.commitError);
   const selected = useApp((state) => state.logCommit);
@@ -234,12 +214,12 @@ function CommitPane({
   if (!commit) return <div className="app-log-details" />;
   return (
     <section className="app-log-details" aria-label="Commit details">
-      <div className={`app-log-message ${commit.merged ? "is-merge" : ""}`}>
+      <div className="app-log-message">
         <div className="ui-heading">{commit.subject}</div>
         <div className="app-log-meta">
           <span className="app-mono">{commit.short}</span> · {commit.author} ·{" "}
           {fullDate(commit.time)}
-          {commit.merged && (
+          {commit.parents.length > 1 && (
             <>
               {" "}
               · parents{" "}
@@ -253,15 +233,6 @@ function CommitPane({
           )}
         </div>
         {commit.body && <div className="app-log-body">{commit.body}</div>}
-        {commit.merged && (
-          <div className="dl-banner is-info">
-            <Icon name="status-info" />
-            <span className="dl-banner-text">
-              Shows only what this merge changed beyond git's automatic merge, such as conflict
-              fixes. {target ?? "The target branch"}'s own commits are left out.
-            </span>
-          </div>
-        )}
       </div>
       <CommitFiles commit={commit} files={files} />
     </section>
@@ -300,12 +271,12 @@ function CommitFiles({
     >
       <div className="dl-row dl-row-group">
         <Icon name="general-chevronDown" />
-        <span>{commit.merged ? "Changed by the merge" : "Changed files"}</span>
+        <span>Changed files</span>
         <span className="dl-row-count">{fileCount(commit.files.length)}</span>
       </div>
       {commit.files.length === 0 && (
         <div className="dl-row app-log-none" style={{ "--depth": 1 } as React.CSSProperties}>
-          {commit.merged ? "Clean merge: no manual changes" : "This commit changes no files"}
+          This commit changes no files
         </div>
       )}
       {commit.files.map((file, i) => {

@@ -20,24 +20,26 @@ export function ToolWindow({ width }: { width: number }) {
   if (!repo) return null;
   return (
     <section className="dl-island app-tool" style={{ width }} aria-label="Tool window">
-      <div className="dl-targetbar">
-        <button
-          ref={anchor}
-          className="dl-combo"
-          type="button"
-          title={targetTitle(repo.target, repo.defaultBranch)}
-          aria-label="Target branch"
-          aria-haspopup="dialog"
-          aria-expanded={picking}
-          onClick={() => setPicking((open) => !open)}
-        >
-          <Icon name="toolwindows-vcs" />
-          <span className="dl-combo-label">Target</span>
-          <span className="dl-combo-text">{repo.target ?? "none"}</span>
-          <Icon name="general-chevronDown" />
-        </button>
-        {picking && <TargetPicker anchor={anchor} onClose={close} />}
-      </div>
+      {repo.lastTab === "changes" && (
+        <div className="dl-targetbar">
+          <button
+            ref={anchor}
+            className="dl-combo"
+            type="button"
+            title={targetTitle(repo.target, repo.defaultBranch)}
+            aria-label="Target branch"
+            aria-haspopup="dialog"
+            aria-expanded={picking}
+            onClick={() => setPicking((open) => !open)}
+          >
+            <Icon name="toolwindows-vcs" />
+            <span className="dl-combo-label">Target</span>
+            <span className="dl-combo-text">{repo.target ?? "none"}</span>
+            <Icon name="general-chevronDown" />
+          </button>
+          {picking && <TargetPicker anchor={anchor} onClose={close} />}
+        </div>
+      )}
       <header className="dl-island-header">
         <div className="dl-tabs" role="tablist" aria-label="Tool window tabs">
           {tabs.map((item) => (

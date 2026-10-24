@@ -61,7 +61,6 @@ body{margin:0;font-family:var(--font-ui);font-size:13px;line-height:16px;color:v
 .dl-commit-subject{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis}
 .dl-commit-meta{flex:none;color:var(--text-muted);font-size:12px}
 .dl-commit-hash{flex:none;width:64px;color:var(--text-muted);font-family:var(--font-mono);font-size:12px}
-.dl-commit.is-merge .dl-commit-subject{color:var(--text-muted)}
 .dl-tag{display:inline-flex;align-items:center;flex:none;height:16px;padding:0 var(--space-6);border-radius:var(--radius-4);background:var(--tag-bg);color:var(--text-muted);font-size:11px;line-height:14px}
 .dl-filehead{display:flex;align-items:center;gap:var(--space-6);height:var(--size-row);padding:0 var(--space-8);background:var(--panel-bg-inline);border-bottom:1px solid var(--border);color:var(--text-muted);white-space:nowrap;overflow:hidden}
 .dl-filehead-hash{color:var(--text);font-family:var(--font-mono);font-size:12px}

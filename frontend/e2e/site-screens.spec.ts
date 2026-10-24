@@ -254,7 +254,7 @@ test("branch log", async ({ page, workspace, startApp }) => {
   await shoot(
     page,
     "branch-log",
-    "The Branch log with the branch's own commits, a merge row and the diff of one commit.",
+    "The Branch log with the branch's commits and the diff of one commit.",
   );
 });
 
