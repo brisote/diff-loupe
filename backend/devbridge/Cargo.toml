@@ -1,0 +1,21 @@
+[package]
+name = "diffloupe-devbridge"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+diffloupe-core.workspace = true
+clap.workspace = true
+futures-util.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+tokio-tungstenite.workspace = true
+
+[dev-dependencies]
+diffloupe-core = { workspace = true, features = ["testutil"] }
+tempfile.workspace = true
+
+[lints]
+workspace = true

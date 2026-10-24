@@ -1,0 +1,35 @@
+{
+  "$schema": "./node_modules/@biomejs/biome/configuration_schema.json",
+  "files": {
+    "includes": [
+      "**",
+      "!**/dist",
+      "!**/target",
+      "!backend/app/gen",
+      "!frontend/src/api/generated",
+      "!website",
+      "!frontend/src/styles/components.css",
+      "!frontend/src/styles/icons.css",
+      "!frontend/src/styles/tokens.css",
+      "!**/test-results",
+      "!**/playwright-report",
+      "!frontend/src/assets",
+      "!backend/app/icons"
+    ]
+  },
+  "formatter": {
+    "indentStyle": "space",
+    "indentWidth": 2,
+    "lineWidth": 100
+  },
+  "linter": {
+    "enabled": true
+  },
+  "assist": {
+    "actions": {
+      "source": {
+        "organizeImports": "on"
+      }
+    }
+  }
+}

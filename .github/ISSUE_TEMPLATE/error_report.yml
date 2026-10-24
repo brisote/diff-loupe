@@ -1,0 +1,19 @@
+name: Error report
+description: Paste the report that Diffloupe showed after an error.
+title: "Error: "
+labels: ["bug"]
+body:
+  - type: textarea
+    id: report
+    attributes:
+      label: Report from Diffloupe
+      description: Paste the text from the "Diffloupe ran into a problem" dialog as it is.
+    validations:
+      required: true
+  - type: textarea
+    id: doing
+    attributes:
+      label: What were you doing?
+      description: Optional. What you clicked or typed just before the error.
+    validations:
+      required: false

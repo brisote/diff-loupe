@@ -1,0 +1,9 @@
+---
+import { repository } from "../lib/links";
+import Icon from "./Icon.astro";
+---
+<div class="star-panel" data-star-panel>
+  <span class="icon-circle"><Icon name="github" /></span>
+  <div class="star-panel-text"><p class="star-panel-title">Enjoying Diffloupe?</p><p class="star-panel-sub">A star on GitHub helps other developers find it.</p></div>
+  <a class="btn btn-outline" href={repository}><Icon name="star" size="sm" />Star on GitHub</a>
+</div>

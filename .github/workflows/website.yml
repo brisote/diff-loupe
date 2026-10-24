@@ -1,0 +1,68 @@
+name: Website
+
+on:
+  push:
+    branches: ["main"]
+    paths: ["website/**", ".github/workflows/website.yml", "CHANGELOG.md"]
+  workflow_dispatch:
+
+concurrency:
+  group: website-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  website:
+    name: Website
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    container:
+      image: mcr.microsoft.com/playwright:v1.64.1-noble
+    defaults:
+      run:
+        working-directory: website
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: website/package.json
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: website/pnpm-lock.yaml
+
+      - name: Install packages
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Unit tests
+        run: pnpm test
+
+      - name: Install shellcheck
+        run: apt-get update -qq && apt-get install -y -qq shellcheck
+
+      - name: Script tests
+        run: python3 -m unittest discover -s scripts/tests -t scripts/tests
+
+      - name: Build
+        run: pnpm build
+
+      - name: Link check
+        run: pnpm links
+
+      - name: Playwright
+        run: pnpm e2e
+
+      - name: Keep the Playwright report and design differences
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: website-report
+          path: |
+            website/playwright-report
+            website/target/design-diff
+          retention-days: 7

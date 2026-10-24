@@ -1,0 +1,52 @@
+{
+  "scenes": [
+    {
+      "name": "branch-log",
+      "description": "The Branch log with the branch's own commits, a merge row and the diff of one commit.",
+      "width": 2880,
+      "height": 1800
+    },
+    {
+      "name": "changes",
+      "description": "The Changes list with the side-by-side diff of a Kotlin file, connectors and word highlights.",
+      "width": 2880,
+      "height": 1800
+    },
+    {
+      "name": "commit",
+      "description": "The commit dialog with picked files and a message.",
+      "width": 2880,
+      "height": 1800
+    },
+    {
+      "name": "markdown",
+      "description": "An API document rendered side by side, with changed table cells, a removed section and a new section marked.",
+      "width": 2880,
+      "height": 1800
+    },
+    {
+      "name": "merge",
+      "description": "The 3-pane merge window with yours, the result and theirs.",
+      "width": 2880,
+      "height": 1800
+    },
+    {
+      "name": "target-picker",
+      "description": "The Target picker that sets the branch to compare with.",
+      "width": 2880,
+      "height": 1800
+    },
+    {
+      "name": "terminal",
+      "description": "The terminal docked under the diff, running git status.",
+      "width": 2880,
+      "height": 1800
+    },
+    {
+      "name": "unified",
+      "description": "The same change in the unified one-pane view.",
+      "width": 2880,
+      "height": 1800
+    }
+  ]
+}

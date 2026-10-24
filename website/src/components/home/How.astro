@@ -1,0 +1,60 @@
+---
+import { repository } from "../../lib/links";
+import Icon from "../Icon.astro";
+
+const speeds = [
+  ["100 MB", "memory with one repository open"],
+  ["100 ms", "to diff a 5,000-line file"],
+  ["150 ms", "to load 500 commits"],
+  ["50 ms", "slowest frame while scrolling 21,000 lines"],
+];
+const languages = [
+  "JavaScript",
+  "HTML",
+  "CSS",
+  "Python",
+  "SQL",
+  "TypeScript",
+  "Shell",
+  "Java",
+  "Go",
+  "Rust",
+  "Kotlin",
+  "Ruby",
+  "Markdown",
+  "JSON",
+  "YAML",
+  "TOML",
+];
+---
+<section class="how" aria-labelledby="how-title">
+  <div class="wrap">
+    <div class="center">
+      <span class="icon-circle icon-lead"><Icon name="lock" /></span>
+      <h2 class="h2" id="how-title">Private first. Fast and for any language.</h2>
+      <p class="sub">Your code never leaves your Mac. Diffloupe reads the repository and draws every diff on your machine, with nothing sent anywhere.</p>
+    </div>
+    <div class="how-grid">
+      <div class="how-card" data-reveal>
+        <span class="how-icon"><Icon name="branch" /></span>
+        <h3 class="how-title">Open source</h3>
+        <p class="how-text">Every line is <a href={repository}>on GitHub</a>, so you can check what the app does. No account and no telemetry. Your code never leaves your Mac.</p>
+        <ul class="how-list"><li>Source on GitHub</li><li>No sign-in</li><li>No usage data</li></ul>
+      </div>
+      <div class="how-card" data-reveal>
+        <span class="how-icon"><Icon name="bolt" /></span>
+        <h3 class="how-title">Super fast</h3>
+        <p class="how-text">Built in Rust. Every release is tested against these targets.</p>
+        <dl class="speeds">
+          {speeds.map(([value, label]) => <div><dt>{value}</dt><dd>{label}</dd></div>)}
+        </dl>
+      </div>
+      <div class="how-card" data-reveal>
+        <span class="how-icon"><Icon name="code" /></span>
+        <h3 class="how-title">Any language</h3>
+        <p class="how-text">Diffs work on every text file. Syntax colours cover the languages you use most.</p>
+        <ul class="langs">{languages.map((language) => <li class="lang">{language}</li>)}</ul>
+      </div>
+    </div>
+  </div>
+</section>

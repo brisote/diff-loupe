@@ -1,0 +1,15 @@
+name: Idea
+description: Suggest something Diffloupe could do.
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What you want to do
+      description: The review task you want to do, and what gets in the way today.
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: How Diffloupe could help

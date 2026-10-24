@@ -1,0 +1,174 @@
+.dl-i-actions-highlighting{background-image:url("../assets/icons/actions/highlighting.svg")}
+[data-theme="dark"] .dl-i-actions-highlighting{background-image:url("../assets/icons/actions/highlighting_dark.svg")}
+.dl-i-actions-preview{background-image:url("../assets/icons/actions/preview.svg")}
+[data-theme="dark"] .dl-i-actions-preview{background-image:url("../assets/icons/actions/preview_dark.svg")}
+.dl-i-actions-swapPanels{background-image:url("../assets/icons/actions/swapPanels.svg")}
+[data-theme="dark"] .dl-i-actions-swapPanels{background-image:url("../assets/icons/actions/swapPanels_dark.svg")}
+.dl-i-actions-synchronizeScrolling{background-image:url("../assets/icons/actions/synchronizeScrolling.svg")}
+[data-theme="dark"] .dl-i-actions-synchronizeScrolling{background-image:url("../assets/icons/actions/synchronizeScrolling_dark.svg")}
+.dl-i-diff-applyNotConflicts{background-image:url("../assets/icons/diff/applyNotConflicts.svg")}
+[data-theme="dark"] .dl-i-diff-applyNotConflicts{background-image:url("../assets/icons/diff/applyNotConflicts_dark.svg")}
+.dl-i-diff-applyNotConflictsLeft{background-image:url("../assets/icons/diff/applyNotConflictsLeft.svg")}
+[data-theme="dark"] .dl-i-diff-applyNotConflictsLeft{background-image:url("../assets/icons/diff/applyNotConflictsLeft_dark.svg")}
+.dl-i-diff-applyNotConflictsRight{background-image:url("../assets/icons/diff/applyNotConflictsRight.svg")}
+[data-theme="dark"] .dl-i-diff-applyNotConflictsRight{background-image:url("../assets/icons/diff/applyNotConflictsRight_dark.svg")}
+.dl-i-diff-arrowLeftRight{background-image:url("../assets/icons/diff/arrowLeftRight.svg")}
+[data-theme="dark"] .dl-i-diff-arrowLeftRight{background-image:url("../assets/icons/diff/arrowLeftRight_dark.svg")}
+.dl-i-diff-disableEditing{background-image:url("../assets/icons/diff/disableEditing.svg")}
+[data-theme="dark"] .dl-i-diff-disableEditing{background-image:url("../assets/icons/diff/disableEditing_dark.svg")}
+.dl-i-diff-gutter-arrow{background-image:url("../assets/icons/diff/gutter-arrow.svg")}
+[data-theme="dark"] .dl-i-diff-gutter-arrow{background-image:url("../assets/icons/diff/gutter-arrow_dark.svg")}
+.dl-i-diff-gutter-arrowLeftDown{background-image:url("../assets/icons/diff/gutter-arrowLeftDown.svg")}
+[data-theme="dark"] .dl-i-diff-gutter-arrowLeftDown{background-image:url("../assets/icons/diff/gutter-arrowLeftDown_dark.svg")}
+.dl-i-diff-gutter-arrowRight{background-image:url("../assets/icons/diff/gutter-arrowRight.svg")}
+[data-theme="dark"] .dl-i-diff-gutter-arrowRight{background-image:url("../assets/icons/diff/gutter-arrowRight_dark.svg")}
+.dl-i-diff-gutter-arrowRightDown{background-image:url("../assets/icons/diff/gutter-arrowRightDown.svg")}
+[data-theme="dark"] .dl-i-diff-gutter-arrowRightDown{background-image:url("../assets/icons/diff/gutter-arrowRightDown_dark.svg")}
+.dl-i-diff-gutter-magicResolve{background-image:url("../assets/icons/diff/gutter-magicResolve.svg")}
+[data-theme="dark"] .dl-i-diff-gutter-magicResolve{background-image:url("../assets/icons/diff/gutter-magicResolve_dark.svg")}
+.dl-i-diff-gutter-remove{background-image:url("../assets/icons/diff/gutter-remove.svg")}
+[data-theme="dark"] .dl-i-diff-gutter-remove{background-image:url("../assets/icons/diff/gutter-remove_dark.svg")}
+.dl-i-diff-magicResolveToolbar{background-image:url("../assets/icons/diff/magicResolveToolbar.svg")}
+[data-theme="dark"] .dl-i-diff-magicResolveToolbar{background-image:url("../assets/icons/diff/magicResolveToolbar_dark.svg")}
+.dl-i-diff-sideBySide{background-image:url("../assets/icons/diff/sideBySide.svg")}
+[data-theme="dark"] .dl-i-diff-sideBySide{background-image:url("../assets/icons/diff/sideBySide_dark.svg")}
+.dl-i-diff-unified{background-image:url("../assets/icons/diff/unified.svg")}
+[data-theme="dark"] .dl-i-diff-unified{background-image:url("../assets/icons/diff/unified_dark.svg")}
+.dl-ft-binaryData{background-image:url("../assets/icons/fileTypes/binaryData.svg")}
+[data-theme="dark"] .dl-ft-binaryData{background-image:url("../assets/icons/fileTypes/binaryData_dark.svg")}
+.dl-ft-classKotlin{background-image:url("../assets/icons/fileTypes/classKotlin.svg")}
+[data-theme="dark"] .dl-ft-classKotlin{background-image:url("../assets/icons/fileTypes/classKotlin_dark.svg")}
+.dl-ft-css{background-image:url("../assets/icons/fileTypes/css.svg")}
+[data-theme="dark"] .dl-ft-css{background-image:url("../assets/icons/fileTypes/css_dark.svg")}
+.dl-ft-go{background-image:url("../assets/icons/fileTypes/go.svg")}
+[data-theme="dark"] .dl-ft-go{background-image:url("../assets/icons/fileTypes/go_dark.svg")}
+.dl-ft-html{background-image:url("../assets/icons/fileTypes/html.svg")}
+[data-theme="dark"] .dl-ft-html{background-image:url("../assets/icons/fileTypes/html_dark.svg")}
+.dl-ft-image{background-image:url("../assets/icons/fileTypes/image.svg")}
+[data-theme="dark"] .dl-ft-image{background-image:url("../assets/icons/fileTypes/image_dark.svg")}
+.dl-ft-java{background-image:url("../assets/icons/fileTypes/java.svg")}
+[data-theme="dark"] .dl-ft-java{background-image:url("../assets/icons/fileTypes/java_dark.svg")}
+.dl-ft-javaScript{background-image:url("../assets/icons/fileTypes/javaScript.svg")}
+[data-theme="dark"] .dl-ft-javaScript{background-image:url("../assets/icons/fileTypes/javaScript_dark.svg")}
+.dl-ft-json{background-image:url("../assets/icons/fileTypes/json.svg")}
+[data-theme="dark"] .dl-ft-json{background-image:url("../assets/icons/fileTypes/json_dark.svg")}
+.dl-ft-kotlin{background-image:url("../assets/icons/fileTypes/kotlin.svg")}
+[data-theme="dark"] .dl-ft-kotlin{background-image:url("../assets/icons/fileTypes/kotlin_dark.svg")}
+.dl-ft-markdown{background-image:url("../assets/icons/fileTypes/markdown.svg")}
+[data-theme="dark"] .dl-ft-markdown{background-image:url("../assets/icons/fileTypes/markdown_dark.svg")}
+.dl-ft-python{background-image:url("../assets/icons/fileTypes/python.svg")}
+[data-theme="dark"] .dl-ft-python{background-image:url("../assets/icons/fileTypes/python_dark.svg")}
+.dl-ft-ruby{background-image:url("../assets/icons/fileTypes/ruby.svg")}
+[data-theme="dark"] .dl-ft-ruby{background-image:url("../assets/icons/fileTypes/ruby_dark.svg")}
+.dl-ft-rust{background-image:url("../assets/icons/fileTypes/rust.svg")}
+[data-theme="dark"] .dl-ft-rust{background-image:url("../assets/icons/fileTypes/rust_dark.svg")}
+.dl-ft-shell{background-image:url("../assets/icons/fileTypes/shell.svg")}
+[data-theme="dark"] .dl-ft-shell{background-image:url("../assets/icons/fileTypes/shell_dark.svg")}
+.dl-ft-sql{background-image:url("../assets/icons/fileTypes/sql.svg")}
+[data-theme="dark"] .dl-ft-sql{background-image:url("../assets/icons/fileTypes/sql_dark.svg")}
+.dl-ft-text{background-image:url("../assets/icons/fileTypes/text.svg")}
+[data-theme="dark"] .dl-ft-text{background-image:url("../assets/icons/fileTypes/text_dark.svg")}
+.dl-ft-toml{background-image:url("../assets/icons/fileTypes/toml.svg")}
+[data-theme="dark"] .dl-ft-toml{background-image:url("../assets/icons/fileTypes/toml_dark.svg")}
+.dl-ft-typeScript{background-image:url("../assets/icons/fileTypes/typeScript.svg")}
+[data-theme="dark"] .dl-ft-typeScript{background-image:url("../assets/icons/fileTypes/typeScript_dark.svg")}
+.dl-ft-unknown{background-image:url("../assets/icons/fileTypes/unknown.svg")}
+[data-theme="dark"] .dl-ft-unknown{background-image:url("../assets/icons/fileTypes/unknown_dark.svg")}
+.dl-ft-xml{background-image:url("../assets/icons/fileTypes/xml.svg")}
+[data-theme="dark"] .dl-ft-xml{background-image:url("../assets/icons/fileTypes/xml_dark.svg")}
+.dl-ft-yaml{background-image:url("../assets/icons/fileTypes/yaml.svg")}
+[data-theme="dark"] .dl-ft-yaml{background-image:url("../assets/icons/fileTypes/yaml_dark.svg")}
+.dl-i-general-add{background-image:url("../assets/icons/general/add.svg")}
+[data-theme="dark"] .dl-i-general-add{background-image:url("../assets/icons/general/add_dark.svg")}
+.dl-i-general-chevronDown{background-image:url("../assets/icons/general/chevronDown.svg")}
+[data-theme="dark"] .dl-i-general-chevronDown{background-image:url("../assets/icons/general/chevronDown_dark.svg")}
+.dl-i-general-chevronLeft{background-image:url("../assets/icons/general/chevronLeft.svg")}
+[data-theme="dark"] .dl-i-general-chevronLeft{background-image:url("../assets/icons/general/chevronLeft_dark.svg")}
+.dl-i-general-chevronRight{background-image:url("../assets/icons/general/chevronRight.svg")}
+[data-theme="dark"] .dl-i-general-chevronRight{background-image:url("../assets/icons/general/chevronRight_dark.svg")}
+.dl-i-general-chevronUp{background-image:url("../assets/icons/general/chevronUp.svg")}
+[data-theme="dark"] .dl-i-general-chevronUp{background-image:url("../assets/icons/general/chevronUp_dark.svg")}
+.dl-i-general-close{background-image:url("../assets/icons/general/close.svg")}
+[data-theme="dark"] .dl-i-general-close{background-image:url("../assets/icons/general/close_dark.svg")}
+.dl-i-general-collapseAll{background-image:url("../assets/icons/general/collapseAll.svg")}
+[data-theme="dark"] .dl-i-general-collapseAll{background-image:url("../assets/icons/general/collapseAll_dark.svg")}
+.dl-i-general-copy{background-image:url("../assets/icons/general/copy.svg")}
+[data-theme="dark"] .dl-i-general-copy{background-image:url("../assets/icons/general/copy_dark.svg")}
+.dl-i-general-delete{background-image:url("../assets/icons/general/delete.svg")}
+[data-theme="dark"] .dl-i-general-delete{background-image:url("../assets/icons/general/delete_dark.svg")}
+.dl-i-general-down{background-image:url("../assets/icons/general/down.svg")}
+[data-theme="dark"] .dl-i-general-down{background-image:url("../assets/icons/general/down_dark.svg")}
+.dl-i-general-edit{background-image:url("../assets/icons/general/edit.svg")}
+[data-theme="dark"] .dl-i-general-edit{background-image:url("../assets/icons/general/edit_dark.svg")}
+.dl-i-general-expandAll{background-image:url("../assets/icons/general/expandAll.svg")}
+[data-theme="dark"] .dl-i-general-expandAll{background-image:url("../assets/icons/general/expandAll_dark.svg")}
+.dl-i-general-filter{background-image:url("../assets/icons/general/filter.svg")}
+[data-theme="dark"] .dl-i-general-filter{background-image:url("../assets/icons/general/filter_dark.svg")}
+.dl-i-general-hide{background-image:url("../assets/icons/general/hide.svg")}
+[data-theme="dark"] .dl-i-general-hide{background-image:url("../assets/icons/general/hide_dark.svg")}
+.dl-i-general-history{background-image:url("../assets/icons/general/history.svg")}
+[data-theme="dark"] .dl-i-general-history{background-image:url("../assets/icons/general/history_dark.svg")}
+.dl-i-general-locked{background-image:url("../assets/icons/general/locked.svg")}
+[data-theme="dark"] .dl-i-general-locked{background-image:url("../assets/icons/general/locked_dark.svg")}
+.dl-i-general-moreVertical{background-image:url("../assets/icons/general/moreVertical.svg")}
+[data-theme="dark"] .dl-i-general-moreVertical{background-image:url("../assets/icons/general/moreVertical_dark.svg")}
+.dl-i-general-refresh{background-image:url("../assets/icons/general/refresh.svg")}
+[data-theme="dark"] .dl-i-general-refresh{background-image:url("../assets/icons/general/refresh_dark.svg")}
+.dl-i-general-search{background-image:url("../assets/icons/general/search.svg")}
+[data-theme="dark"] .dl-i-general-search{background-image:url("../assets/icons/general/search_dark.svg")}
+.dl-i-general-settings{background-image:url("../assets/icons/general/settings.svg")}
+[data-theme="dark"] .dl-i-general-settings{background-image:url("../assets/icons/general/settings_dark.svg")}
+.dl-i-general-show{background-image:url("../assets/icons/general/show.svg")}
+[data-theme="dark"] .dl-i-general-show{background-image:url("../assets/icons/general/show_dark.svg")}
+.dl-i-general-showAsTree{background-image:url("../assets/icons/general/showAsTree.svg")}
+[data-theme="dark"] .dl-i-general-showAsTree{background-image:url("../assets/icons/general/showAsTree_dark.svg")}
+.dl-i-general-up{background-image:url("../assets/icons/general/up.svg")}
+[data-theme="dark"] .dl-i-general-up{background-image:url("../assets/icons/general/up_dark.svg")}
+.dl-i-nodes-folder{background-image:url("../assets/icons/nodes/folder.svg")}
+[data-theme="dark"] .dl-i-nodes-folder{background-image:url("../assets/icons/nodes/folder_dark.svg")}
+.dl-i-nodes-star{background-image:url("../assets/icons/nodes/star.svg")}
+[data-theme="dark"] .dl-i-nodes-star{background-image:url("../assets/icons/nodes/star_dark.svg")}
+.dl-i-status-error{background-image:url("../assets/icons/status/error.svg")}
+[data-theme="dark"] .dl-i-status-error{background-image:url("../assets/icons/status/error_dark.svg")}
+.dl-i-status-info{background-image:url("../assets/icons/status/info.svg")}
+[data-theme="dark"] .dl-i-status-info{background-image:url("../assets/icons/status/info_dark.svg")}
+.dl-i-status-success{background-image:url("../assets/icons/status/success.svg")}
+[data-theme="dark"] .dl-i-status-success{background-image:url("../assets/icons/status/success_dark.svg")}
+.dl-i-status-warning{background-image:url("../assets/icons/status/warning.svg")}
+[data-theme="dark"] .dl-i-status-warning{background-image:url("../assets/icons/status/warning_dark.svg")}
+.dl-i-toolwindows-changes{background-image:url("../assets/icons/toolwindows/changes.svg")}
+[data-theme="dark"] .dl-i-toolwindows-changes{background-image:url("../assets/icons/toolwindows/changes_dark.svg")}
+.dl-i-toolwindows-commit{background-image:url("../assets/icons/toolwindows/commit.svg")}
+[data-theme="dark"] .dl-i-toolwindows-commit{background-image:url("../assets/icons/toolwindows/commit_dark.svg")}
+.dl-i-toolwindows-notifications{background-image:url("../assets/icons/toolwindows/notifications.svg")}
+[data-theme="dark"] .dl-i-toolwindows-notifications{background-image:url("../assets/icons/toolwindows/notifications_dark.svg")}
+.dl-i-toolwindows-terminal{background-image:url("../assets/icons/toolwindows/terminal.svg")}
+[data-theme="dark"] .dl-i-toolwindows-terminal{background-image:url("../assets/icons/toolwindows/terminal_dark.svg")}
+.dl-i-toolwindows-vcs{background-image:url("../assets/icons/toolwindows/vcs.svg")}
+[data-theme="dark"] .dl-i-toolwindows-vcs{background-image:url("../assets/icons/toolwindows/vcs_dark.svg")}
+.dl-i-vcs-abort{background-image:url("../assets/icons/vcs/abort.svg")}
+[data-theme="dark"] .dl-i-vcs-abort{background-image:url("../assets/icons/vcs/abort_dark.svg")}
+.dl-i-vcs-arrowLeft{background-image:url("../assets/icons/vcs/arrowLeft.svg")}
+[data-theme="dark"] .dl-i-vcs-arrowLeft{background-image:url("../assets/icons/vcs/arrowLeft_dark.svg")}
+.dl-i-vcs-arrowRight{background-image:url("../assets/icons/vcs/arrowRight.svg")}
+[data-theme="dark"] .dl-i-vcs-arrowRight{background-image:url("../assets/icons/vcs/arrowRight_dark.svg")}
+.dl-i-vcs-changelist{background-image:url("../assets/icons/vcs/changelist.svg")}
+[data-theme="dark"] .dl-i-vcs-changelist{background-image:url("../assets/icons/vcs/changelist_dark.svg")}
+.dl-i-vcs-changes{background-image:url("../assets/icons/vcs/changes.svg")}
+[data-theme="dark"] .dl-i-vcs-changes{background-image:url("../assets/icons/vcs/changes_dark.svg")}
+.dl-i-vcs-commit{background-image:url("../assets/icons/vcs/commit.svg")}
+[data-theme="dark"] .dl-i-vcs-commit{background-image:url("../assets/icons/vcs/commit_dark.svg")}
+.dl-i-vcs-diff{background-image:url("../assets/icons/vcs/diff.svg")}
+[data-theme="dark"] .dl-i-vcs-diff{background-image:url("../assets/icons/vcs/diff_dark.svg")}
+.dl-i-vcs-fetch{background-image:url("../assets/icons/vcs/fetch.svg")}
+[data-theme="dark"] .dl-i-vcs-fetch{background-image:url("../assets/icons/vcs/fetch_dark.svg")}
+.dl-i-vcs-merge{background-image:url("../assets/icons/vcs/merge.svg")}
+[data-theme="dark"] .dl-i-vcs-merge{background-image:url("../assets/icons/vcs/merge_dark.svg")}
+.dl-i-vcs-push{background-image:url("../assets/icons/vcs/push.svg")}
+[data-theme="dark"] .dl-i-vcs-push{background-image:url("../assets/icons/vcs/push_dark.svg")}
+.dl-i-vcs-revert{background-image:url("../assets/icons/vcs/revert.svg")}
+[data-theme="dark"] .dl-i-vcs-revert{background-image:url("../assets/icons/vcs/revert_dark.svg")}
+.dl-i-vcs-showUnversionedFiles{background-image:url("../assets/icons/vcs/showUnversionedFiles.svg")}
+[data-theme="dark"] .dl-i-vcs-showUnversionedFiles{background-image:url("../assets/icons/vcs/showUnversionedFiles_dark.svg")}
+.dl-i-vcs-update{background-image:url("../assets/icons/vcs/update.svg")}
+[data-theme="dark"] .dl-i-vcs-update{background-image:url("../assets/icons/vcs/update_dark.svg")}
