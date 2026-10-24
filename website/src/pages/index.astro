@@ -8,9 +8,13 @@ import Overview from "../components/home/Overview.astro";
 import Pricing from "../components/home/Pricing.astro";
 import Start from "../components/home/Start.astro";
 import Base from "../layouts/Base.astro";
+import { latestRelease } from "../lib/release";
+import { appData, siteUrl } from "../lib/seo";
 import "../styles/home.css";
+
+const data = appData(Astro.site ?? siteUrl, await latestRelease());
 ---
-<Base title="Diffloupe · Review git changes on your Mac" description="Diffloupe is a Mac app for reviewing git changes: side-by-side diffs, the branch log, rendered Markdown and a 3-pane merge window. Your code stays on your Mac." current="home">
+<Base title="Diffloupe · Review git changes on your Mac" description="Diffloupe is a Mac app for reviewing git changes: side-by-side diffs, the branch log, rendered Markdown and a 3-pane merge window. Your code stays on your Mac." current="home" data={data}>
   <Hero />
   <How />
   <Overview />
