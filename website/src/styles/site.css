@@ -173,15 +173,6 @@
 .scene-status { display: flex; align-items: center; gap: 14px; height: 40px; padding: 0 14px; border-radius: 22px; background: oklch(0 0 0 / 0.62); border: 1px solid oklch(1 0 0 / 0.12); color: #fff; font-family: var(--mono); font-size: 13px; }
 .scene-status .i { width: 16px; height: 16px; color: #fff; }
 .scene-window { position: absolute; left: 50%; top: 84px; width: 70%; transform: translateX(-50%); }
-.scene-dock { position: absolute; left: 50%; bottom: 22px; transform: translateX(-50%); display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-radius: 28px; background: oklch(0 0 0 / 0.55); border: 1px solid oklch(1 0 0 / 0.12); }
-.dock-app { width: 46px; height: 46px; border-radius: 12px; display: flex; align-items: center; justify-content: center; color: #fff; }
-.dock-app img { width: 46px; height: 46px; border-radius: 12px; }
-.dock-app .i { width: 22px; height: 22px; }
-.dock-term { background: #1e1e20; border: 1px solid #3a3a3d; }
-.dock-folder { background: linear-gradient(#6cc4f5, #2f94e0); }
-.dock-code { background: linear-gradient(#5a6bff, #3a3fd0); }
-.dock-trash { background: oklch(1 0 0 / 0.18); }
-.dock-sep { width: 1px; height: 38px; background: oklch(1 0 0 / 0.25); }
 .window { border-radius: 12px; overflow: hidden; border: 1px solid var(--line-2); box-shadow: var(--shadow-window); background: var(--card); }
 .window img { width: 100%; height: auto; }
 .scene .window { border-color: oklch(1 0 0 / 0.2); box-shadow: 0 40px 80px -40px rgba(0, 0, 0, 0.7); }
@@ -404,9 +395,6 @@
   .scene-status { gap: 10px; font-size: 12px; height: 34px; }
   .scene-tile { width: 34px; height: 34px; }
   .scene-window { top: 70px; width: 92%; }
-  .scene-dock { bottom: 14px; gap: 6px; padding: 8px 10px; border-radius: 22px; }
-  .dock-app, .dock-app img { width: 36px; height: 36px; border-radius: 10px; }
-  .dock-app .i { width: 18px; height: 18px; }
   .band { padding: 64px 0; }
   .h2 { font-size: 32px; line-height: 40px; letter-spacing: -0.8px; }
   .grid4 { grid-template-columns: minmax(0, 1fr); margin-top: 40px; }
