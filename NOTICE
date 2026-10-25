@@ -12,9 +12,10 @@ Fonts of the website (website/public/fonts/, with their license texts)
 Icons (frontend/src/assets/icons/)
 - IntelliJ Platform New UI icons, from https://github.com/JetBrains/intellij-community.
   Copyright 2000-2024 JetBrains s.r.o. and contributors. Apache License 2.0.
-  Each copied file keeps its original license header. The Apache License 2.0 is in frontend/src/assets/icons/LICENSE.
+  Each copied file keeps its original license header. Diffloupe changed the colours in every copied file, and each header says so.
+  The Apache License 2.0 is in frontend/src/assets/icons/LICENSE.
 - fileTypes/rust.svg and fileTypes/rust_dark.svg, from https://github.com/intellij-rust/intellij-rust.
-  MIT License, notice below.
+  MIT License, notice below. Diffloupe changed their colours.
 - fileTypes/go*.svg and fileTypes/ruby*.svg were drawn for Diffloupe.
 
 No JetBrains product logo is used.

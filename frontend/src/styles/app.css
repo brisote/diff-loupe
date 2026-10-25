@@ -80,15 +80,15 @@ button {
 }
 
 .app-lights .is-close {
-  background: #ff5f57;
+  background: #ff6143;
 }
 
 .app-lights .is-minimize {
-  background: #febc2e;
+  background: #f8bf00;
 }
 
 .app-lights .is-zoom {
-  background: #28c840;
+  background: #00c94d;
 }
 
 .app-lights.is-native span {
