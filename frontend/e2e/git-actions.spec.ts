@@ -308,7 +308,7 @@ test("the target sets what Changes compares, and Commit offers only uncommitted 
   await expect(tree.getByRole("treeitem", { name: "Notes.kt" })).toBeVisible();
 });
 
-test("on the default branch the log shows its own history and the target cannot be the current branch", async ({
+test("on the default branch the target is marked as an error and the picker offers only other branches", async ({
   page,
   workspace,
   startApp,
@@ -319,7 +319,13 @@ test("on the default branch the log shows its own history and the target cannot 
   git(repo, "commit", "-q", "-m", "Add a");
   git(repo, "branch", "develop");
   await startApp({ open: [repo] });
-  await expect(page.getByRole("button", { name: "Target branch" })).toContainText("none");
+  const target = page.getByRole("button", { name: "Target branch" });
+  await expect(target).toContainText("main");
+  await expect(target).toHaveClass(/is-error/);
+  await expect(target).toHaveAttribute(
+    "title",
+    "The target is the current branch. Pick another target.",
+  );
   await page.getByRole("tab", { name: "Branch log" }).click();
   await expect(
     page.getByRole("listbox", { name: "Branch commits" }).getByRole("option"),
