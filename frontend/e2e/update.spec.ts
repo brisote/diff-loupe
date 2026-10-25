@@ -13,46 +13,32 @@ const digest = createHash("sha256").update(image).digest("hex");
 async function release(tag = "v99.0.0", checksum = digest): Promise<Release> {
   let hits = 0;
   const version = tag.slice(1);
-  let base = "";
   const server = createServer((request, response) => {
     const path = request.url ?? "/";
-    if (path.endsWith(".dmg")) {
+    if (path === `/download/${tag}/Diffloupe-${version}.dmg`) {
       response.writeHead(200, { "Content-Length": image.length });
-      response.end(image);
+      response.end(request.method === "HEAD" ? undefined : image);
       return;
     }
-    if (path.endsWith(".dmg.sha256")) {
+    if (path === `/download/${tag}/Diffloupe-${version}.dmg.sha256`) {
       response.writeHead(200);
       response.end(`${checksum}  Diffloupe-${version}.dmg\n`);
       return;
     }
-    hits++;
-    response.writeHead(200, { "Content-Type": "application/json" });
-    response.end(
-      JSON.stringify({
-        tag_name: tag,
-        html_url: page,
-        assets: [
-          {
-            name: `Diffloupe-${version}.dmg`,
-            size: image.length,
-            browser_download_url: `${base}/download/Diffloupe-${version}.dmg`,
-          },
-          {
-            name: `Diffloupe-${version}.dmg.sha256`,
-            size: 90,
-            browser_download_url: `${base}/download/Diffloupe-${version}.dmg.sha256`,
-          },
-        ],
-      }),
-    );
+    if (path === "/download/latest/macos/version") {
+      hits++;
+      response.writeHead(200, { "Content-Type": "text/plain" });
+      response.end(`${version}\n`);
+      return;
+    }
+    response.writeHead(404);
+    response.end();
   });
   await new Promise<void>((done) => server.listen(0, "127.0.0.1", done));
   const { port } = server.address() as AddressInfo;
-  base = `http://127.0.0.1:${port}`;
   return {
     server,
-    url: `${base}/repos/brisote/diff-loupe/releases/latest`,
+    url: `http://127.0.0.1:${port}/download/latest/macos/version`,
     hits: () => hits,
   };
 }
@@ -117,7 +103,7 @@ test("Check for updates opens Settings and reports the latest version", async ({
   await expect(dialog.getByText(/is the latest version\.$/)).toBeVisible();
 });
 
-test("a failed Check now says GitHub could not be reached", async ({
+test("a failed Check now says diffloupe.com could not be reached", async ({
   page: window,
   workspace,
   startApp,
@@ -126,7 +112,7 @@ test("a failed Check now says GitHub could not be reached", async ({
   await window.getByRole("button", { name: "Settings menu" }).click();
   await window.getByRole("menuitem", { name: "Check for updates…" }).click();
   await expect(
-    window.getByText("GitHub could not be reached. Check the connection and try again."),
+    window.getByText("diffloupe.com could not be reached. Check the connection and try again."),
   ).toBeVisible();
 });
 

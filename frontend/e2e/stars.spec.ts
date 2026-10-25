@@ -82,7 +82,7 @@ test("Star on GitHub opens the repository and ends the prompts", async ({
   const prompt = page.getByRole("status").filter({ hasText: "Give us a star on GitHub." });
   await prompt.getByRole("button", { name: "Star on GitHub" }).click();
   await expect(prompt).toBeHidden();
-  expect(await app.bridge.call("devbridge_opened")).toEqual([repository]);
+  await expect.poll(() => app.bridge.call("devbridge_opened")).toEqual([repository]);
   await page.clock.setFixedTime(start + 400 * day);
   await app.restart();
   await startedOn(app, start + 400 * day);
@@ -99,7 +99,7 @@ test("Star on GitHub in the settings menu also ends the prompts", async ({
   await seed(page, app);
   await page.getByRole("button", { name: "Settings menu" }).click();
   await page.getByRole("menuitem", { name: "Star on GitHub" }).click();
-  expect(await app.bridge.call("devbridge_opened")).toEqual([repository]);
+  await expect.poll(() => app.bridge.call("devbridge_opened")).toEqual([repository]);
   await page.clock.setFixedTime(start);
   await app.restart();
   await startedOn(app, start);

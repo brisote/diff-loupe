@@ -98,3 +98,8 @@ test("a copy that fails shows no star panel", async ({ page }) => {
   await expect(page.locator(".install button.btn-light")).toHaveText("Copy command");
   await expect(page.locator("[data-star-panel]:visible")).toHaveCount(0);
 });
+
+test("the build writes the latest version as plain text for the app's update check", () => {
+  const file = new URL("../dist/download/latest/macos/version", import.meta.url);
+  expect(readFileSync(file, "utf8")).toBe("0.2.0\n");
+});

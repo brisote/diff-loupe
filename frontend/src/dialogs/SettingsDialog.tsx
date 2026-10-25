@@ -173,9 +173,9 @@ function UpdatesPage({ check, onCheck }: { check: boolean; onCheck: (check: bool
           />
         </span>
         <span className="dl-form-hint">
-          This is the only network call Diffloupe makes on its own. It asks GitHub for the latest
-          release when it starts and once a day, and the request carries no identifier and no usage
-          data.
+          This is the only network call Diffloupe makes on its own. It asks diffloupe.com for the
+          latest version when it starts and once a day. The request names only the operating system,
+          with no identifier and no usage data.
         </span>
         <span>Version</span>
         <span className="app-update-version">
