@@ -1,5 +1,5 @@
 use tauri::webview::{PageLoadEvent, PageLoadPayload};
-use tauri::{AppHandle, Webview};
+use tauri::{AppHandle, Manager, Webview};
 
 const REPORT_ENV: &str = "DIFFLOUPE_SMOKE_REPORT";
 const UNINSTALL_ENV: &str = "DIFFLOUPE_SMOKE_UNINSTALL";
@@ -52,11 +52,11 @@ setTimeout(async () => {
     file.click();
     await new Promise((done) => setTimeout(done, 1500));
   }
-  const terminalButton = document.querySelector('[aria-label="Terminal ⌥F12"]');
+  const terminalButton = document.querySelector('[aria-label^="Terminal "]');
   let terminal = "";
   if (terminalButton) {
     terminalButton.click();
-    for (let tries = 0; tries < 5 && !terminal.trim(); tries += 1) {
+    for (let tries = 0; tries < 8 && !terminal.trim(); tries += 1) {
       await new Promise((done) => setTimeout(done, 2000));
       terminal = document.querySelector(".app-terminal .xterm-rows")?.textContent ?? "";
     }
@@ -121,7 +121,10 @@ pub fn data_dir() -> Option<std::path::PathBuf> {
 }
 
 pub fn on_page_load(webview: &Webview, payload: &PageLoadPayload<'_>) {
-    if payload.event() == PageLoadEvent::Finished && active() {
+    let started = webview
+        .try_state::<std::sync::Arc<diffloupe_core::Core>>()
+        .is_some();
+    if payload.event() == PageLoadEvent::Finished && active() && started {
         let _ = webview.window().set_focus();
         let script = if std::env::var_os(UNINSTALL_ENV).is_some() {
             UNINSTALL_SCRIPT

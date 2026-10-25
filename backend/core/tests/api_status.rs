@@ -536,3 +536,32 @@ fn a_quick_read_leaves_untracked_files_for_the_full_read() {
             .any(|(path, kind, _)| path == "draft.txt" && kind == "untracked")
     );
 }
+
+#[test]
+fn a_full_watch_limit_falls_back_to_slow_polling_that_still_sees_changes() {
+    let repo = TempRepo::with_commit();
+    let data = tempfile::tempdir().unwrap();
+    let events = Arc::new(RecordedEvents::default());
+    let core = Core::new(data.path(), test_env(), events.clone()).unwrap();
+    core.set_watch_polling(true);
+    let info = core
+        .dispatch("open_repo", json!({"path": repo.path()}))
+        .unwrap();
+    assert_eq!(info["watchPolling"], true);
+    assert_eq!(info["watchError"], Value::Null);
+    std::thread::sleep(Duration::from_millis(400));
+    events.take();
+    let seen = (0..12).any(|round| {
+        repo.write("README.md", &format!("# seen by polling {round}\n"));
+        changed_within(&events, Duration::from_millis(2000))
+    });
+    assert!(seen, "polling never reported the change");
+}
+
+#[test]
+fn a_normal_watcher_does_not_report_polling() {
+    let repo = TempRepo::with_commit();
+    let (_data, core, _events) = open(&repo);
+    let info = core.dispatch("current_repo", Value::Null).unwrap();
+    assert_eq!(info["watchPolling"], false);
+}

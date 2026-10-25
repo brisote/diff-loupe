@@ -81,12 +81,27 @@ fn window_maximized(window: tauri::WebviewWindow) -> Result<bool, String> {
 #[tauri::command]
 fn open_link(url: String) -> Result<(), String> {
     let url = diffloupe_core::update::link(&url).map_err(|e| e.to_string())?;
-    let mut child = std::process::Command::new("open")
+    let mut child = std::process::Command::new(opener())
         .arg(url)
         .spawn()
         .map_err(|e| e.to_string())?;
     std::thread::spawn(move || child.wait());
     Ok(())
+}
+
+#[cfg(target_os = "macos")]
+fn opener() -> &'static str {
+    "open"
+}
+
+#[cfg(target_os = "linux")]
+fn opener() -> &'static str {
+    "xdg-open"
+}
+
+#[cfg(windows)]
+fn opener() -> &'static str {
+    "explorer.exe"
 }
 
 #[tauri::command]
@@ -121,17 +136,14 @@ async fn uninstall(app: AppHandle, data: State<'_, DataDir>) -> Result<(), Strin
     match trashed {
         Ok(()) => app.exit(0),
         Err(reason) => {
-            let handle = app.clone();
-            app.run_on_main_thread(move || {
-                show_alert(
-                    "Diffloupe could not move itself to the Trash",
-                    &format!(
-                        "Its own files are deleted. Drag Diffloupe to the Trash to finish removing it. ({reason})"
-                    ),
-                );
-                handle.exit(0);
-            })
-            .map_err(|e| e.to_string())?;
+            alert_then_exit(
+                &app,
+                "Diffloupe could not move itself to the Trash",
+                &format!(
+                    "Its own files are deleted. Drag Diffloupe to the Trash to finish removing it. ({reason})"
+                ),
+                0,
+            )?;
         }
     }
     Ok(())
@@ -365,8 +377,30 @@ fn main() {
 
 fn cannot_start(app: &AppHandle, message: &str) {
     eprintln!("Diffloupe cannot start: {message}");
-    show_alert("Diffloupe cannot start", message);
-    app.exit(1);
+    let _ = alert_then_exit(app, "Diffloupe cannot start", message, 1);
+}
+
+#[cfg(target_os = "macos")]
+fn alert_then_exit(app: &AppHandle, title: &str, message: &str, code: i32) -> Result<(), String> {
+    let handle = app.clone();
+    let (title, message) = (title.to_string(), message.to_string());
+    app.run_on_main_thread(move || {
+        show_alert(&title, &message);
+        handle.exit(code);
+    })
+    .map_err(|e| e.to_string())
+}
+
+#[cfg(not(target_os = "macos"))]
+fn alert_then_exit(app: &AppHandle, title: &str, message: &str, code: i32) -> Result<(), String> {
+    use tauri_plugin_dialog::MessageDialogKind;
+    let handle = app.clone();
+    app.dialog()
+        .message(message)
+        .title(title)
+        .kind(MessageDialogKind::Error)
+        .show(move |_| handle.exit(code));
+    Ok(())
 }
 
 #[cfg(target_os = "macos")]
@@ -382,9 +416,6 @@ fn show_alert(title: &str, message: &str) {
     alert.setInformativeText(&NSString::from_str(message));
     alert.runModal();
 }
-
-#[cfg(not(target_os = "macos"))]
-fn show_alert(_title: &str, _message: &str) {}
 
 fn page_loaded(webview: &tauri::Webview, payload: &PageLoadPayload<'_>) {
     if payload.event() == PageLoadEvent::Finished {
