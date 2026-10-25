@@ -19,6 +19,7 @@ def main() -> int:
     parser.add_argument("--data-dir", type=Path, help="store folder; a new temporary one by default")
     parser.add_argument("--open", type=Path, action="append", default=[], help="repository to open at start")
     parser.add_argument("--pick", type=Path, help="folder that the Open… button returns")
+    parser.add_argument("--platform", choices=["macos", "windows", "linux"], help="platform the UI should behave as; this system's by default")
     parser.add_argument("--demo", action="store_true", help="create demo repositories and open them")
     args = parser.parse_args()
 
@@ -33,6 +34,8 @@ def main() -> int:
         bridge += ["--open", str(path)]
     if args.pick:
         bridge += ["--pick", str(args.pick)]
+    if args.platform:
+        bridge += ["--platform", args.platform]
 
     processes = [subprocess.Popen(bridge, cwd=ROOT)]
     processes.append(subprocess.Popen(["pnpm", "vite", "--port", str(args.vite_port), "--strictPort"], cwd=ROOT / "frontend"))

@@ -1,5 +1,6 @@
 #![allow(clippy::unwrap_used)]
 
+use diffloupe_core::platform::Platform;
 use diffloupe_core::testutil::{TempRepo, test_env};
 use diffloupe_devbridge::{Bridge, serve};
 use futures_util::{SinkExt, StreamExt};
@@ -11,8 +12,12 @@ type Socket =
     tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
 
 async fn start(pick: Option<String>) -> (tempfile::TempDir, Socket) {
+    start_as(pick, Platform::CURRENT).await
+}
+
+async fn start_as(pick: Option<String>, platform: Platform) -> (tempfile::TempDir, Socket) {
     let data = tempfile::tempdir().unwrap();
-    let bridge = Bridge::start(data.path(), test_env(), pick).unwrap();
+    let bridge = Bridge::start(data.path(), test_env(), pick, platform).unwrap();
     let listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
     let port = listener.local_addr().unwrap().port();
     tokio::spawn(serve(listener, bridge));
@@ -130,7 +135,7 @@ async fn a_test_drop_is_pushed_to_the_page() {
 async fn pages_from_other_sites_are_refused() {
     use tokio_tungstenite::tungstenite::client::IntoClientRequest;
     let data = tempfile::tempdir().unwrap();
-    let bridge = Bridge::start(data.path(), test_env(), None).unwrap();
+    let bridge = Bridge::start(data.path(), test_env(), None, Platform::CURRENT).unwrap();
     let listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
     let port = listener.local_addr().unwrap().port();
     tokio::spawn(serve(listener, bridge));
@@ -141,4 +146,14 @@ async fn pages_from_other_sites_are_refused() {
         .headers_mut()
         .insert("origin", "https://example.com".parse().unwrap());
     assert!(tokio_tungstenite::connect_async(request).await.is_err());
+}
+
+#[tokio::test]
+async fn the_bridge_reports_the_platform_it_was_started_as() {
+    for platform in [Platform::Macos, Platform::Windows, Platform::Linux] {
+        let (_data, mut socket) = start_as(None, platform).await;
+        send(&mut socket, 1, "app_info", Value::Null).await;
+        let info = reply(&mut socket, 1).await;
+        assert_eq!(info["ok"]["platform"], platform.name(), "{info}");
+    }
 }

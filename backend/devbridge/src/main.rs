@@ -1,4 +1,5 @@
 use clap::Parser;
+use diffloupe_core::platform::Platform;
 use diffloupe_core::shellenv::ShellEnv;
 use diffloupe_devbridge::{Bridge, serve};
 use serde_json::json;
@@ -17,6 +18,12 @@ struct Args {
     open: Vec<PathBuf>,
     #[arg(long)]
     pick: Option<PathBuf>,
+    #[arg(long, value_parser = platform_name, default_value = Platform::CURRENT.name())]
+    platform: Platform,
+}
+
+fn platform_name(name: &str) -> Result<Platform, String> {
+    Platform::parse(name).ok_or_else(|| format!("{name} is not macos, windows or linux"))
 }
 
 #[tokio::main]
@@ -33,8 +40,8 @@ async fn main() -> ExitCode {
 async fn run(args: Args) -> Result<(), String> {
     std::fs::create_dir_all(&args.data_dir).map_err(|e| e.to_string())?;
     let pick = args.pick.map(|p| p.display().to_string());
-    let bridge =
-        Bridge::start(&args.data_dir, ShellEnv::detect(), pick).map_err(|e| e.to_string())?;
+    let bridge = Bridge::start(&args.data_dir, ShellEnv::detect(), pick, args.platform)
+        .map_err(|e| e.to_string())?;
     for path in &args.open {
         bridge
             .core()

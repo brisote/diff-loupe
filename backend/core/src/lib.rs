@@ -11,6 +11,7 @@ pub mod history;
 pub mod images;
 pub mod merge;
 pub mod merge3;
+pub mod platform;
 pub mod repo;
 pub mod settings;
 pub mod shellenv;

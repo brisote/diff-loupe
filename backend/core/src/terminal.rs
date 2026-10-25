@@ -2,6 +2,7 @@ use crate::error::{Error, Result};
 use crate::events::{CoreEvent, EventSink};
 use crate::shellenv::ShellEnv;
 use portable_pty::{CommandBuilder, MasterPty, PtySize, native_pty_system};
+#[cfg(unix)]
 use rustix::process::{Pid, Signal, kill_process};
 use serde::Serialize;
 use std::collections::HashMap;
@@ -16,6 +17,7 @@ const BATCH_LIMIT: usize = 256 * 1024;
 const BATCH_WAIT: Duration = Duration::from_millis(8);
 const FLOW_LIMIT: usize = 1024 * 1024;
 const FLOW_WAIT: Duration = Duration::from_secs(2);
+#[cfg(unix)]
 const HANGUP_WAIT: Duration = Duration::from_secs(1);
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
@@ -93,6 +95,7 @@ impl Terminals {
             .openpty(size(cols, rows))
             .map_err(terminal_error)?;
         let mut command = CommandBuilder::new(env.shell());
+        #[cfg(unix)]
         command.arg("-l");
         command.cwd(root);
         command.env("PATH", env.path());
@@ -195,11 +198,24 @@ impl Drop for Terminals {
     }
 }
 
+#[cfg(unix)]
 fn pid(raw: Option<u32>) -> Option<Pid> {
     raw.and_then(|pid| i32::try_from(pid).ok())
         .and_then(Pid::from_raw)
 }
 
+#[cfg(not(unix))]
+fn end(mut session: Session) {
+    session.flow.close();
+    #[cfg(windows)]
+    if let Some(shell) = session.child.process_id() {
+        crate::platform::kill_tree(shell);
+    }
+    let _ = session.child.kill();
+    let _ = session.child.wait();
+}
+
+#[cfg(unix)]
 fn end(mut session: Session) {
     session.flow.close();
     let shell = session.child.process_id();
@@ -229,6 +245,7 @@ fn end(mut session: Session) {
     let _ = session.child.wait();
 }
 
+#[cfg(unix)]
 fn descendants(root: u32) -> Vec<u32> {
     let Ok(output) = std::process::Command::new("ps")
         .args(["-A", "-o", "pid=,ppid="])

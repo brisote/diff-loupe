@@ -2,13 +2,36 @@
 
 use diffloupe_core::Core;
 use diffloupe_core::events::RecordedEvents;
+use diffloupe_core::platform::Platform;
 use diffloupe_core::testutil::test_env;
+use diffloupe_core::update::{PackageKind, package_name};
 use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::net::TcpListener;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
+
+fn for_this_system(data: &std::path::Path) -> Core {
+    Core::for_platform(
+        data,
+        test_env(),
+        Arc::new(RecordedEvents::default()),
+        Platform::CURRENT,
+    )
+    .unwrap()
+}
+
+fn package() -> String {
+    package_name(
+        "99.0.0",
+        PackageKind::of(Platform::CURRENT, "x86_64", Some(PackageKind::Deb)).unwrap(),
+    )
+}
+
+fn latest_path() -> String {
+    format!("/download/latest/{}/version", Platform::CURRENT.name())
+}
 
 struct Server {
     url: String,
@@ -17,10 +40,7 @@ struct Server {
 
 fn serve(status: &'static str, body: String) -> Server {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-    let url = format!(
-        "http://{}/download/latest/macos/version",
-        listener.local_addr().unwrap()
-    );
+    let url = format!("http://{}{}", listener.local_addr().unwrap(), latest_path());
     let hits = Arc::new(AtomicUsize::new(0));
     let counted = hits.clone();
     std::thread::spawn(move || {
@@ -45,7 +65,7 @@ fn release(version: &str) -> String {
 
 fn core(url: &str) -> (tempfile::TempDir, Core) {
     let data = tempfile::tempdir().unwrap();
-    let core = Core::new(data.path(), test_env(), Arc::new(RecordedEvents::default())).unwrap();
+    let core = for_this_system(data.path());
     core.set_update_url(url);
     (data, core)
 }
@@ -226,24 +246,21 @@ fn newer_release_sized(image: Option<&[u8]>, checksum: &str, announced: Option<u
     let (base, files) = serve_files();
     let mut files = files.lock().unwrap();
     files.insert(
-        "/download/v99.0.0/Diffloupe-99.0.0.dmg.sha256".to_string(),
+        format!("/download/v99.0.0/{}.sha256", package()),
         (
             "200 OK",
-            format!("{checksum}  Diffloupe-99.0.0.dmg\n").into_bytes(),
+            format!("{checksum}  {}\n", package()).into_bytes(),
             None,
         ),
     );
     if let Some(image) = image {
         files.insert(
-            "/download/v99.0.0/Diffloupe-99.0.0.dmg".to_string(),
+            format!("/download/v99.0.0/{}", package()),
             ("200 OK", image.to_vec(), announced),
         );
     }
-    files.insert(
-        "/download/latest/macos/version".to_string(),
-        ("200 OK", b"99.0.0\n".to_vec(), None),
-    );
-    format!("{base}/download/latest/macos/version")
+    files.insert(latest_path(), ("200 OK", b"99.0.0\n".to_vec(), None));
+    format!("{base}{}", latest_path())
 }
 
 fn downloaded(
@@ -256,7 +273,8 @@ fn downloaded(
 ) {
     let data = tempfile::tempdir().unwrap();
     let events = Arc::new(RecordedEvents::default());
-    let core = Core::new(data.path(), test_env(), events.clone()).unwrap();
+    let core =
+        Core::for_platform(data.path(), test_env(), events.clone(), Platform::CURRENT).unwrap();
     core.set_update_url(url);
     core.dispatch("check_update", Value::Null).unwrap();
     let result = core
@@ -271,7 +289,7 @@ fn a_verified_download_is_ready_to_install() {
     let (data, core, events, result) = downloaded(&newer_release(Some(&image), &hex(&image)));
     assert_eq!(result.unwrap(), json!({ "version": "99.0.0" }));
     let ready = core.update_ready().unwrap();
-    assert_eq!(ready, data.path().join("updates/Diffloupe-99.0.0.dmg"));
+    assert_eq!(ready, data.path().join("updates").join(package()));
     assert_eq!(std::fs::read(&ready).unwrap(), image);
     let labels: Vec<_> = events
         .take()
@@ -311,7 +329,7 @@ fn a_release_without_a_disk_image_cannot_be_downloaded() {
         result.unwrap_err()["message"]
             .as_str()
             .unwrap()
-            .contains("because its release has no disk image")
+            .contains("because its release has no package for this system")
     );
     assert!(core.update_ready().is_none());
 }
@@ -359,7 +377,7 @@ fn a_ready_update_is_still_ready_after_a_restart() {
     let (data, core, _events, result) = downloaded(&newer_release(Some(&image), &hex(&image)));
     result.unwrap();
     drop(core);
-    let again = Core::new(data.path(), test_env(), Arc::new(RecordedEvents::default())).unwrap();
+    let again = for_this_system(data.path());
     let state = again.dispatch("update_state", Value::Null).unwrap();
     assert_eq!(state["ready"], "99.0.0");
     assert_eq!(
@@ -368,7 +386,7 @@ fn a_ready_update_is_still_ready_after_a_restart() {
     );
     assert_eq!(
         again.update_ready(),
-        Some(data.path().join("updates/Diffloupe-99.0.0.dmg"))
+        Some(data.path().join("updates").join(package()))
     );
 }
 
@@ -382,7 +400,7 @@ fn a_failed_install_is_reported_after_the_restart_until_dismissed() {
         "Diffloupe 99.0.0 was not installed.",
     )
     .unwrap();
-    let core = Core::new(data.path(), test_env(), Arc::new(RecordedEvents::default())).unwrap();
+    let core = for_this_system(data.path());
     let state = core.dispatch("update_state", Value::Null).unwrap();
     assert_eq!(state["failure"], "Diffloupe 99.0.0 was not installed.");
     assert_eq!(state["ready"], Value::Null);
@@ -392,4 +410,85 @@ fn a_failed_install_is_reported_after_the_restart_until_dismissed() {
         Value::Null
     );
     assert!(!updates.exists());
+}
+
+#[test]
+fn every_platform_downloads_its_own_package_and_ignores_the_others() {
+    let image = vec![5u8; 50_000];
+    let cases = [
+        (Platform::Macos, "Diffloupe-99.0.0.dmg"),
+        (Platform::Windows, "Diffloupe-99.0.0-windows-x64-setup.exe"),
+        (Platform::Linux, "Diffloupe-99.0.0-linux-amd64.deb"),
+    ];
+    for (platform, name) in cases {
+        let (base, files) = serve_files();
+        {
+            let mut files = files.lock().unwrap();
+            files.insert(
+                format!("/download/v99.0.0/{name}.sha256"),
+                (
+                    "200 OK",
+                    format!("{}  {name}\n", hex(&image)).into_bytes(),
+                    None,
+                ),
+            );
+            files.insert(
+                format!("/download/v99.0.0/{name}"),
+                ("200 OK", image.clone(), None),
+            );
+            files.insert(
+                format!("/download/latest/{}/version", platform.name()),
+                ("200 OK", b"99.0.0\n".to_vec(), None),
+            );
+        }
+        let data = tempfile::tempdir().unwrap();
+        let core = Core::for_platform(
+            data.path(),
+            test_env(),
+            Arc::new(RecordedEvents::default()),
+            platform,
+        )
+        .unwrap();
+        core.set_update_url(&format!(
+            "{base}/download/latest/{}/version",
+            platform.name()
+        ));
+        let check = core.dispatch("check_update", Value::Null).unwrap();
+        assert_eq!(check["latest"], "99.0.0", "{platform:?}");
+        core.dispatch("download_update", json!({ "version": "99.0.0" }))
+            .unwrap_or_else(|error| panic!("{platform:?}: {}", error.message));
+        assert_eq!(
+            core.update_ready().unwrap(),
+            data.path().join("updates").join(name),
+            "{platform:?}"
+        );
+        drop(core);
+        let again = Core::for_platform(
+            data.path(),
+            test_env(),
+            Arc::new(RecordedEvents::default()),
+            platform,
+        )
+        .unwrap();
+        assert!(
+            again.update_ready().is_some(),
+            "{platform:?} keeps it after a restart"
+        );
+        drop(again);
+        let other = Core::for_platform(
+            data.path(),
+            test_env(),
+            Arc::new(RecordedEvents::default()),
+            if platform == Platform::Windows {
+                Platform::Linux
+            } else {
+                Platform::Windows
+            },
+        )
+        .unwrap();
+        assert!(
+            other.update_ready().is_none(),
+            "{platform:?} package is not another's"
+        );
+    }
 }

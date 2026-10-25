@@ -122,6 +122,18 @@ impl TempRepo {
     }
 }
 
+pub fn make_executable(path: &std::path::Path) {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut permissions = std::fs::metadata(path).expect("script").permissions();
+        permissions.set_mode(0o755);
+        std::fs::set_permissions(path, permissions).expect("make the script executable");
+    }
+    #[cfg(not(unix))]
+    let _ = path;
+}
+
 impl Default for TempRepo {
     fn default() -> Self {
         TempRepo::new()
