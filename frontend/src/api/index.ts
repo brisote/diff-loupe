@@ -3,7 +3,7 @@ import type { ArgsOf, Command, ResultOf } from "./commands";
 import type { ApiError } from "./generated/ApiError";
 import type { CoreEvent } from "./generated/CoreEvent";
 import { tauriTransport } from "./tauri";
-import { type Listener, type Transport, toApiError } from "./transport";
+import { type Listener, type Transport, toApiError, type WindowAction } from "./transport";
 
 export type { ApiError } from "./generated/ApiError";
 export type { AppInfo } from "./generated/AppInfo";
@@ -20,6 +20,7 @@ export type { LogEntry } from "./generated/LogEntry";
 export type { MergeFile } from "./generated/MergeFile";
 export type { MergeOutcome } from "./generated/MergeOutcome";
 export type { MergeState } from "./generated/MergeState";
+export type { Platform } from "./generated/Platform";
 export type { PushResult } from "./generated/PushResult";
 export type { RecentRepo } from "./generated/RecentRepo";
 export type { RepoInfo } from "./generated/RepoInfo";
@@ -87,6 +88,18 @@ export class Backend {
 
   installUpdate(): Promise<void> {
     return this.run("install_update", () => this.transport.installUpdate());
+  }
+
+  windowControl(action: WindowAction): Promise<void> {
+    return this.run("window_control", () => this.transport.windowControl(action));
+  }
+
+  windowMaximized(): Promise<boolean> {
+    return this.transport.windowMaximized();
+  }
+
+  onWindowMaximized(listener: Listener<boolean>): () => void {
+    return this.transport.onWindowMaximized(listener);
   }
 
   uninstall(): Promise<void> {

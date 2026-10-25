@@ -24,6 +24,8 @@ pub struct Bridge {
     installed: Mutex<Option<String>>,
     failures: Mutex<HashMap<String, Value>>,
     opened: Mutex<Vec<String>>,
+    windows: Mutex<Vec<String>>,
+    maximized: AtomicBool,
     push: broadcast::Sender<String>,
 }
 
@@ -59,6 +61,8 @@ impl Bridge {
             installed: Mutex::new(None),
             failures: Mutex::new(HashMap::new()),
             opened: Mutex::new(Vec::new()),
+            windows: Mutex::new(Vec::new()),
+            maximized: AtomicBool::new(false),
             push,
         }))
     }
@@ -135,6 +139,32 @@ impl Bridge {
                 }
                 Ok(Value::Null)
             }
+            "window_control" => {
+                let action = args
+                    .get("action")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default();
+                if !matches!(action, "minimize" | "toggleMaximize" | "close") {
+                    return Err(json!({
+                        "code": "invalidArgs",
+                        "message": format!("{action} is not a window action"),
+                        "path": Value::Null,
+                    }));
+                }
+                if action == "toggleMaximize" {
+                    self.maximized.fetch_xor(true, Ordering::SeqCst);
+                }
+                if let Ok(mut windows) = self.windows.lock() {
+                    windows.push(action.to_string());
+                }
+                Ok(Value::Null)
+            }
+            "window_maximized" => Ok(json!(self.maximized.load(Ordering::SeqCst))),
+            "devbridge_window_calls" => Ok(self
+                .windows
+                .lock()
+                .map(|windows| json!(*windows))
+                .unwrap_or(Value::Null)),
             "devbridge_opened" => Ok(self
                 .opened
                 .lock()

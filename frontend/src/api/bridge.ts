@@ -64,6 +64,11 @@ export function bridgeTransport(url: string): Transport {
     installUpdate: async () => {
       await send("install_update", null);
     },
+    windowControl: async (action) => {
+      await send("window_control", { action });
+    },
+    windowMaximized: () => send("window_maximized", null) as Promise<boolean>,
+    onWindowMaximized: () => () => undefined,
     onEvent: (listener) => {
       events.add(listener);
       return () => events.delete(listener);

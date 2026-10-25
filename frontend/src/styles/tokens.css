@@ -30,6 +30,8 @@
   --row-hover-bg: #00000008;
   --hover-bg: #00000012;
   --pressed-bg: #00000020;
+  --window-close-hover-bg: #e81123;
+  --window-close-hover-text: #ffffff;
   --toggled-bg: #d3deff;
   --tab-selected-bg: #e5eaff;
   --tab-selected-border: #adc4ff;
@@ -114,6 +116,8 @@
   --row-hover-bg: #ffffff10;
   --hover-bg: #ffffff17;
   --pressed-bg: #ffffff29;
+  --window-close-hover-bg: #e81123;
+  --window-close-hover-text: #ffffff;
   --toggled-bg: #364b8d;
   --tab-selected-bg: #27345a;
   --tab-selected-border: #364b8d;

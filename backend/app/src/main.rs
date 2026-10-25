@@ -57,6 +57,28 @@ async fn pick_folder(app: AppHandle) -> Option<String> {
 }
 
 #[tauri::command]
+fn window_control(window: tauri::WebviewWindow, action: String) -> Result<(), String> {
+    match action.as_str() {
+        "minimize" => window.minimize(),
+        "toggleMaximize" => {
+            if window.is_maximized().map_err(|e| e.to_string())? {
+                window.unmaximize()
+            } else {
+                window.maximize()
+            }
+        }
+        "close" => window.close(),
+        other => return Err(format!("{other} is not a window action")),
+    }
+    .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn window_maximized(window: tauri::WebviewWindow) -> Result<bool, String> {
+    window.is_maximized().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 fn open_link(url: String) -> Result<(), String> {
     let url = diffloupe_core::update::link(&url).map_err(|e| e.to_string())?;
     let mut child = std::process::Command::new("open")
@@ -249,6 +271,23 @@ fn move_app_to_trash() -> Result<(), String> {
     Ok(())
 }
 
+#[cfg(windows)]
+fn watch_maximized(window: &tauri::WebviewWindow) {
+    let watched = window.clone();
+    let last = AtomicBool::new(false);
+    window.on_window_event(move |event| {
+        if let tauri::WindowEvent::Resized(_) = event {
+            let now = watched.is_maximized().unwrap_or(false);
+            if last.swap(now, Ordering::SeqCst) != now {
+                let _ = watched.emit("window-maximized", now);
+            }
+        }
+    });
+}
+
+#[cfg(not(windows))]
+fn watch_maximized(_window: &tauri::WebviewWindow) {}
+
 #[cfg(target_os = "macos")]
 fn keep_out_of_window_restoration(window: &tauri::WebviewWindow) {
     if let Ok(pointer) = window.ns_window() {
@@ -283,6 +322,7 @@ fn main() {
             let events = Arc::new(WindowEvents(app.handle().clone()));
             if let Some(window) = app.get_webview_window("main") {
                 keep_out_of_window_restoration(&window);
+                watch_maximized(&window);
             }
             if let Some(bundle) = app_bundle() {
                 install::clear_leftovers(&bundle);
@@ -378,6 +418,8 @@ impl RegisterCommands for tauri::Builder<tauri::Wry> {
             dispatch,
             pick_folder,
             open_link,
+            window_control,
+            window_maximized,
             uninstall,
             install_update,
             smoke::smoke_report,
@@ -391,6 +433,8 @@ impl RegisterCommands for tauri::Builder<tauri::Wry> {
             dispatch,
             pick_folder,
             open_link,
+            window_control,
+            window_maximized,
             uninstall,
             install_update
         ])
