@@ -64,7 +64,11 @@ python3 website/scripts/install_check.py      # installs the newest release .dmg
 python3 website/scripts/make_og.py            # redraws the link preview image with Chrome and sips
 uv run --with pillow python backend/scripts/make_icon.py backend/app/app-icon.png   # redraws the app icon; then `pnpm tauri icon backend/app/app-icon.png -o backend/target/icons` and copy the files listed in bundle.icon of backend/app/tauri.conf.json into backend/app/icons/
 python3 backend/scripts/perf_repo.py ~/perf/vscode   # prepares a clone of microsoft/vscode for the speed checks
+python3 backend/scripts/platform_check.py linux      # every Rust gate, the Tauri shell included, and every UI gate in an Ubuntu container
+python3 backend/scripts/platform_check.py windows    # clippy for the Windows target with cargo-xwin, then the tests in the Windows test machine
 ```
+
+`platform_check.py` checks Linux and Windows from the Mac; `--only <gate>` runs one gate (`fmt`, `clippy`, `test`, `ui` for Linux; `clippy`, `test`, `ui` for Windows). The Linux mode needs Docker (OrbStack). It builds an image from `backend/scripts/linux/Dockerfile` (Microsoft's Playwright image plus Rust and WebKitGTK), mounts this checkout, and keeps the container's build output, caches and `node_modules` in Docker volumes, so they never mix with the Mac's. The Windows mode needs `cargo install cargo-xwin`, `rustup target add x86_64-pc-windows-msvc` and `brew install llvm lld`; its build output goes to `backend/target/windows/`. When `DIFFLOUPE_WINDOWS_HOST=<user>@<address>` names the Windows test machine (Windows 11 with Git for Windows, Rust with MSVC, Node 22, pnpm and the OpenSSH server), it sends the committed `HEAD` there and runs the tests in `%USERPROFILE%\diffloupe-check`; commit before running it, because uncommitted changes are not sent. Run both modes before merging a change to `backend/` or to code that differs per platform, and report their results; the Windows clippy gate fails until the core compiles for Windows. Each Linux run updates the container's Rust stable; the container runs Node 22, as CI does. Old images of the gate are removed when a new one is built. The Windows machine also needs the Playwright browser, which the Windows UI gate installs.
 
 From `frontend/`:
 
@@ -165,7 +169,7 @@ A user upgrades by installing a new `.dmg` over the old app. The new version mus
 
 ## Git workflow
 
-- Each plan step is built on its own branch from `main`: `gs/step-<NN>-<slug>`, for example `gs/step-05-changes`.
+- Each plan step is built on its own branch from `main`: `gs/<task>-<NN>-<slug>`, where `<task>` names the piece of work, for example `gs/platforms-02-core`.
 - Commit messages are one short sentence. No metadata, no co-author lines.
 - The repository is open source, so every commit and merge message says what changed in words any reader of the history understands. Never put plan step numbers, decision IDs or other references to the private planning repository in a commit or merge message, for example "Merge the branch log fix for the default branch", not "Merge Step 9.2".
 - Merge a finished step into `main` with a merge commit (`git merge --no-ff`), then push `main`. Never force-push. Never rebase or rewrite pushed history.
