@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { blocks, parse } from "./blocks";
-import { canRender, markdownRows, startsRun } from "./MarkdownDiff";
+import { canRender, markdownFolds, markdownRows, startsRun } from "./MarkdownDiff";
 import { markRow } from "./mark";
 import { match } from "./match";
 import { render } from "./render";
@@ -181,5 +181,25 @@ describe("markdown diff", () => {
     expect(kinds.filter((kind) => kind === "inserted").length).toBeGreaterThan(1);
     expect(kinds.filter((kind) => kind === "deleted").length).toBeGreaterThan(1);
     expect(starts).toEqual(["deleted", "inserted"]);
+  });
+});
+
+describe("markdownFolds", () => {
+  const rows = (kinds: string) =>
+    [...kinds].map((kind) => ({ kind: kind === "=" ? "equal" : "modified" })) as Parameters<
+      typeof markdownFolds
+    >[0];
+
+  it("folds unchanged blocks and keeps one after each change", () => {
+    expect(markdownFolds(rows("======m=====m==="))).toEqual([
+      [0, 6],
+      [8, 12],
+      [14, 16],
+    ]);
+  });
+
+  it("folds nothing when every block is unchanged or the run is short", () => {
+    expect(markdownFolds(rows("====="))).toEqual([]);
+    expect(markdownFolds(rows("=m=m=m"))).toEqual([]);
   });
 });
