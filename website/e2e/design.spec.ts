@@ -12,8 +12,11 @@ import {
   tolerance,
 } from "./design";
 import { missing, pages } from "./pages";
+import { siteUrl } from "./release";
 
 test.use({ reducedMotion: "reduce" });
+
+test.skip(Boolean(siteUrl), "the live run checks the deployed build, which passed this comparison");
 
 test.skip(
   !designPresent && Boolean(process.env.CI),

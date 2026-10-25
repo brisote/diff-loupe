@@ -1,26 +1,26 @@
-import { readFileSync } from "node:fs";
 import { expect, test } from "@playwright/test";
-
-const fixture: {
-  releases: { tag_name: string; assets: { name: string; browser_download_url: string }[] }[];
-} = JSON.parse(readFileSync(new URL("../src/data/release.fixture.json", import.meta.url), "utf8"));
+import { formatDate } from "../src/lib/release";
+import { groups, latest, published } from "./release";
 
 test("the changelog shows the public releases newest first, with their files", async ({ page }) => {
   await page.goto("/changelog/");
   const releases = page.locator("article.release");
-  await expect(releases.getByRole("heading", { level: 2 })).toHaveText(["Diffloupe 0.2.0"]);
-  await expect(page.locator(".count")).toHaveText("1 release");
-  await expect(page.locator("main")).not.toContainText("0.1.0");
+  await expect(releases.getByRole("heading", { level: 2 })).toHaveText(
+    published.map((release) => `Diffloupe ${release.version}`),
+  );
+  await expect(page.locator(".count")).toHaveText(
+    published.length === 1 ? "1 release" : `${published.length} releases`,
+  );
+  await expect(page.locator("main")).not.toContainText("Diffloupe 0.1.0");
   const first = releases.first();
-  await expect(first.locator(".release-date")).toHaveText("November 3, 2026");
-  await expect(first.locator(".release-tags")).toHaveText("v0.2.0Latest");
-  const dmg = fixture.releases[0]?.assets.find((asset) => asset.name === "Diffloupe-0.2.0.dmg");
+  await expect(first.locator(".release-date")).toHaveText(formatDate(latest.date));
+  await expect(first.locator(".release-tags")).toHaveText(`v${latest.version}Latest`);
   await expect(first.getByRole("link", { name: "Disk image" })).toHaveAttribute(
     "href",
-    dmg?.browser_download_url ?? "",
+    latest.dmg.url,
   );
   await expect(first.getByRole("link", { name: "Download" })).toHaveAttribute("href", "/download/");
-  await expect(first.getByRole("heading", { level: 3 })).toHaveText(["Review", "Git", "Install"]);
+  await expect(first.getByRole("heading", { level: 3 })).toHaveText(groups(latest.version));
   await expect(page.getByRole("link", { name: "Download the latest release" })).toHaveAttribute(
     "href",
     "/download/",
