@@ -1,4 +1,5 @@
 import type { ApiError, ReportEnv } from "../api";
+import { isWindowsPath } from "../lib/paths";
 
 export const issueForm =
   "https://github.com/brisote/diff-loupe/issues/new?template=error_report.yml";
@@ -61,16 +62,32 @@ function literal(text: string): string {
   return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+const verbatimPrefix = /(?:\\\\\?\\)/;
+
+function pathPattern(path: string): { source: string; flags: string; after: string } {
+  const plain = path.replace(/^\\\\\?\\/, "");
+  if (!isWindowsPath(plain)) {
+    return { source: literal(path.replace(/\/+$/, "")), flags: "g", after: "/" };
+  }
+  const parts = plain.replace(/[\\/]+$/, "").split(/[\\/]+/);
+  return {
+    source: `${verbatimPrefix.source}?${parts.map(literal).join("[\\\\/]+")}`,
+    flags: "gi",
+    after: "\\\\/",
+  };
+}
+
 export function hidePaths(text: string, home: string | null, repositories: string[]): string {
-  const trim = (path: string) => path.replace(/\/+$/, "");
   const swaps: [string, string][] = [
-    ...repositories.filter(Boolean).map((path): [string, string] => [trim(path), "<repository>"]),
-    ...(home ? [[trim(home), "~"] as [string, string]] : []),
+    ...repositories.filter(Boolean).map((path): [string, string] => [path, "<repository>"]),
+    ...(home ? [[home, "~"] as [string, string]] : []),
   ].sort((a, b) => b[0].length - a[0].length);
   let hidden = text;
-  for (const [path, mark] of swaps)
-    if (path)
-      hidden = hidden.replace(new RegExp(`${literal(path)}(?=/|\\s|["'\`:,;)]|$)`, "g"), mark);
+  for (const [path, mark] of swaps) {
+    const { source, flags, after } = pathPattern(path);
+    if (source && source !== "(?:)")
+      hidden = hidden.replace(new RegExp(`${source}(?=[${after}]|\\s|["'\`:,;)]|$)`, flags), mark);
+  }
   return hidden;
 }
 

@@ -1,9 +1,12 @@
 import { Dialog } from "../lib/dialog";
 import { Icon } from "../lib/icon";
+import { usePlatform } from "../lib/platform";
 import { buildMonth, shortVersion } from "../lib/version";
+import { aboutRemoval } from "../lib/words";
 import { useApp } from "../state/context";
 
 export function AboutDialog() {
+  const platform = usePlatform();
   const version = useApp((state) => state.info?.version ?? "");
   const showDialog = useApp((state) => state.showDialog);
   const close = () => showDialog(null);
@@ -24,8 +27,8 @@ export function AboutDialog() {
         <div className="dl-banner is-info">
           <Icon name="status-info" />
           <span className="dl-banner-text">
-            To remove Diffloupe, use <b>Uninstall Diffloupe…</b> in the settings menu. Dragging the
-            app to the Trash leaves its settings on this Mac.
+            To remove Diffloupe, use <b>Uninstall Diffloupe…</b> in the settings menu.{" "}
+            {aboutRemoval(platform)}
           </span>
           <span className="dl-banner-actions" />
         </div>

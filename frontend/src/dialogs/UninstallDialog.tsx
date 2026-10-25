@@ -2,9 +2,12 @@ import { useState } from "react";
 import { type ApiError, toApiError } from "../api";
 import { Dialog } from "../lib/dialog";
 import { Icon } from "../lib/icon";
+import { usePlatform } from "../lib/platform";
+import { uninstallEffect } from "../lib/words";
 import { useApp } from "../state/context";
 
 export function UninstallDialog() {
+  const platform = usePlatform();
   const backend = useApp((state) => state.backend);
   const showDialog = useApp((state) => state.showDialog);
   const [running, setRunning] = useState(false);
@@ -26,8 +29,8 @@ export function UninstallDialog() {
     <Dialog label="Uninstall Diffloupe" className="app-uninstall" onClose={close}>
       <div className="dl-dialog-title">Uninstall Diffloupe</div>
       <p className="dl-dialog-text">
-        This deletes Diffloupe's own files from this Mac, moves the app to the Trash and quits. Your
-        repositories are not touched, and neither is data that other apps keep.
+        {uninstallEffect(platform)} Your repositories are not touched, and neither is data that
+        other apps keep.
       </p>
       {error && (
         <div className="app-uninstall-error">

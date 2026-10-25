@@ -1,6 +1,6 @@
 import { render } from "@testing-library/react";
 import type { ReactElement } from "react";
-import { Backend, type RecentRepo, type RepoInfo, type Settings } from "../api";
+import { Backend, type Platform, type RecentRepo, type RepoInfo, type Settings } from "../api";
 import { FakeTransport, type Handler } from "../api/fake";
 import { StoreProvider } from "../state/context";
 import { createAppStore } from "../state/store";
@@ -34,13 +34,13 @@ export function repoInfo(name: string, branch = "main"): RepoInfo {
   };
 }
 
-export function fakeCore(handlers: Record<string, Handler> = {}) {
+export function fakeCore(handlers: Record<string, Handler> = {}, platform: Platform = "macos") {
   return new FakeTransport({
     app_info: () => ({
       version: "0.1.0",
       settingsNotice: null,
       home: "/Users/ada",
-      platform: "macos",
+      platform,
     }),
     get_settings: () => settings,
     recent_repos: () => [],

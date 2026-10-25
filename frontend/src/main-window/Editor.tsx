@@ -9,6 +9,7 @@ import { DiffViewer } from "../diff/DiffViewer";
 import { UnifiedViewer } from "../diff/UnifiedViewer";
 import { Icon } from "../lib/icon";
 import { splitPath } from "../lib/paths";
+import { usePlatform } from "../lib/platform";
 import { canRender, isMarkdown, MarkdownDiff, markdownRows } from "../markdown-diff/MarkdownDiff";
 import { MergeBanner } from "../merge/MergeBanner";
 import { MergeHost } from "../merge/MergeHost";
@@ -90,6 +91,7 @@ function useLogSource(): Source {
 }
 
 export function Editor() {
+  const platform = usePlatform();
   const tab = useApp((state) => state.repo?.lastTab ?? "changes");
   const changesSource = useChangesSource();
   const logSource = useLogSource();
@@ -168,6 +170,7 @@ export function Editor() {
       <MergeBanner />
       <NoticeBanner />
       <DiffToolbar
+        platform={platform}
         differences={differences}
         markdown={
           markdown
