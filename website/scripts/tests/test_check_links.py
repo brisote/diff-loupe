@@ -28,6 +28,15 @@ class CheckLinksTest(unittest.TestCase):
         self.page('<a href="/download/#manual">x</a><img src="/icon.png"><a href="#top">up</a><a href="https://example.com/">out</a>')
         self.assertEqual(check_links.problems(self.site), [])
 
+    def test_external_links_are_collected_once_and_checked(self):
+        self.page('<a href="https://example.com/">a</a><a href="https://example.com/">b</a><a href="http://down.test/x">c</a><a href="/download/">d</a><link rel="canonical" href="https://diffloupe.com/">')
+        links = check_links.external(self.site)
+        self.assertEqual(links, ["http://down.test/x", "https://example.com/"])
+        self.assertEqual(
+            check_links.unreachable(links, lambda url: "down" not in url),
+            ["http://down.test/x does not answer"],
+        )
+
     def test_a_missing_page_is_reported(self):
         self.page('<a href="/changelog/">x</a>')
         self.assertEqual(check_links.problems(self.site), ["index.html: /changelog/ does not exist"])

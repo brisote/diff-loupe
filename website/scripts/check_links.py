@@ -1,7 +1,12 @@
-"""Checks that every internal link, asset and anchor in the built site resolves."""
+"""Checks that every internal link, asset and anchor in the built site resolves, and with --external that every link to another site answers."""
 
+import argparse
+import http.client
 import re
 import sys
+import urllib.error
+import urllib.request
+from collections.abc import Callable
 from html.parser import HTMLParser
 from pathlib import Path
 from urllib.parse import unquote, urlsplit
@@ -69,14 +74,54 @@ def problems(site: Path) -> list[str]:
     return found
 
 
+def external(site: Path, own: str = "diffloupe.com") -> list[str]:
+    links = {
+        link
+        for path in site.rglob("*.html")
+        for link in read(path).links
+        if urlsplit(link).scheme in ("http", "https") and urlsplit(link).hostname != own
+    }
+    return sorted(links)
+
+
+REFUSED = {401, 403, 429}
+
+
+def answers(url: str) -> bool:
+    for method in ("HEAD", "GET"):
+        request = urllib.request.Request(url, method=method, headers={"User-Agent": "Mozilla/5.0 diffloupe-link-check"})
+        try:
+            with urllib.request.urlopen(request, timeout=20) as response:
+                if response.status < 400:
+                    return True
+        except urllib.error.HTTPError as error:
+            if error.code in REFUSED:
+                return True
+        except (OSError, http.client.HTTPException, ValueError):
+            continue
+    return False
+
+
+def unreachable(links: list[str], check: Callable[[str], bool] = answers) -> list[str]:
+    return [f"{link} does not answer" for link in links if not check(link)]
+
+
 def main() -> int:
-    site = Path(sys.argv[1] if len(sys.argv) > 1 else "dist").resolve()
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("site", nargs="?", default="dist")
+    parser.add_argument("--external", action="store_true", help="also check every link to another site")
+    args = parser.parse_args()
+    site = Path(args.site).resolve()
     found = problems(site)
+    outside = external(site) if args.external else []
+    found += unreachable(outside)
     for problem in found:
         print(f"FAIL  {problem}")
     if found:
         return 1
     print(f"ok    every internal link in {len(list(site.rglob('*.html')))} pages resolves")
+    if args.external:
+        print(f"ok    all {len(outside)} links to other sites answer")
     return 0
 
 

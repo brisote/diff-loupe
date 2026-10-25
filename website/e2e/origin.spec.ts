@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { port } from "../playwright.config";
+import { baseURL } from "../playwright.config";
 import { missing, pages } from "./pages";
 
 const allowed = new Set(["'self'", "'none'"]);
@@ -9,7 +9,7 @@ for (const path of [...pages.map((target) => target.path), missing.path]) {
     const elsewhere: string[] = [];
     await context.route("**/*", (route) => {
       const url = new URL(route.request().url());
-      if (url.host !== `127.0.0.1:${port}`) {
+      if (url.host !== new URL(baseURL).host) {
         elsewhere.push(url.href);
         return route.abort();
       }
