@@ -27,7 +27,15 @@ const minDetails = 120;
 const minCommits = 96;
 const splitterSize = 6;
 const menuWidth = 200;
-const menuHeight = 40;
+const menuHeight = 88;
+
+export function commitMessage(commit: CommitDetails): string {
+  return commit.body ? `${commit.subject}\n\n${commit.body}` : commit.subject;
+}
+
+export function commitAuthor(commit: CommitDetails): string {
+  return commit.email ? `${commit.author} <${commit.email}>` : commit.author;
+}
 
 export function commitCount(count: number): string {
   return count === 1 ? "1 commit" : `${count} commits`;
@@ -168,6 +176,12 @@ type ListProps = {
 
 type Menu = { id: string; x: number; y: number };
 
+const copyActions: { label: string; text?: (commit: CommitDetails) => string }[] = [
+  { label: "Copy Revision Number" },
+  { label: "Copy Commit Message", text: commitMessage },
+  { label: "Copy Author", text: commitAuthor },
+];
+
 export function commitClass(entry: LogEntry, first?: string, last?: string): string {
   return [
     entry.id === first ? "is-first" : "",
@@ -181,8 +195,16 @@ export function commitClass(entry: LogEntry, first?: string, last?: string): str
 function CommitList({ entries, files, first, last }: ListProps) {
   const selected = useApp((state) => state.logCommit);
   const selectCommit = useApp((state) => state.selectCommit);
+  const backend = useApp((state) => state.backend);
+  const path = useApp((state) => state.repo?.path);
   const [menu, setMenu] = useState<Menu | null>(null);
   const closeMenu = useCallback(() => setMenu(null), []);
+  const copy = async (id: string, text?: (commit: CommitDetails) => string) => {
+    if (!text) return navigator.clipboard?.writeText(id);
+    if (!path) return;
+    const commit = await backend.call("commit_details", { path, id });
+    return navigator.clipboard?.writeText(text(commit));
+  };
   const scroller = useRef<HTMLDivElement>(null);
   const virtualizer = useVirtualizer({
     count: entries.length,
@@ -290,16 +312,19 @@ function CommitList({ entries, files, first, last }: ListProps) {
           style={{ top: menu.y, left: menu.x }}
           onClose={closeMenu}
         >
-          <MenuRow
-            label="Copy Revision Number"
-            onActivate={() => {
-              void navigator.clipboard?.writeText(menu.id);
-              closeMenu();
-            }}
-          >
-            <Icon name="general-copy" />
-            <span className="dl-row-name app-row-wide">Copy Revision Number</span>
-          </MenuRow>
+          {copyActions.map(({ label, text }) => (
+            <MenuRow
+              key={label}
+              label={label}
+              onActivate={() => {
+                closeMenu();
+                void copy(menu.id, text);
+              }}
+            >
+              <Icon name="general-copy" />
+              <span className="dl-row-name app-row-wide">{label}</span>
+            </MenuRow>
+          ))}
         </Popup>
       )}
     </>

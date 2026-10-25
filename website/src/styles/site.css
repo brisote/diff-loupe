@@ -170,8 +170,6 @@
 .scene-bar { position: absolute; top: 20px; left: 20px; right: 20px; display: flex; justify-content: space-between; align-items: center; }
 .scene-tile { width: 40px; height: 40px; border-radius: 12px; background: oklch(0 0 0 / 0.62); border: 1px solid oklch(1 0 0 / 0.12); display: flex; align-items: center; justify-content: center; }
 .scene-tile img { width: 26px; height: 26px; border-radius: 6px; }
-.scene-status { display: flex; align-items: center; gap: 14px; height: 40px; padding: 0 14px; border-radius: 22px; background: oklch(0 0 0 / 0.62); border: 1px solid oklch(1 0 0 / 0.12); color: #ffffff; font-family: var(--mono); font-size: 13px; }
-.scene-status .i { width: 16px; height: 16px; color: #ffffff; }
 .scene-window { position: absolute; left: 50%; top: 84px; width: 70%; transform: translateX(-50%); }
 .window { border-radius: 12px; overflow: hidden; border: 1px solid var(--line-2); box-shadow: var(--shadow-window); background: var(--card); }
 .window img { width: 100%; height: auto; }
@@ -392,7 +390,6 @@
   .hero-actions { margin-top: 40px; flex-wrap: wrap; }
   .scene { margin-top: 48px; aspect-ratio: 1 / 1; border-radius: 20px; }
   .scene-bar { top: 14px; left: 14px; right: 14px; }
-  .scene-status { gap: 10px; font-size: 12px; height: 34px; }
   .scene-tile { width: 34px; height: 34px; }
   .scene-window { top: 70px; width: 92%; }
   .band { padding: 64px 0; }

@@ -39,7 +39,7 @@ test("the log draws the branch's history as a graph, with the merge from main as
   await expect(commits(page).last()).toHaveClass(/is-last/);
 });
 
-test("Copy Revision Number in a commit's menu copies its full id", async ({
+test("a commit's menu copies its full id, its message and its author", async ({
   page,
   workspace,
   startApp,
@@ -58,9 +58,17 @@ test("Copy Revision Number in a commit's menu copies its full id", async ({
   const menu = page.getByRole("menu", { name: "Commit actions" });
   await menu.getByRole("menuitem", { name: "Copy Revision Number" }).click();
   await expect(menu).toHaveCount(0);
-  const id = git(repo, "rev-parse", "HEAD~1");
-  expect(await page.evaluate(() => (window as unknown as { copied: string[] }).copied)).toEqual([
-    id,
+  const row = commits(page).filter({ hasText: "Round totals" });
+  await row.click({ button: "right" });
+  await menu.getByRole("menuitem", { name: "Copy Commit Message" }).click();
+  await row.click({ button: "right" });
+  await menu.getByRole("menuitem", { name: "Copy Author" }).click();
+  const copied = () => page.evaluate(() => (window as unknown as { copied: string[] }).copied);
+  await expect.poll(copied).toHaveLength(3);
+  expect(await copied()).toEqual([
+    git(repo, "rev-parse", "HEAD~1"),
+    git(repo, "log", "-1", "--format=%B", "HEAD~1").trim(),
+    git(repo, "log", "-1", "--format=%an <%ae>", "HEAD~1"),
   ]);
 });
 

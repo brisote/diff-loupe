@@ -215,6 +215,7 @@ export function Editor() {
           diff={shown}
           rows={rows}
           inline={view === "renderedInline"}
+          collapse={diffSettings.collapseUnchanged}
           current={current}
           onCurrent={setCurrent}
         />
