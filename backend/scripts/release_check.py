@@ -1,15 +1,17 @@
-"""Checks a release and builds its .dmg, on this Mac or in the Release workflow.
+"""Checks a release and builds its packages, on this Mac, in a Linux container or in the Release workflow.
 
 Run it before tagging, on the commit of main you will tag. With --tag it also checks that
 the tag names the app version and that the commit is on main. With --notes it writes the
 version's CHANGELOG.md section, which becomes the release notes. The Release workflow runs
-the checks on Linux (--only checks) and only the build on macOS (--only build), because
-macOS minutes cost ten times as much.
+the checks on Linux (--only checks) and the build on each system (--only build): the .dmg on
+macOS, and the .deb and .rpm on Linux, because macOS minutes cost ten times as much.
 """
 
 import argparse
 import json
+import platform
 import plistlib
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -17,6 +19,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 BACKEND = ROOT / "backend"
 BUNDLE_ID = "com.diffloupe.app"
+LINUX_ARCHITECTURES = {"x86_64": ("amd64", "x86_64"), "aarch64": ("arm64", "aarch64")}
 
 
 def section(changelog: str, version: str) -> str | None:
@@ -69,7 +72,49 @@ def checks(version: str, tag: str | None, notes_file: Path | None) -> None:
     print("ok    versions, changelog and store fixtures agree")
 
 
+def linux_packages(version: str, machine: str) -> tuple[str, str]:
+    deb, rpm = LINUX_ARCHITECTURES[machine]
+    return f"deb/Diffloupe_{version}_{deb}.deb", f"rpm/Diffloupe-{version}-1.{rpm}.rpm"
+
+
 def build(version: str) -> None:
+    if sys.platform.startswith("linux"):
+        build_linux(version, platform.machine())
+    else:
+        build_macos(version)
+
+
+def build_linux(version: str, machine: str) -> None:
+    if machine not in LINUX_ARCHITECTURES:
+        fail(f"there are no Linux packages for {machine}")
+    if subprocess.run(["pnpm", "tauri", "build"], cwd=ROOT).returncode != 0:
+        fail("pnpm tauri build")
+    bundle = BACKEND / "target/release/bundle"
+    deb, rpm = (bundle / name for name in linux_packages(version, machine))
+    for package in (deb, rpm):
+        if not package.exists():
+            fail(f"{package.name} is missing")
+    fields = run("dpkg-deb", "-f", str(deb), "Package", "Version", "Depends", "Recommends").stdout
+    for wanted in ("Package: diffloupe", f"Version: {version}", "curl", "libwebkit2gtk-4.1-0", "Recommends: git"):
+        if wanted not in fields:
+            fail(f"the .deb lacks {wanted!r}: {fields.strip()}")
+    print(f"ok    {deb.relative_to(ROOT)} is package diffloupe {version} with its dependencies")
+    if shutil.which("rpm"):
+        requires = run("rpm", "-qp", "--requires", str(rpm)).stdout
+        for wanted in ("curl", "libwebkit2gtk-4.1.so.0"):
+            if wanted not in requires:
+                fail(f"the .rpm does not require {wanted}: {requires.strip()}")
+        print(f"ok    {rpm.relative_to(ROOT)} requires curl and WebKitGTK")
+    else:
+        print("skip  the .rpm's dependencies: rpm is not installed on this system")
+    smoke = run("python3", "backend/scripts/app_smoke.py", "--platform", "linux")
+    sys.stdout.write(smoke.stdout)
+    if smoke.returncode != 0:
+        fail(f"the Linux smoke check failed: {smoke.stderr[-400:]}")
+    print("ok    the smoke check passes")
+
+
+def build_macos(version: str) -> None:
     if subprocess.run(["pnpm", "tauri", "build"], cwd=ROOT).returncode != 0:
         fail("pnpm tauri build")
     app = BACKEND / "target/release/bundle/macos/Diffloupe.app"

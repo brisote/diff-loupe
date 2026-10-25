@@ -33,16 +33,21 @@ jobs:
           cache-on-failure: true
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
+      - name: System packages for the Tauri shell
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libwebkit2gtk-4.1-dev libgtk-3-dev libxdo-dev libssl-dev
+
       - name: Rust format
         run: cargo fmt --all --check
 
       - name: Clippy
-        run: cargo clippy --workspace --exclude diffloupe --all-targets -- -D warnings
+        run: cargo clippy --workspace --all-targets -- -D warnings
 
       - name: Rust tests
         run: |
           rm -rf ../frontend/src/api/generated
-          cargo test --workspace --exclude diffloupe
+          cargo test --workspace
 
       - name: Dev bridge for the UI tests
         run: cargo build -p diffloupe-devbridge

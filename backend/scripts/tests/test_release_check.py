@@ -49,5 +49,21 @@ class SectionTest(unittest.TestCase):
         self.assertIsNotNone(release_check.section((root / "CHANGELOG.md").read_text(), version))
 
 
+class LinuxPackagesTest(unittest.TestCase):
+    def test_the_package_names_follow_the_architecture(self):
+        self.assertEqual(
+            release_check.linux_packages("0.3.0", "x86_64"),
+            ("deb/Diffloupe_0.3.0_amd64.deb", "rpm/Diffloupe-0.3.0-1.x86_64.rpm"),
+        )
+        self.assertEqual(
+            release_check.linux_packages("0.3.0", "aarch64"),
+            ("deb/Diffloupe_0.3.0_arm64.deb", "rpm/Diffloupe-0.3.0-1.aarch64.rpm"),
+        )
+
+    def test_an_unknown_architecture_has_no_packages(self):
+        with self.assertRaises(KeyError):
+            release_check.linux_packages("0.3.0", "riscv64")
+
+
 if __name__ == "__main__":
     unittest.main()
