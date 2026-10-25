@@ -50,7 +50,7 @@ class DockerRun(unittest.TestCase):
     def test_the_container_reaps_orphans_and_runs_as_on_ci(self):
         args = platform_check.docker_run("i", Path("/repo"), "x")
         self.assertIn("--init", args)
-        self.assertEqual(args[args.index("-e") + 1], "CI=1")
+        self.assertEqual(args[args.index("-e") + 1], "CI=true")
 
 
 class Gates(unittest.TestCase):
@@ -61,6 +61,12 @@ class Gates(unittest.TestCase):
         self.assertIn("pnpm e2e --workers=2", platform_check.LINUX_GATES["ui"])
         self.assertIn("playwright install webkit", platform_check.WINDOWS_REMOTE_GATES["ui"])
         self.assertIn("--store-dir /home/pwuser/.local/share/pnpm/store", platform_check.LINUX_GATES["ui"])
+
+    def test_the_linux_smoke_gate_runs_the_app_under_a_virtual_display_and_a_session_bus(self):
+        smoke = platform_check.LINUX_GATES["smoke"]
+        self.assertIn("dbus-run-session", smoke)
+        self.assertIn("xvfb-run", smoke)
+        self.assertIn("backend/scripts/app_smoke.py", smoke)
 
     def test_only_picks_the_named_gates_in_order(self):
         picked = platform_check.chosen(platform_check.LINUX_GATES, ["test", "fmt"])

@@ -74,7 +74,19 @@ pub fn curl_program(platform: Platform, get: impl Fn(&str) -> Option<String>) ->
 
 #[cfg(unix)]
 fn login_shell() -> String {
-    std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".to_string())
+    login_shell_from(Platform::CURRENT, |name| std::env::var(name).ok())
+}
+
+pub fn login_shell_from(platform: Platform, get: impl Fn(&str) -> Option<String>) -> String {
+    get("SHELL")
+        .filter(|shell| !shell.is_empty())
+        .unwrap_or_else(|| {
+            match platform {
+                Platform::Macos => "/bin/zsh",
+                _ => "/bin/sh",
+            }
+            .to_string()
+        })
 }
 
 #[cfg(not(unix))]
@@ -134,6 +146,17 @@ fn parse_path(raw: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_shell_is_the_users_own_and_falls_back_to_the_system_default() {
+        let set = |_: &str| Some("/usr/bin/fish".to_string());
+        let empty = |_: &str| Some(String::new());
+        let none = |_: &str| None;
+        assert_eq!(login_shell_from(Platform::Linux, set), "/usr/bin/fish");
+        assert_eq!(login_shell_from(Platform::Macos, none), "/bin/zsh");
+        assert_eq!(login_shell_from(Platform::Linux, none), "/bin/sh");
+        assert_eq!(login_shell_from(Platform::Linux, empty), "/bin/sh");
+    }
 
     #[test]
     fn curl_comes_from_the_place_each_system_keeps_it() {
