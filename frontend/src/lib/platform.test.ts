@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { hasModifier, platformOf, shortcut } from "./platform";
 
 describe("shortcut", () => {
-  it("writes the Mac symbols in IntelliJ's order", () => {
+  it("writes the Mac symbols in the usual order", () => {
     expect(shortcut("macos", "Mod+K")).toBe("⌘K");
     expect(shortcut("macos", "Shift+Mod+K")).toBe("⇧⌘K");
     expect(shortcut("macos", "Mod+,")).toBe("⌘,");
