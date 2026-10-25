@@ -1,5 +1,6 @@
 use diffloupe_core::Core;
 use diffloupe_core::events::{CoreEvent, EventSink};
+use diffloupe_core::platform::Platform;
 use diffloupe_core::shellenv::ShellEnv;
 use futures_util::{SinkExt, StreamExt};
 use serde::Deserialize;
@@ -47,9 +48,10 @@ impl Bridge {
         data_dir: &Path,
         env: ShellEnv,
         pick: Option<String>,
+        platform: Platform,
     ) -> diffloupe_core::error::Result<Arc<Bridge>> {
         let (push, _) = broadcast::channel(4096);
-        let core = Core::new(data_dir, env, Arc::new(Broadcast(push.clone())))?;
+        let core = Core::for_platform(data_dir, env, Arc::new(Broadcast(push.clone())), platform)?;
         Ok(Arc::new(Bridge {
             core,
             pick: Mutex::new(pick),

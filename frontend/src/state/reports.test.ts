@@ -11,7 +11,7 @@ import {
   unhandled,
 } from "./reports";
 
-const env = { version: "0.2.0", macos: "26.1", arch: "aarch64", git: "2.50.1" };
+const env = { version: "0.2.0", os: "macOS 26.1", arch: "aarch64", git: "2.50.1" };
 const at = new Date(2026, 9, 24, 14, 12, 5, 42).getTime();
 const failure = (message: string) => ({
   at,

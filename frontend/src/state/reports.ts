@@ -108,7 +108,7 @@ export function reportText(
   calls: Call[],
 ): string {
   const system = env
-    ? `Diffloupe ${env.version} on macOS ${env.macos ?? "unknown"} (${env.arch}), git ${env.git ?? "unknown"}`
+    ? `Diffloupe ${env.version} on ${env.os ?? "an unknown system"} (${env.arch}), git ${env.git ?? "unknown"}`
     : "Diffloupe, versions unknown";
   const lines = [
     "### Diffloupe error report",
