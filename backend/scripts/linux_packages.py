@@ -12,6 +12,7 @@ runs Uninstall without `pkexec`, which must delete nothing and say how to remove
 
 import argparse
 import hashlib
+import shutil
 import subprocess
 import sys
 import time
@@ -22,30 +23,39 @@ ROOT = Path(__file__).resolve().parents[2]
 DOCKERFILE = Path(__file__).resolve().parent / "linux" / "Dockerfile.packages"
 OUT = ROOT / "backend/target/linux-packages"
 BUNDLE_ID = "com.diffloupe.app"
+NEWER = "99.0.0"
+SERVER = Path(__file__).resolve().parent / "linux" / "release_server.py"
+PORT = 4100
 PACKAGE = "diffloupe"
 USER = "tester"
 
 SYSTEMS = {
     "ubuntu:22.04": {
         "kind": "deb",
-        "prepare": "apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq git sudo xvfb xauth dbus dbus-x11 at-spi2-core libgl1-mesa-dri",
+        "prepare": "apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq git sudo python3 xvfb xauth dbus dbus-x11 at-spi2-core libgl1-mesa-dri",
         "install": "DEBIAN_FRONTEND=noninteractive apt-get install -y -qq /pkg/*.deb",
         "installed": f"dpkg -s {PACKAGE}",
         "remove": f"apt-get remove -y {PACKAGE}",
+        "version": f"dpkg-query -W -f='${{Version}}' {PACKAGE}",
+        "newer": f"Diffloupe-{NEWER}-linux-amd64.deb",
     },
     "debian:12": {
         "kind": "deb",
-        "prepare": "apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq git sudo xvfb xauth dbus dbus-x11 at-spi2-core libgl1-mesa-dri",
+        "prepare": "apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq git sudo python3 xvfb xauth dbus dbus-x11 at-spi2-core libgl1-mesa-dri",
         "install": "DEBIAN_FRONTEND=noninteractive apt-get install -y -qq /pkg/*.deb",
         "installed": f"dpkg -s {PACKAGE}",
         "remove": f"apt-get remove -y {PACKAGE}",
+        "version": f"dpkg-query -W -f='${{Version}}' {PACKAGE}",
+        "newer": f"Diffloupe-{NEWER}-linux-amd64.deb",
     },
     "fedora:40": {
         "kind": "rpm",
-        "prepare": "dnf install -y -q git sudo xorg-x11-server-Xvfb xauth dbus-daemon dbus-x11 at-spi2-core mesa-dri-drivers",
+        "prepare": "dnf install -y -q git sudo python3 xorg-x11-server-Xvfb xauth dbus-daemon dbus-x11 at-spi2-core mesa-dri-drivers",
         "install": "dnf install -y -q /pkg/*.rpm",
         "installed": f"rpm -q {PACKAGE}",
         "remove": f"dnf remove -y -q {PACKAGE}",
+        "version": f"rpm -q --qf '%{{VERSION}}' {PACKAGE}",
+        "newer": f"Diffloupe-{NEWER}-linux-x86_64.rpm",
     },
 }
 
@@ -68,12 +78,16 @@ def build() -> None:
     image = builder_image()
     OUT.mkdir(parents=True, exist_ok=True)
     for old in OUT.iterdir():
-        old.unlink()
+        shutil.rmtree(old) if old.is_dir() else old.unlink()
     command = (
+        "rm -rf backend/target/debug/bundle && "
         "pnpm install --frozen-lockfile --store-dir /pnpm-store && "
         "pnpm tauri build --debug --bundles deb,rpm && "
         "cargo build --manifest-path backend/Cargo.toml -p diffloupe-devbridge && "
-        "cp backend/target/debug/bundle/deb/*.deb backend/target/debug/bundle/rpm/*.rpm backend/target/debug/diffloupe-devbridge /out/"
+        "cp backend/target/debug/bundle/deb/*.deb backend/target/debug/bundle/rpm/*.rpm backend/target/debug/diffloupe-devbridge /out/ && "
+        "rm -rf backend/target/debug/bundle && mkdir -p /out/new && "
+        f"pnpm tauri build --debug --bundles deb,rpm --config '{{\"version\":\"{NEWER}\"}}' && "
+        "cp backend/target/debug/bundle/deb/*.deb backend/target/debug/bundle/rpm/*.rpm /out/new/"
     )
     volumes = {
         "diffloupe-pkg-target": "/work/backend/target",
@@ -211,15 +225,74 @@ def try_system(image: str, spec: dict) -> list[bool]:
     return results
 
 
+def session(box: Box, env: str, run: int, after: int) -> subprocess.CompletedProcess:
+    command = (
+        f"export HOME=/home/{USER} GIO_USE_NETWORK_MONITOR=base GTK_USE_PORTAL=0 NO_AT_BRIDGE=1; {env} "
+        "dbus-run-session -- xvfb-run -a -s '-screen 0 1440x900x24' "
+        f"sh -c 'timeout {run} diffloupe; sleep {after}'"
+    )
+    return box.run(command, user=USER, timeout=run + after + 120)
+
+
+def update_system(image: str, spec: dict, step: str) -> list[bool]:
+    results: list[bool] = []
+    box = Box(image)
+    try:
+        box.run("id tester >/dev/null 2>&1 || useradd -m tester", check=True)
+        box.run(spec["prepare"], check=True)
+        box.run(spec["install"], check=True)
+        seed_repository(box)
+        old = box.run(spec["version"]).stdout.strip()
+        box.run(
+            f"mkdir -p /srv/new && cp /pkg/new/*.{spec['kind']} /srv/new/{spec['newer']}",
+            check=True,
+        )
+        box.run(f"printf '#!/bin/sh\nexec sudo -n \"$@\"\n' > /usr/local/bin/pkexec && chmod +x /usr/local/bin/pkexec && echo '{USER} ALL=(ALL) NOPASSWD: ALL' > /etc/sudoers.d/{USER} && chmod 440 /etc/sudoers.d/{USER}", check=True)
+        if step == "missing pkexec":
+            box.run("rm -f /usr/local/bin/pkexec")
+        bad = " --bad-checksum" if step == "wrong checksum" else ""
+        box.run(f"setsid python3 /pkg/release_server.py /srv/new --port {PORT}{bad} > /tmp/server.log 2>&1 < /dev/null &", check=True)
+        time.sleep(2)
+        env = (
+            "DIFFLOUPE_SMOKE_REPORT=/tmp/report.json DIFFLOUPE_SMOKE_UPDATE=1 "
+            f"DIFFLOUPE_UPDATE_URL=http://127.0.0.1:{PORT}/download/latest/linux/version DIFFLOUPE_UPDATE_ARCH=x86_64 "
+            "WEBKIT_DISABLE_COMPOSITING_MODE=1 WEBKIT_DISABLE_DMABUF_RENDERER=1 LIBGL_ALWAYS_SOFTWARE=1"
+        )
+        box.run("rm -f /tmp/report.json")
+        ran = session(box, env, 120, 20 if step == "update" else 5)
+        report = box.run("cat /tmp/report.json").stdout
+        version = box.run(spec["version"]).stdout.strip()
+        data = f"/home/{USER}/.local/share/{BUNDLE_ID}"
+        label = f"{image}: {step}"
+        if step == "update":
+            results.append(check(f"{label}: the installed package is the new version", version == NEWER and old != NEWER, f"{old} -> {version}"))
+            results.append(check(f"{label}: the restarted app opens the same repository", '"phase":"after"' in report and "acme-billing" in report, f"{report[-400:]} {quiet(ran.stdout + ran.stderr)[-600:]}"))
+            results.append(check(f"{label}: the settings and recent repositories are kept", box.run(f"test -s {data}/state.db").returncode == 0))
+            results.append(check(f"{label}: the downloaded package is removed", box.run(f"test ! -e {data}/updates").returncode == 0))
+        else:
+            results.append(check(f"{label}: the old version stays installed", version == old, f"{old} -> {version}"))
+            results.append(check(f"{label}: the app is still there, with its data", box.run(f"test -s {data}/state.db").returncode == 0))
+            if step == "missing pkexec":
+                results.append(check(f"{label}: the app stays open and says what went wrong", '"phase":"stayed"' in report and "was not installed" in report, report[-500:]))
+            else:
+                results.append(check(f"{label}: the app says the download does not match", '"phase":"failed"' in report and "checksum" in report, report[-500:]))
+    finally:
+        box.close()
+    return results
+
+
 def test(only: list[str]) -> bool:
     if not any(OUT.glob("*.deb")) or not any(OUT.glob("*.rpm")):
         raise SystemExit("FAIL  no packages in backend/target/linux-packages; run `linux_packages.py build` first")
+    shutil.copy(SERVER, OUT / SERVER.name)
     results: list[bool] = []
     for image, spec in SYSTEMS.items():
         if only and image not in only:
             continue
         print(f"----  {image}", flush=True)
         results += try_system(image, spec)
+        for step in ("update", "wrong checksum", "missing pkexec"):
+            results += update_system(image, spec, step)
     return all(results)
 
 

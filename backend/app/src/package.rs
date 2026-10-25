@@ -1,5 +1,5 @@
 use diffloupe_core::update::PackageKind;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -8,7 +8,7 @@ pub struct Owner {
     pub name: String,
 }
 
-fn executable() -> Option<PathBuf> {
+pub fn executable() -> Option<PathBuf> {
     let exe = std::env::current_exe().ok()?;
     let text = exe.to_string_lossy();
     Some(PathBuf::from(
@@ -70,6 +70,27 @@ pub fn removal(owner: &Owner) -> Vec<String> {
         .collect()
 }
 
+pub fn installation(kind: PackageKind, image: &Path) -> Vec<String> {
+    let manager: &[&str] = match kind {
+        PackageKind::Rpm => &["dnf", "install", "-y"],
+        _ => &[
+            "env",
+            "DEBIAN_FRONTEND=noninteractive",
+            "apt-get",
+            "install",
+            "-y",
+            "-o",
+            "Dpkg::Options::=--force-confold",
+        ],
+    };
+    ["pkexec"]
+        .into_iter()
+        .chain(manager.iter().copied())
+        .map(str::to_string)
+        .chain([image.display().to_string()])
+        .collect()
+}
+
 pub fn by_hand(owner: &Owner) -> String {
     match owner.kind {
         PackageKind::Rpm => format!("sudo dnf remove {}", owner.name),
@@ -94,11 +115,7 @@ fn last_line(text: &str) -> Option<String> {
         .map(str::to_string)
 }
 
-pub fn remove() -> Result<(), String> {
-    let Some(owner) = installed() else {
-        return Ok(());
-    };
-    let command = removal(&owner);
+pub fn run(command: &[String]) -> Result<(), String> {
     let output = Command::new(&command[0])
         .args(&command[1..])
         .stdin(Stdio::null())
@@ -107,9 +124,31 @@ pub fn remove() -> Result<(), String> {
     if output.status.success() {
         return Ok(());
     }
+    if Path::new(&command[0])
+        .file_name()
+        .is_some_and(|name| name == "pkexec")
+    {
+        match output.status.code() {
+            Some(126) => {
+                return Err(
+                    "the password dialog was cancelled or the password was not accepted"
+                        .to_string(),
+                );
+            }
+            Some(127) => return Err("pkexec could not run the package manager".to_string()),
+            _ => {}
+        }
+    }
     let said = last_line(&String::from_utf8_lossy(&output.stderr))
         .or_else(|| last_line(&String::from_utf8_lossy(&output.stdout)));
-    Err(said.unwrap_or_else(|| "the package manager did not remove it".to_string()))
+    Err(said.unwrap_or_else(|| "the package manager did not finish".to_string()))
+}
+
+pub fn remove() -> Result<(), String> {
+    match installed() {
+        Some(owner) => run(&removal(&owner)),
+        None => Ok(()),
+    }
 }
 
 #[cfg(test)]
@@ -133,6 +172,71 @@ mod tests {
             removal(&owner(PackageKind::Rpm)),
             ["pkexec", "dnf", "remove", "-y", "diffloupe"]
         );
+    }
+
+    #[test]
+    fn an_update_is_installed_from_its_file_with_the_same_manager_and_pkexec() {
+        let deb = Path::new("/data/updates/Diffloupe-0.3.0-linux-amd64.deb");
+        assert_eq!(
+            installation(PackageKind::Deb, deb),
+            [
+                "pkexec",
+                "env",
+                "DEBIAN_FRONTEND=noninteractive",
+                "apt-get",
+                "install",
+                "-y",
+                "-o",
+                "Dpkg::Options::=--force-confold",
+                "/data/updates/Diffloupe-0.3.0-linux-amd64.deb"
+            ]
+        );
+        let rpm = Path::new("/data/updates/Diffloupe-0.3.0-linux-x86_64.rpm");
+        assert_eq!(
+            installation(PackageKind::Rpm, rpm),
+            [
+                "pkexec",
+                "dnf",
+                "install",
+                "-y",
+                "/data/updates/Diffloupe-0.3.0-linux-x86_64.rpm"
+            ]
+        );
+    }
+
+    #[test]
+    fn a_command_that_cannot_start_or_fails_gives_a_reason() {
+        let missing = run(&["diffloupe-no-such-command".to_string()]).unwrap_err();
+        assert!(missing.contains("could not start"));
+        let failing = run(&[
+            "sh".into(),
+            "-c".into(),
+            "echo first >&2; echo E: locked >&2; exit 3".into(),
+        ]);
+        assert_eq!(failing, Err("E: locked".to_string()));
+        assert_eq!(run(&["true".to_string()]), Ok(()));
+    }
+
+    #[test]
+    fn a_dismissed_or_refused_password_dialog_is_said_in_plain_words() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = std::env::temp_dir().join(format!("diffloupe-pkexec-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let script = dir.join("pkexec");
+        let pkexec = |code: u8| {
+            std::fs::write(&script, format!("#!/bin/sh\necho noise >&2\nexit {code}\n")).unwrap();
+            std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+            run(&[script.display().to_string()])
+        };
+        assert!(pkexec(126).unwrap_err().contains("cancelled"));
+        assert!(
+            pkexec(127)
+                .unwrap_err()
+                .contains("could not run the package manager")
+        );
+        assert_eq!(pkexec(1), Err("noise".to_string()));
+        assert_eq!(pkexec(0), Ok(()));
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]

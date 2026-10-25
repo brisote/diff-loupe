@@ -2,7 +2,10 @@
 
 #[cfg(target_os = "macos")]
 mod install;
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
+#[path = "install_linux.rs"]
+mod install;
+#[cfg(windows)]
 #[path = "install_unsupported.rs"]
 mod install;
 #[cfg(target_os = "linux")]
@@ -31,6 +34,7 @@ struct StartupError(String);
 struct DataDir(PathBuf);
 
 static LEAVING: AtomicBool = AtomicBool::new(false);
+static INSTALL_REFUSED: AtomicBool = AtomicBool::new(false);
 
 impl EventSink for WindowEvents {
     fn emit(&self, event: CoreEvent) {
@@ -115,11 +119,7 @@ async fn uninstall(app: AppHandle, data: State<'_, DataDir>) -> Result<(), Strin
     let trashed = tauri::async_runtime::spawn_blocking(move || {
         let mut locations = footprint::locations(&home, &data_dir, &user_dirs());
         if touches_system() {
-            locations.extend(
-                app_bundle()
-                    .iter()
-                    .flat_map(|bundle| install::leftovers(bundle)),
-            );
+            locations.extend(install_leftovers());
         }
         let system = touches_system();
         if removes_app()
@@ -163,7 +163,7 @@ async fn install_update(app: AppHandle, core: State<'_, Arc<Core>>) -> Result<()
     let image = core
         .update_ready()
         .ok_or_else(|| failed("No downloaded update is ready to install.".to_string()))?;
-    let bundle = app_bundle().ok_or_else(|| {
+    let target = install_target().ok_or_else(|| {
         failed(install::not_installed(
             &image,
             "only an installed Diffloupe can update itself",
@@ -175,7 +175,7 @@ async fn install_update(app: AppHandle, core: State<'_, Arc<Core>>) -> Result<()
         ));
     }
     let installed = tauri::async_runtime::spawn_blocking(move || {
-        install::install(&image, &bundle, true)?;
+        install::install(&image, &target, true)?;
         core.shutdown();
         Ok::<_, String>(())
     })
@@ -189,6 +189,7 @@ async fn install_update(app: AppHandle, core: State<'_, Arc<Core>>) -> Result<()
         }
         Err(message) => {
             LEAVING.store(false, Ordering::SeqCst);
+            INSTALL_REFUSED.store(true, Ordering::SeqCst);
             Err(failed(message))
         }
     }
@@ -198,8 +199,12 @@ fn install_on_quit(core: &Core) {
     if LEAVING.swap(true, Ordering::SeqCst) {
         return;
     }
-    if let (Some(image), Some(bundle)) = (core.update_ready(), app_bundle())
-        && let Err(message) = install::install(&image, &bundle, false)
+    if INSTALL_REFUSED.load(Ordering::SeqCst) {
+        return;
+    }
+    if let Some(image) = core.update_ready().filter(|image| image.exists())
+        && let Some(target) = install_target()
+        && let Err(message) = install::install(&image, &target, false)
     {
         let downloads = core.updates_dir();
         let _ = std::fs::create_dir_all(&downloads);
@@ -265,6 +270,44 @@ done"#,
 }
 
 #[cfg(target_os = "macos")]
+fn install_target() -> Option<install::Target> {
+    app_bundle()
+}
+
+#[cfg(target_os = "linux")]
+fn install_target() -> Option<install::Target> {
+    package::installed()
+}
+
+#[cfg(windows)]
+fn install_target() -> Option<install::Target> {
+    None
+}
+
+#[cfg(target_os = "macos")]
+fn install_leftovers() -> Vec<PathBuf> {
+    app_bundle()
+        .iter()
+        .flat_map(|bundle| install::leftovers(bundle))
+        .collect()
+}
+
+#[cfg(not(target_os = "macos"))]
+fn install_leftovers() -> Vec<PathBuf> {
+    Vec::new()
+}
+
+#[cfg(target_os = "macos")]
+fn clear_install_leftovers() {
+    if let Some(bundle) = app_bundle() {
+        install::clear_leftovers(&bundle);
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn clear_install_leftovers() {}
+
+#[cfg(target_os = "macos")]
 fn app_bundle() -> Option<PathBuf> {
     let exe = std::env::current_exe().ok()?;
     let macos = exe.parent()?;
@@ -274,11 +317,6 @@ fn app_bundle() -> Option<PathBuf> {
         && contents.file_name()? == "Contents"
         && bundle.extension()? == "app")
         .then(|| bundle.to_path_buf())
-}
-
-#[cfg(not(target_os = "macos"))]
-fn app_bundle() -> Option<PathBuf> {
-    None
 }
 
 #[cfg(target_os = "macos")]
@@ -409,9 +447,7 @@ fn main() {
                 keep_out_of_window_restoration(&window);
                 watch_maximized(&window);
             }
-            if let Some(bundle) = app_bundle() {
-                install::clear_leftovers(&bundle);
-            }
+            clear_install_leftovers();
             let data_dir = footprint::app_data_dir(&home);
             #[cfg(debug_assertions)]
             let data_dir = smoke::data_dir().unwrap_or(data_dir);
