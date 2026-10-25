@@ -1,13 +1,9 @@
 import { readFileSync } from "node:fs";
 import { expect, test } from "@playwright/test";
-
-const fixture: {
-  releases: { assets: { name: string; browser_download_url: string }[] }[];
-  checksum: string;
-} = JSON.parse(readFileSync(new URL("../src/data/release.fixture.json", import.meta.url), "utf8"));
+import { formatDate, formatSize } from "../src/lib/release";
+import { latest, siteUrl } from "./release";
 
 const command = "curl -fsSL https://diffloupe.com/install.sh | bash";
-const dmg = fixture.releases[0]?.assets.find((asset) => asset.name === "Diffloupe-0.2.0.dmg");
 
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {
@@ -42,12 +38,12 @@ test("the copy buttons put the exact commands on the clipboard", async ({ page }
 
 test("the release facts and the disk image link come from the release", async ({ page }) => {
   const stats = page.locator(".stats");
-  await expect(stats).toContainText("0.2.0");
-  await expect(stats).toContainText("November 3, 2026");
-  await expect(stats).toContainText("11.8 MB");
-  const link = page.getByRole("link", { name: `Download ${dmg?.name}` });
-  await expect(link).toHaveAttribute("href", dmg?.browser_download_url ?? "");
-  await expect(page.locator(".manual")).toContainText(`Double-click ${dmg?.name}`);
+  await expect(stats).toContainText(latest.version);
+  await expect(stats).toContainText(formatDate(latest.date));
+  await expect(stats).toContainText(formatSize(latest.dmg.size));
+  const link = page.getByRole("link", { name: `Download ${latest.dmg.name}` });
+  await expect(link).toHaveAttribute("href", latest.dmg.url);
+  await expect(page.locator(".manual")).toContainText(`Double-click ${latest.dmg.name}`);
 });
 
 test("the page links to the script, which carries the release's checksum", async ({ page }) => {
@@ -59,8 +55,8 @@ test("the page links to the script, which carries the release's checksum", async
   expect(response.ok()).toBe(true);
   const script = await response.text();
   expect(script.startsWith("#!/bin/bash\n")).toBe(true);
-  expect(script).toContain(`url="${dmg?.browser_download_url}"`);
-  expect(script).toContain(`checksum="${fixture.checksum.split(" ")[0]}"`);
+  expect(script).toContain(`url="${latest.dmg.url}"`);
+  expect(script).toContain(`checksum="${latest.dmg.sha256}"`);
   expect(script.trimEnd().endsWith("install_diffloupe")).toBe(true);
 });
 
@@ -82,7 +78,7 @@ test("the star panels appear after a copy", async ({ page }) => {
 });
 
 test("the star panels appear after the disk image is downloaded", async ({ page }) => {
-  const link = page.getByRole("link", { name: "Download Diffloupe-0.2.0.dmg" });
+  const link = page.getByRole("link", { name: `Download ${latest.dmg.name}` });
   await link.evaluate((element) =>
     element.addEventListener("click", (event) => event.preventDefault()),
   );
@@ -99,7 +95,9 @@ test("a copy that fails shows no star panel", async ({ page }) => {
   await expect(page.locator("[data-star-panel]:visible")).toHaveCount(0);
 });
 
-test("the build writes the latest version as plain text for the app's update check", () => {
-  const file = new URL("../dist/download/latest/macos/version", import.meta.url);
-  expect(readFileSync(file, "utf8")).toBe("0.2.0\n");
+test("the latest version is plain text for the app's update check", async ({ request }) => {
+  const text = siteUrl
+    ? await (await request.get("/download/latest/macos/version")).text()
+    : readFileSync(new URL("../dist/download/latest/macos/version", import.meta.url), "utf8");
+  expect(text).toBe(`${latest.version}\n`);
 });

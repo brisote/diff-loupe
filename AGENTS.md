@@ -93,6 +93,8 @@ pnpm lint                    # Biome and tsc
 pnpm test                    # Vitest
 pnpm links                   # every internal link, asset and anchor in dist/ resolves
 pnpm e2e                     # Playwright on the built site: Chromium and WebKit, 1440 and 390 px, light and dark, and once without JavaScript
+SITE_URL=https://diffloupe.com pnpm e2e   # the same suite against the deployed site, with the real releases; the design comparison is skipped. It reads GitHub's API once (set GITHUB_TOKEN to avoid the 60-per-hour limit), takes the release notes from this checkout's CHANGELOG.md, and expects the site deployed after the latest release
+python3 scripts/check_links.py <site> --external   # also checks every link to another site, for example on the deployed Pages artifact
 python3 scripts/sync_design.py   # rewrites src/styles/site.css after a change to the frozen site.css
 ```
 

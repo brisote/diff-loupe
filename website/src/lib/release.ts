@@ -1,4 +1,4 @@
-import fixture from "../data/release.fixture.json";
+import fixture from "../data/release.fixture.json" with { type: "json" };
 
 export const repository = "brisote/diff-loupe";
 
