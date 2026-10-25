@@ -28,6 +28,7 @@ body{margin:0;font-family:var(--font-ui);font-size:13px;line-height:16px;color:v
 .dl-combo:hover{background:var(--hover-bg)}
 .dl-combo-label{color:var(--text-muted)}
 .dl-combo-text{min-width:0;overflow:hidden;text-overflow:ellipsis}
+.dl-combo.is-error .dl-combo-text{color:var(--text-error)}
 .dl-targetbar{display:flex;align-items:center;gap:var(--space-4);flex:none;height:36px;padding:0 var(--space-6);box-sizing:border-box;min-width:0}
 .dl-targetbar .dl-combo{min-width:0;max-width:100%}
 .dl-statusbar{display:flex;align-items:center;gap:var(--space-2);height:var(--size-row);padding:0 var(--space-8);background:var(--window-bg);color:var(--text-muted);font-size:12px}
@@ -60,7 +61,12 @@ body{margin:0;font-family:var(--font-ui);font-size:13px;line-height:16px;color:v
 .dl-commit{gap:var(--space-8)}
 .dl-commit-subject{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis}
 .dl-commit-meta{flex:none;color:var(--text-muted);font-size:12px}
-.dl-commit-hash{flex:none;width:64px;color:var(--text-muted);font-family:var(--font-mono);font-size:12px}
+.dl-commit-graph{position:relative;flex:none;width:16px;align-self:stretch}
+.dl-commit-graph::before{content:"";position:absolute;left:7px;top:0;bottom:0;width:2px;background:var(--accent)}
+.dl-commit.is-first .dl-commit-graph::before{top:50%}
+.dl-commit.is-last .dl-commit-graph::before{bottom:50%}
+.dl-commit-dot{position:absolute;left:3px;top:50%;width:10px;height:10px;margin-top:-5px;box-sizing:border-box;border-radius:50%;background:var(--accent)}
+.dl-commit.is-merge .dl-commit-dot{border:2px solid var(--accent);background:var(--panel-bg)}
 .dl-tag{display:inline-flex;align-items:center;flex:none;height:16px;padding:0 var(--space-6);border-radius:var(--radius-4);background:var(--tag-bg);color:var(--text-muted);font-size:11px;line-height:14px}
 .dl-filehead{display:flex;align-items:center;gap:var(--space-6);height:var(--size-row);padding:0 var(--space-8);background:var(--panel-bg-inline);border-bottom:1px solid var(--border);color:var(--text-muted);white-space:nowrap;overflow:hidden}
 .dl-filehead-hash{color:var(--text);font-family:var(--font-mono);font-size:12px}

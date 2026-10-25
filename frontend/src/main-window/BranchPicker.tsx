@@ -51,7 +51,7 @@ export function BranchPicker({ anchor, onClose }: Props) {
       onClose={onClose}
     >
       <div role="menu" aria-label="Git actions">
-        {repo.target && current && !merging ? (
+        {repo.target && current && repo.target !== current && !merging ? (
           <MenuRow
             label={`Merge ${repo.target} into ${current}`}
             onActivate={() => run(() => void mergeTarget())}
@@ -72,7 +72,9 @@ export function BranchPicker({ anchor, onClose }: Props) {
                 ? "Finish the merge in progress first"
                 : !current
                   ? "Switch to a branch first"
-                  : "Pick a target branch first"
+                  : repo.target === current
+                    ? "The target is the current branch. Pick another target."
+                    : "Pick a target branch first"
             }
           >
             <Icon name="vcs-merge" />

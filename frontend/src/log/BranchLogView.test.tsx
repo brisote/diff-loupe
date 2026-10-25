@@ -1,8 +1,8 @@
-import { act, screen } from "@testing-library/react";
+import { act, fireEvent, screen } from "@testing-library/react";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { CommitDetails, LogEntry } from "../api";
 import { fakeCore, renderWithStore, repoInfo } from "../test/render";
-import { BranchLogView, commitCount, matches } from "./BranchLogView";
+import { BranchLogView, commitClass, commitCount, matches } from "./BranchLogView";
 
 const clock = new Date(2026, 9, 22, 18, 0);
 const now = Math.floor(clock.getTime() / 1000);
@@ -16,13 +16,13 @@ afterAll(() => {
   vi.useRealTimers();
 });
 
-const entry = (id: string, subject: string): LogEntry => ({
+const entry = (id: string, subject: string, merge = false): LogEntry => ({
   id: id.repeat(40).slice(0, 40),
   short: id.repeat(8).slice(0, 8),
   subject,
   author: "Ada Lovelace",
   time: now - 7200,
-  files: 2,
+  merge,
 });
 
 const details = (log: LogEntry): CommitDetails => ({
@@ -38,7 +38,7 @@ const details = (log: LogEntry): CommitDetails => ({
 });
 
 const skip = entry("a", "Skip empty invoices before export");
-const merge = entry("b", "Merge branch 'main' into gs/invoice-export");
+const merge = entry("b", "Merge branch 'main' into gs/invoice-export", true);
 
 function core(entries: () => LogEntry[]) {
   return fakeCore({
@@ -61,6 +61,12 @@ describe("matches", () => {
     expect(matches(skip, "grace")).toBe(false);
     expect(matches(merge, "merge branch")).toBe(true);
     expect(matches(merge, "")).toBe(true);
+  });
+
+  it("marks the first, last and merge rows for the graph", () => {
+    expect(commitClass(skip, skip.id, merge.id)).toBe("is-first");
+    expect(commitClass(merge, skip.id, merge.id)).toBe("is-last is-merge");
+    expect(commitClass(merge, skip.id, undefined)).toBe("is-merge");
   });
 
   it("counts commits", () => {
@@ -90,6 +96,35 @@ describe("BranchLogView", () => {
     ).toBeInTheDocument();
     expect(screen.getAllByText("2 hours ago")).toHaveLength(2);
     expect(screen.getAllByText("Ada Lovelace")).toHaveLength(2);
+    expect(screen.queryByText(skip.short)).not.toBeInTheDocument();
+    expect(screen.queryByText("2 files")).not.toBeInTheDocument();
+  });
+
+  it("copies the full commit id from the row's context menu", async () => {
+    const writeText = vi.fn(async () => undefined);
+    Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
+    await renderWithStore(
+      <BranchLogView />,
+      core(() => [skip, merge]),
+    );
+    const row = await screen.findByRole("option", { name: skip.subject });
+    fireEvent.contextMenu(row, { clientX: 20, clientY: 30 });
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Copy Revision Number" }));
+    expect(writeText).toHaveBeenCalledWith(skip.id);
+    expect(screen.queryByRole("menu", { name: "Commit actions" })).not.toBeInTheDocument();
+  });
+
+  it("opens the commit menu from the keyboard and closes it on scroll", async () => {
+    await renderWithStore(
+      <BranchLogView />,
+      core(() => [skip, merge]),
+    );
+    const list = await screen.findByRole("listbox", { name: "Branch commits" });
+    fireEvent.click(screen.getByRole("option", { name: skip.subject }));
+    fireEvent.keyDown(list, { key: "F10", shiftKey: true });
+    expect(await screen.findByRole("menu", { name: "Commit actions" })).toBeInTheDocument();
+    fireEvent.scroll(list);
+    expect(screen.queryByRole("menu", { name: "Commit actions" })).not.toBeInTheDocument();
   });
 
   it("says when the branch has no commits", async () => {
