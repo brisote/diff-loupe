@@ -10,7 +10,7 @@ async function openLog(page: Page) {
 const commits = (page: Page) =>
   page.getByRole("listbox", { name: "Branch commits" }).getByRole("option");
 
-test("the log lists the branch's history with the merge from main as a plain row", async ({
+test("the log draws the branch's history as a graph, with the merge from main as a plain row", async ({
   page,
   workspace,
   startApp,
@@ -22,11 +22,11 @@ test("the log lists the branch's history with the merge from main as a plain row
   await expect(page.getByText("Branch commit history")).toBeVisible();
   await expect(page.getByText("7 commits", { exact: true })).toBeVisible();
   await expect(commits(page)).toHaveText([
-    /Skip empty invoices before export\s*2 files\s*Ada Lovelace\s*2 hours ago/,
-    /Round totals half-even to two decimals\s*2 files\s*Ada Lovelace\s*Yesterday/,
-    /Merge branch 'main' into gs\/invoice-export\s*2 files\s*Ada Lovelace\s*Yesterday/,
-    /Add CSV writer for invoices\s*3 files\s*Ada Lovelace\s*3 days ago/,
-    /Scaffold the billing export module\s*6 files\s*Grace Hopper\s*5 days ago/,
+    /^Skip empty invoices before export\s*Ada Lovelace\s*2 hours ago$/,
+    /^Round totals half-even to two decimals\s*Ada Lovelace\s*Yesterday$/,
+    /^Merge branch 'main' into gs\/invoice-export\s*Ada Lovelace\s*Yesterday$/,
+    /^Add CSV writer for invoices\s*Ada Lovelace\s*3 days ago$/,
+    /^Scaffold the billing export module\s*Grace Hopper\s*5 days ago$/,
     /Add the totals calculator/,
     /Initial commit/,
   ]);
@@ -34,6 +34,56 @@ test("the log lists the branch's history with the merge from main as a plain row
   await expect(page.getByText(/Uncommitted|All branch changes/)).toHaveCount(0);
   await expect(page.getByText("Pick a commit")).toHaveCount(2);
   await expect(page.getByRole("button", { name: "Target branch" })).toHaveCount(0);
+  await expect(commits(page).first()).toHaveClass(/is-first/);
+  await expect(commits(page).filter({ hasText: "Merge branch 'main'" })).toHaveClass(/is-merge/);
+  await expect(commits(page).last()).toHaveClass(/is-last/);
+});
+
+test("Copy Revision Number in a commit's menu copies its full id", async ({
+  page,
+  workspace,
+  startApp,
+}) => {
+  const repo = logRepo(workspace);
+  await page.addInitScript(() => {
+    const copied: string[] = [];
+    Object.defineProperty(window, "copied", { value: copied });
+    Object.defineProperty(navigator, "clipboard", {
+      value: { writeText: async (text: string) => void copied.push(text) },
+    });
+  });
+  await startApp({ open: [repo] });
+  await openLog(page);
+  await commits(page).filter({ hasText: "Round totals" }).click({ button: "right" });
+  const menu = page.getByRole("menu", { name: "Commit actions" });
+  await menu.getByRole("menuitem", { name: "Copy Revision Number" }).click();
+  await expect(menu).toHaveCount(0);
+  const id = git(repo, "rev-parse", "HEAD~1");
+  expect(await page.evaluate(() => (window as unknown as { copied: string[] }).copied)).toEqual([
+    id,
+  ]);
+});
+
+test("the divider between the commits and the details moves and is remembered", async ({
+  page,
+  workspace,
+  startApp,
+}) => {
+  const repo = logRepo(workspace);
+  const app = await startApp({ open: [repo] });
+  await openLog(page);
+  const divider = page.getByRole("separator", { name: "Resize the commit list" });
+  const before = Number(await divider.getAttribute("aria-valuenow"));
+  await divider.focus();
+  await page.keyboard.press("ArrowUp");
+  await page.keyboard.press("ArrowUp");
+  await expect(divider).toHaveAttribute("aria-valuenow", String(before + 32));
+  await app.restart();
+  await openLog(page);
+  await expect(page.getByRole("separator", { name: "Resize the commit list" })).toHaveAttribute(
+    "aria-valuenow",
+    String(before + 32),
+  );
 });
 
 test("a commit shows its message, files and diffs", async ({ page, workspace, startApp }) => {

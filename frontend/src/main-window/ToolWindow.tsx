@@ -18,15 +18,20 @@ export function ToolWindow({ width }: { width: number }) {
   const [picking, setPicking] = useState(false);
   const close = useCallback(() => setPicking(false), []);
   if (!repo) return null;
+  const targetIsBranch = repo.target !== null && repo.target === repo.branch;
   return (
     <section className="dl-island app-tool" style={{ width }} aria-label="Tool window">
       {repo.lastTab === "changes" && (
         <div className="dl-targetbar">
           <button
             ref={anchor}
-            className="dl-combo"
+            className={`dl-combo ${targetIsBranch ? "is-error" : ""}`}
             type="button"
-            title={targetTitle(repo.target, repo.defaultBranch)}
+            title={
+              targetIsBranch
+                ? "The target is the current branch. Pick another target."
+                : targetTitle(repo.target, repo.defaultBranch)
+            }
             aria-label="Target branch"
             aria-haspopup="dialog"
             aria-expanded={picking}
@@ -35,6 +40,7 @@ export function ToolWindow({ width }: { width: number }) {
             <Icon name="toolwindows-vcs" />
             <span className="dl-combo-label">Target</span>
             <span className="dl-combo-text">{repo.target ?? "none"}</span>
+            {targetIsBranch && <Icon name="status-error" />}
             <Icon name="general-chevronDown" />
           </button>
           {picking && <TargetPicker anchor={anchor} onClose={close} />}

@@ -14,7 +14,7 @@ it("names the default branch only when the target is the default branch", async 
 it("marks the default branch target", async () => {
   await renderWithStore(
     <ToolWindow width={400} />,
-    fakeCore({ current_repo: () => repoInfo("acme-billing") }),
+    fakeCore({ current_repo: () => repoInfo("acme-billing", "gs/invoice-export") }),
   );
   expect(screen.getByRole("button", { name: "Target branch" })).toHaveAttribute(
     "title",
@@ -31,4 +31,12 @@ it("shows the target only on the Changes tab", async () => {
   expect(screen.queryByRole("button", { name: "Target branch" })).not.toBeInTheDocument();
   await act(() => store.getState().setTab("changes"));
   expect(screen.getByRole("button", { name: "Target branch" })).toBeInTheDocument();
+});
+
+it("marks a target that is the current branch as an error", async () => {
+  const saved = { ...repoInfo("acme-billing", "main"), target: "main" };
+  await renderWithStore(<ToolWindow width={400} />, fakeCore({ current_repo: () => saved }));
+  const target = screen.getByRole("button", { name: "Target branch" });
+  expect(target).toHaveClass("is-error");
+  expect(target).toHaveAttribute("title", "The target is the current branch. Pick another target.");
 });

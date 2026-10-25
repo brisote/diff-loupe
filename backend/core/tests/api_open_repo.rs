@@ -26,13 +26,13 @@ fn call(core: &Core, cmd: &str, args: Value) -> Value {
 }
 
 #[test]
-fn open_repo_returns_name_branch_and_no_target_on_the_default_branch() {
+fn open_repo_returns_name_branch_and_the_default_branch_as_target() {
     let repo = TempRepo::with_commit();
     let (_data, core) = core();
     let info = call(&core, "open_repo", json!({"path": repo.path()}));
     assert_eq!(info["name"], "acme-billing");
     assert_eq!(info["branch"], "main");
-    assert_eq!(info["target"], Value::Null);
+    assert_eq!(info["target"], "main");
     assert_eq!(info["defaultBranch"], "main");
     assert_eq!(info["lastTab"], "changes");
     assert_eq!(

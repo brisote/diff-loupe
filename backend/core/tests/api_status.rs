@@ -168,6 +168,21 @@ fn the_chosen_target_is_remembered_per_repository() {
 }
 
 #[test]
+fn merging_the_current_branch_into_itself_is_refused() {
+    let repo = TempRepo::with_commit();
+    let (_data, core, _events) = open(&repo);
+    let path = core.dispatch("current_repo", Value::Null).unwrap()["path"].clone();
+    let error = core
+        .dispatch("merge_target", json!({ "path": path }))
+        .unwrap_err();
+    assert!(
+        error.message.contains("target is the current branch"),
+        "{}",
+        error.message
+    );
+}
+
+#[test]
 fn editing_a_file_reports_a_change() {
     let repo = TempRepo::with_commit();
     let (_data, _core, events) = open(&repo);
@@ -439,7 +454,7 @@ fn changes_compare_the_working_tree_with_the_merge_base_of_the_target() {
 }
 
 #[test]
-fn a_missing_target_compares_with_head_and_the_branch_itself_falls_back_to_the_default() {
+fn the_branch_itself_or_a_missing_target_compares_with_head() {
     let repo = branched();
     let (_data, core, _events) = open(&repo);
     let path = core.dispatch("current_repo", Value::Null).unwrap()["path"].clone();
@@ -459,7 +474,7 @@ fn a_missing_target_compares_with_head_and_the_branch_itself_falls_back_to_the_d
     assert_eq!(diff["left"]["text"], "fun export() = 1\n");
     core.dispatch("set_target", json!({ "path": path, "target": "gs/export" }))
         .unwrap();
-    assert_eq!(status(&core).len(), 5);
+    assert_eq!(summary(&status(&core)), local);
     core.dispatch("set_target", json!({ "path": path, "target": "main" }))
         .unwrap();
     assert_eq!(status(&core).len(), 5);
