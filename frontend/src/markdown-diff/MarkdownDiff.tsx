@@ -2,6 +2,7 @@ import type { Root } from "hast";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { DiffSide, FileDiff } from "../api";
 import { LeftHead, RightHead } from "../diff/FileHead";
+import { foldContext, type Range } from "../diff/geometry";
 import { useApp } from "../state/context";
 import { type Block, blocks, parse } from "./blocks";
 import { type Marked, markRow } from "./mark";
@@ -24,6 +25,25 @@ export function canRender(diff: FileDiff): boolean {
 
 export function startsRun(rows: Row[], index: number): boolean {
   return rows[index - 1]?.kind !== rows[index]?.kind;
+}
+
+const blockFoldMinimum = 2;
+
+export function markdownFolds(rows: Row[]): Range[] {
+  if (rows.every((row) => row.kind === "equal")) return [];
+  const found: Range[] = [];
+  let start = 0;
+  for (let i = 0; i <= rows.length; i += 1) {
+    if (i < rows.length && rows[i]?.kind === "equal") continue;
+    const before = start === 0 ? 0 : foldContext;
+    if (i - start - before >= blockFoldMinimum) found.push([start + before, i]);
+    start = i + 1;
+  }
+  return found;
+}
+
+function blockCount(count: number): string {
+  return count === 1 ? "1 unchanged block" : `${count} unchanged blocks`;
 }
 
 export function markdownRows(before: string, after: string): MarkdownRows {
@@ -106,12 +126,41 @@ type Props = {
   diff: FileDiff;
   rows: MarkdownRows;
   inline: boolean;
+  collapse: boolean;
   current: number;
   onCurrent: (index: number) => void;
 };
 
-export function MarkdownDiff({ diff, rows, inline, current, onCurrent }: Props) {
+export function MarkdownDiff({ diff, rows, inline, collapse, current, onCurrent }: Props) {
   const scroller = useRef<HTMLDivElement>(null);
+  const [expanded, setExpanded] = useState<ReadonlySet<number>>(new Set());
+  const [folding, setFolding] = useState(collapse);
+  if (folding !== collapse) {
+    setFolding(collapse);
+    setExpanded(new Set());
+  }
+  const hidden = useMemo(
+    () => (collapse ? markdownFolds(rows.rows).filter(([from]) => !expanded.has(from)) : []),
+    [collapse, rows.rows, expanded],
+  );
+  const foldAt = (index: number): Range | undefined =>
+    hidden.find(([from, to]) => index >= from && index < to);
+  const fold = (index: number) => {
+    const range = foldAt(index);
+    if (!range) return undefined;
+    if (range[0] !== index) return null;
+    const label = `Show ${blockCount(range[1] - range[0])}`;
+    return (
+      <button
+        key={`fold-${index}`}
+        type="button"
+        className="dl-fold app-fold app-md-fold"
+        title={label}
+        aria-label={label}
+        onClick={() => setExpanded((set) => new Set(set).add(range[0]))}
+      />
+    );
+  };
   const trees = useMemo(
     () => ({
       left: rows.marked.flatMap((marked) =>
@@ -195,6 +244,8 @@ export function MarkdownDiff({ diff, rows, inline, current, onCurrent }: Props) 
         {inline ? (
           <div className="app-md-inline">
             {rows.rows.map((row, index) => {
+              const folded = fold(index);
+              if (folded !== undefined) return folded;
               const marked = rows.marked[index];
               if (!marked) return null;
               const key = `${index}-${row.kind}`;
@@ -221,6 +272,8 @@ export function MarkdownDiff({ diff, rows, inline, current, onCurrent }: Props) 
         ) : (
           <div className="app-md-grid">
             {rows.rows.map((row, index) => {
+              const folded = fold(index);
+              if (folded !== undefined) return folded;
               const marked = rows.marked[index];
               if (!marked) return null;
               const key = `${index}-${row.kind}`;

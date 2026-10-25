@@ -890,6 +890,15 @@ button {
   padding: var(--space-16) 0;
 }
 
+.app-md-fold {
+  display: block;
+  width: 100%;
+  margin: var(--space-4) 0;
+  padding: 0;
+  border: 0;
+  background: none;
+}
+
 .app-md-row > .dl-md {
   min-width: 0;
   padding: 0 var(--space-24);
