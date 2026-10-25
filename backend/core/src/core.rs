@@ -24,7 +24,7 @@ use serde::Serialize;
 use serde::de::DeserializeOwned;
 use serde_json::Value;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -59,6 +59,7 @@ pub struct Core {
     update_failure: Mutex<Option<String>>,
     package: Option<update::PackageKind>,
     platform: Platform,
+    watch_polling: AtomicBool,
 }
 
 struct OpenRepo {
@@ -117,6 +118,7 @@ impl Core {
             update_failure: Mutex::new(pending.failure),
             package,
             platform,
+            watch_polling: AtomicBool::new(false),
         })
     }
 
@@ -131,6 +133,10 @@ impl Core {
         if let Ok(mut current) = self.update_url.lock() {
             *current = url.to_string();
         }
+    }
+
+    pub fn set_watch_polling(&self, polling: bool) {
+        self.watch_polling.store(polling, Ordering::SeqCst);
     }
 
     pub fn set_update_max_time(&self, seconds: u64) {
@@ -503,8 +509,13 @@ impl Core {
             &id,
             format!("Opening {}", repo.name()),
         );
-        let watcher = RepoWatcher::start(&repo, self.env.clone(), self.events.clone())
-            .map_err(|error| error.to_string());
+        let watcher = RepoWatcher::start(
+            &repo,
+            self.env.clone(),
+            self.events.clone(),
+            self.watch_polling.load(Ordering::SeqCst),
+        )
+        .map_err(|error| error.to_string());
         let open = OpenRepo {
             repo,
             watcher,
@@ -867,6 +878,7 @@ impl Core {
             target: state.target_branch.or_else(|| default_branch.clone()),
             default_branch,
             watch_error: open.watcher.as_ref().err().cloned(),
+            watch_polling: open.watcher.as_ref().is_ok_and(RepoWatcher::polling),
             last_tab,
             last_selection: state.last_selection,
             path,

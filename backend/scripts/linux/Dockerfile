@@ -6,6 +6,7 @@ RUN apt-get update \
  && apt-get install -y --no-install-recommends \
       build-essential pkg-config curl git python3 \
       libwebkit2gtk-4.1-dev libgtk-3-dev libxdo-dev libssl-dev \
+      xvfb xauth dbus dbus-x11 at-spi2-core libgl1-mesa-dri fonts-dejavu-core \
  && rm -rf /var/lib/apt/lists/*
 
 ENV RUSTUP_HOME=/usr/local/rustup CARGO_HOME=/usr/local/cargo PATH=/usr/local/cargo/bin:$PATH

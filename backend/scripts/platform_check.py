@@ -45,6 +45,13 @@ LINUX_GATES = {
     ),
 }
 
+LINUX_GATES["smoke"] = " && ".join(
+    [
+        "pnpm install --frozen-lockfile --store-dir /home/pwuser/.local/share/pnpm/store",
+        "dbus-run-session -- xvfb-run -a -s '-screen 0 1440x900x24' python3 backend/scripts/app_smoke.py",
+    ]
+)
+
 LINUX_VOLUMES = {
     "diffloupe-linux-target": "/work/backend/target",
     "diffloupe-linux-node": "/work/node_modules",
@@ -89,7 +96,7 @@ def as_user(command: str) -> str:
 
 def docker_run(image: str, root: Path, command: str) -> list[str]:
     volumes = [arg for name, path in LINUX_VOLUMES.items() for arg in ("-v", f"{name}:{path}")]
-    return ["docker", "run", "--rm", "--init", "-e", "CI=1", "-v", f"{root}:/work", *volumes, "-w", "/work", image, "bash", "-c", as_user(command)]
+    return ["docker", "run", "--rm", "--init", "-e", "CI=true", "-v", f"{root}:/work", *volumes, "-w", "/work", image, "bash", "-c", as_user(command)]
 
 
 def xwin_clippy() -> list[str]:
@@ -188,7 +195,7 @@ def windows(only: list[str] | None, host: str | None) -> list[tuple[str, bool]]:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("platform", choices=["linux", "windows"])
-    parser.add_argument("--only", action="append", help="run one gate; repeat for more (linux: fmt, clippy, test, ui; windows: clippy, test, ui)")
+    parser.add_argument("--only", action="append", help="run one gate; repeat for more (linux: fmt, clippy, test, ui, smoke; windows: clippy, test, ui)")
     args = parser.parse_args()
     if args.platform == "linux":
         results = linux(args.only)
