@@ -5,6 +5,8 @@ mod install;
 #[cfg(not(target_os = "macos"))]
 #[path = "install_unsupported.rs"]
 mod install;
+#[cfg(target_os = "linux")]
+mod package;
 #[cfg(debug_assertions)]
 mod smoke;
 
@@ -120,6 +122,13 @@ async fn uninstall(app: AppHandle, data: State<'_, DataDir>) -> Result<(), Strin
             );
         }
         let system = touches_system();
+        if removes_app()
+            && remove_before_files()
+            && let Err(reason) = remove_app()
+        {
+            LEAVING.store(false, Ordering::SeqCst);
+            return Err(removal_failure(&reason));
+        }
         if let Err(reason) = clean_up_after_exit(&locations, system.then_some(footprint::BUNDLE_ID))
         {
             LEAVING.store(false, Ordering::SeqCst);
@@ -129,21 +138,19 @@ async fn uninstall(app: AppHandle, data: State<'_, DataDir>) -> Result<(), Strin
             core.shutdown();
         }
         let _ = footprint::remove(&locations);
-        Ok::<_, String>(if system { move_app_to_trash() } else { Ok(()) })
+        Ok::<_, String>(if removes_app() && !remove_before_files() {
+            remove_app()
+        } else {
+            Ok(())
+        })
     })
     .await
     .map_err(|e| e.to_string())??;
     match trashed {
         Ok(()) => app.exit(0),
         Err(reason) => {
-            alert_then_exit(
-                &app,
-                "Diffloupe could not move itself to the Trash",
-                &format!(
-                    "Its own files are deleted. Drag Diffloupe to the Trash to finish removing it. ({reason})"
-                ),
-                0,
-            )?;
+            let (title, message) = removal_problem(&reason);
+            alert_then_exit(&app, title, &message, 0)?;
         }
     }
     Ok(())
@@ -206,6 +213,14 @@ fn user_dirs() -> Vec<PathBuf> {
     } else {
         Vec::new()
     }
+}
+
+fn removes_app() -> bool {
+    #[cfg(debug_assertions)]
+    if smoke::removes_package() {
+        return true;
+    }
+    touches_system()
 }
 
 fn touches_system() -> bool {
@@ -278,9 +293,67 @@ fn move_app_to_trash() -> Result<(), String> {
         .map_err(|e| e.localizedDescription().to_string())
 }
 
-#[cfg(not(target_os = "macos"))]
-fn move_app_to_trash() -> Result<(), String> {
+#[cfg(target_os = "macos")]
+fn remove_app() -> Result<(), String> {
+    move_app_to_trash()
+}
+
+#[cfg(target_os = "linux")]
+fn remove_app() -> Result<(), String> {
+    package::remove()
+}
+
+#[cfg(windows)]
+fn remove_app() -> Result<(), String> {
     Ok(())
+}
+
+#[cfg(target_os = "linux")]
+fn remove_before_files() -> bool {
+    true
+}
+
+#[cfg(not(target_os = "linux"))]
+fn remove_before_files() -> bool {
+    false
+}
+
+#[cfg(target_os = "linux")]
+fn removal_failure(reason: &str) -> String {
+    package::failure(reason)
+}
+
+#[cfg(not(target_os = "linux"))]
+fn removal_failure(reason: &str) -> String {
+    removal_problem(reason).1
+}
+
+#[cfg(target_os = "macos")]
+fn removal_problem(reason: &str) -> (&'static str, String) {
+    (
+        "Diffloupe could not move itself to the Trash",
+        format!(
+            "Its own files are deleted. Drag Diffloupe to the Trash to finish removing it. ({reason})"
+        ),
+    )
+}
+
+#[cfg(target_os = "linux")]
+fn removal_problem(reason: &str) -> (&'static str, String) {
+    (
+        "Diffloupe could not remove itself",
+        package::failure(reason),
+    )
+}
+
+#[cfg(windows)]
+fn removal_problem(reason: &str) -> (&'static str, String) {
+    (
+        "Diffloupe could not remove itself",
+        format!(
+            "Its own files are deleted. Remove Diffloupe in Windows' Installed apps list. ({reason})"
+        ),
+    )
 }
 
 #[cfg(windows)]
