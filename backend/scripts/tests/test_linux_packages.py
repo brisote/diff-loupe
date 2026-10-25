@@ -28,6 +28,20 @@ class Systems(unittest.TestCase):
             self.assertIn("sudo", spec["prepare"])
 
 
+class Updates(unittest.TestCase):
+    def test_each_system_names_the_package_a_release_serves_and_how_to_read_its_version(self):
+        for spec in linux_packages.SYSTEMS.values():
+            deb = spec["kind"] == "deb"
+            self.assertEqual(spec["newer"], f"Diffloupe-{linux_packages.NEWER}-linux-{'amd64.deb' if deb else 'x86_64.rpm'}")
+            self.assertIn("dpkg-query" if deb else "rpm -q", spec["version"])
+
+    def test_the_release_server_script_exists_and_serves_the_newer_version(self):
+        text = linux_packages.SERVER.read_text()
+        self.assertTrue(linux_packages.SERVER.is_file())
+        self.assertIn(f'VERSION = "{linux_packages.NEWER}"', text)
+        self.assertIn("--bad-checksum", text)
+
+
 class Noise(unittest.TestCase):
     def test_quiet_drops_the_desktop_services_chatter_and_keeps_the_app_output(self):
         text = "\n".join(
