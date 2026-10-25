@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { Icon } from "../lib/icon";
+import { shortcut, usePlatform } from "../lib/platform";
 import { useApp } from "../state/context";
 import { disposeScreen, focusOnce, inputQueue, screenFor } from "./sessions";
 
@@ -8,6 +9,7 @@ export function sessionTitle(index: number): string {
 }
 
 export function TerminalPanel({ height }: { height: number }) {
+  const platform = usePlatform();
   const repo = useApp((state) => state.repo);
   const group = useApp((state) => (state.repo ? state.terminals[state.repo.path] : undefined));
   const newTerminal = useApp((state) => state.newTerminal);
@@ -66,8 +68,8 @@ export function TerminalPanel({ height }: { height: number }) {
         <button
           className="dl-tbtn"
           type="button"
-          aria-label="Hide ⇧Esc"
-          title="Hide ⇧Esc"
+          aria-label={`Hide ${shortcut(platform, "Shift+Esc")}`}
+          title={`Hide ${shortcut(platform, "Shift+Esc")}`}
           onClick={hideTerminal}
         >
           <Icon name="general-hide" />

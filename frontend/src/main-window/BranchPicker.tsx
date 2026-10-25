@@ -1,6 +1,7 @@
 import { type RefObject, useEffect } from "react";
 import { Icon } from "../lib/icon";
 import { MenuRow } from "../lib/list";
+import { shortcut, usePlatform } from "../lib/platform";
 import { Popup, useBelow } from "../lib/popup";
 import { useApp } from "../state/context";
 import { BranchList, type BranchSection } from "./BranchList";
@@ -20,6 +21,7 @@ export function branchSections(
 }
 
 export function BranchPicker({ anchor, onClose }: Props) {
+  const platform = usePlatform();
   const repo = useApp((state) => state.repo);
   const branches = useApp((state) => state.branches);
   const loadBranches = useApp((state) => state.loadBranches);
@@ -91,13 +93,13 @@ export function BranchPicker({ anchor, onClose }: Props) {
           <Icon name="vcs-commit" />
           <span className="dl-row-name">Commit…</span>
           <span className="dl-row-path" />
-          <span className="dl-row-key">⌘K</span>
+          <span className="dl-row-key">{shortcut(platform, "Mod+K")}</span>
         </MenuRow>
         <MenuRow label="Push…" onActivate={() => run(() => void push())}>
           <Icon name="vcs-push" />
           <span className="dl-row-name">Push…</span>
           <span className="dl-row-path" />
-          <span className="dl-row-key">⇧⌘K</span>
+          <span className="dl-row-key">{shortcut(platform, "Shift+Mod+K")}</span>
         </MenuRow>
       </div>
       <div className="dl-popup-sep" />

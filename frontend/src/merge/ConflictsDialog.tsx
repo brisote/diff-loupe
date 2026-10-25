@@ -6,6 +6,7 @@ import { fileIcon } from "../changes/fileIcons";
 import { Dialog } from "../lib/dialog";
 import { Icon } from "../lib/icon";
 import { splitPath } from "../lib/paths";
+import { hasModifier, usePlatform } from "../lib/platform";
 import { useApp } from "../state/context";
 import { mergeTitle } from "./MergeBanner";
 
@@ -29,6 +30,7 @@ export function nextSelection(
 }
 
 export function ConflictsDialog() {
+  const platform = usePlatform();
   const merge = useApp((state) => state.merge);
   const branch = useApp((state) => state.repo?.branch ?? null);
   const showDialog = useApp((state) => state.showDialog);
@@ -46,7 +48,7 @@ export function ConflictsDialog() {
 
   const close = () => showDialog(null);
   const pick = (event: MouseEvent, path: string) =>
-    setPicked(nextSelection(paths, selected, path, event.metaKey || event.ctrlKey));
+    setPicked(nextSelection(paths, selected, path, hasModifier(platform, event) || event.ctrlKey));
   const accept = async (side: MergeSide) => {
     setBusy(true);
     setError(null);
@@ -96,7 +98,9 @@ export function ConflictsDialog() {
                   onKeyDown={(event) => {
                     if (event.key === " " || event.key === "Enter") {
                       event.preventDefault();
-                      setPicked(nextSelection(paths, selected, conflict.path, event.metaKey));
+                      setPicked(
+                        nextSelection(paths, selected, conflict.path, hasModifier(platform, event)),
+                      );
                     }
                   }}
                 >
