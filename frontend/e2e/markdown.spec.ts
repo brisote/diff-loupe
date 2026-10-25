@@ -16,6 +16,7 @@ test("a Markdown file shows rendered side by side, inline and raw", async ({
   await page.getByRole("treeitem", { name: "README.md" }).click();
   const rendered = page.getByRole("region", { name: "Rendered side-by-side diff" });
   await expect(rendered).toBeVisible();
+  await page.getByRole("button", { name: "Collapse Unchanged Fragments" }).click();
   await expect(rendered.getByRole("heading", { name: "How totals are rounded" })).toHaveCount(2);
   await expect(rendered.locator("del")).toContainText(["half-up", "1234.5", "all"]);
   await expect(rendered.locator("ins")).toContainText(["half-even", "1234.50", "skip-empty"]);
@@ -176,4 +177,46 @@ test("a run of new or removed blocks shows one line on the other side", async ({
   await expect(rendered.getByRole("heading", { name: "Idempotency" })).toBeVisible();
   await expect(rendered.locator(".app-md-gap.is-inserted")).toHaveCount(1);
   await expect(rendered.locator(".app-md-gap.is-deleted")).toHaveCount(1);
+});
+
+test("Collapse Unchanged Fragments folds the unchanged blocks of a rendered Markdown file", async ({
+  page,
+  workspace,
+  startApp,
+}) => {
+  const repo = workspace.repo("acme-billing");
+  const paragraphs = (changed?: number) =>
+    Array.from({ length: 12 }, (_, n) =>
+      n === changed ? `Paragraph ${n} now says something new.` : `Paragraph ${n} stays the same.`,
+    ).join("\n\n");
+  workspace.write(repo, "GUIDE.md", `# Guide\n\n${paragraphs()}\n`);
+  git(repo, "add", "-A");
+  git(repo, "commit", "-q", "-m", "Guide");
+  workspace.write(repo, "GUIDE.md", `# Guide\n\n${paragraphs(6)}\n`);
+  await startApp({ open: [repo] });
+  await page.getByRole("treeitem", { name: "GUIDE.md" }).click();
+  const collapse = page.getByRole("button", { name: "Collapse Unchanged Fragments" });
+  for (const name of ["Rendered side-by-side diff", "Rendered inline diff"]) {
+    if (name === "Rendered inline diff") {
+      await page.getByRole("button", { name: "Unified viewer" }).click();
+    }
+    const rendered = page.getByRole("region", { name });
+    const folds = rendered.getByRole("button", { name: /Show \d+ unchanged blocks/ });
+    await expect(collapse).toHaveAttribute("aria-pressed", "true");
+    await expect(folds).toHaveText(["", ""]);
+    await expect(rendered.getByRole("button", { name: "Show 7 unchanged blocks" })).toBeVisible();
+    await expect(rendered.getByRole("button", { name: "Show 4 unchanged blocks" })).toBeVisible();
+    await expect(rendered).not.toContainText("Paragraph 2 stays the same.");
+    await expect(rendered).toContainText("Paragraph 7 stays the same.");
+    await expect(rendered).toContainText("something new");
+    await folds.first().click();
+    await expect(folds).toHaveCount(1);
+    await expect(rendered).toContainText("Paragraph 2 stays the same.");
+    await collapse.click();
+    await expect(collapse).toHaveAttribute("aria-pressed", "false");
+    await expect(folds).toHaveCount(0);
+    await expect(rendered).toContainText("Paragraph 11 stays the same.");
+    await collapse.click();
+    await expect(folds).toHaveCount(2);
+  }
 });
