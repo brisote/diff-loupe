@@ -20,6 +20,8 @@ setTimeout(async () => {
   const restart = action("Restart now");
   if (!restart) return report({ phase: "failed", text: document.body.innerText });
   restart.click();
+  await wait(15000);
+  report({ phase: "stayed", text: document.body.innerText });
 }, 3000);
 "#;
 
