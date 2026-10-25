@@ -22,6 +22,8 @@ for (const path of [...pages.map((target) => target.path), missing.path]) {
     expect(description).toBeTruthy();
     expect(words).toContain(description);
     expect(words).not.toMatch(/\bAI\b|\bClaude\b|\bagents?\b|forever/i);
-    expect(words).not.toMatch(/offline|network call/i);
+    expect(words).not.toMatch(
+      /offline|network call|\bgit remotes?\b|(?<!pull )\brequests?\b|\bservers?\b/i,
+    );
   });
 }
