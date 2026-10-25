@@ -3,6 +3,8 @@ import {
   type KeyboardEvent,
   type MouseEvent,
   type RefObject,
+  useCallback,
+  useEffect,
   useMemo,
   useRef,
   useState,
@@ -12,10 +14,20 @@ import { fileIcon } from "../changes/fileIcons";
 import { fileCount, statusClass } from "../changes/rows";
 import { fullDate, relativeDate } from "../lib/dates";
 import { Icon } from "../lib/icon";
+import { MenuRow } from "../lib/list";
 import { splitPath } from "../lib/paths";
+import { Popup } from "../lib/popup";
+import { clampWidth, Splitter } from "../main-window/Splitter";
 import { useApp } from "../state/context";
 
 const rowHeight = 24;
+export const detailsHeightKey = "logDetailsHeight";
+const defaultDetails = 320;
+const minDetails = 120;
+const minCommits = 96;
+const splitterSize = 6;
+const menuWidth = 200;
+const menuHeight = 40;
 
 export function commitCount(count: number): string {
   return count === 1 ? "1 commit" : `${count} commits`;
@@ -32,8 +44,40 @@ export function BranchLogView() {
   const log = useApp((state) => state.log);
   const logError = useApp((state) => state.logError);
   const loadLog = useApp((state) => state.loadLog);
+  const backend = useApp((state) => state.backend);
   const [filter, setFilter] = useState("");
+  const [details, setDetails] = useState(defaultDetails);
+  const [room, setRoom] = useState(600);
   const files = useRef<HTMLDivElement>(null);
+  const panes = useRef<HTMLDivElement>(null);
+  const shown = log !== null && log.entries.length > 0;
+
+  useEffect(() => {
+    void backend
+      .call("get_ui_value", { key: detailsHeightKey })
+      .then((saved) => {
+        const value = Number(saved);
+        if (saved && Number.isFinite(value)) setDetails(value);
+      })
+      .catch(() => undefined);
+  }, [backend]);
+
+  useEffect(() => {
+    const element = panes.current;
+    if (!shown || !element) return;
+    const measure = () => setRoom(element.clientHeight);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [shown]);
+
+  const maxDetails = Math.max(minDetails, room - minCommits - splitterSize);
+  const height = clampWidth(details, minDetails, maxDetails);
+  const saveDetails = (value: number) =>
+    void backend
+      .call("set_ui_value", { key: detailsHeightKey, value: String(value) })
+      .catch(() => undefined);
   const entries = useMemo(
     () => (log ? log.entries.filter((entry) => matches(entry, filter)) : []),
     [log, filter],
@@ -91,9 +135,24 @@ export function BranchLogView() {
                 : commitCount(log.entries.length)}
             </span>
           </div>
-          <CommitList entries={entries} files={files} />
-          <div className="app-log-split" />
-          <CommitPane files={files} />
+          <div className="app-log-panes" ref={panes}>
+            <CommitList
+              entries={entries}
+              files={files}
+              first={log.entries[0]?.id}
+              last={log.truncated ? undefined : log.entries[log.entries.length - 1]?.id}
+            />
+            <Splitter
+              vertical
+              label="Resize the commit list"
+              width={height}
+              min={minDetails}
+              max={maxDetails}
+              onResize={setDetails}
+              onResizeEnd={saveDetails}
+            />
+            <CommitPane files={files} height={height} />
+          </div>
         </>
       )}
     </>
@@ -103,11 +162,27 @@ export function BranchLogView() {
 type ListProps = {
   entries: LogEntry[];
   files: RefObject<HTMLDivElement | null>;
+  first: string | undefined;
+  last: string | undefined;
 };
 
-function CommitList({ entries, files }: ListProps) {
+type Menu = { id: string; x: number; y: number };
+
+export function commitClass(entry: LogEntry, first?: string, last?: string): string {
+  return [
+    entry.id === first ? "is-first" : "",
+    entry.id === last ? "is-last" : "",
+    entry.merge ? "is-merge" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
+
+function CommitList({ entries, files, first, last }: ListProps) {
   const selected = useApp((state) => state.logCommit);
   const selectCommit = useApp((state) => state.selectCommit);
+  const [menu, setMenu] = useState<Menu | null>(null);
+  const closeMenu = useCallback(() => setMenu(null), []);
   const scroller = useRef<HTMLDivElement>(null);
   const virtualizer = useVirtualizer({
     count: entries.length,
@@ -131,8 +206,19 @@ function CommitList({ entries, files }: ListProps) {
     selectCommit(entry.id);
     virtualizer.scrollToIndex(next);
   };
+  const openMenu = (id: string, x: number, y: number) =>
+    setMenu({
+      id,
+      x: Math.max(0, Math.min(x, window.innerWidth - menuWidth)),
+      y: Math.max(0, Math.min(y, window.innerHeight - menuHeight)),
+    });
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+    const entry = entries[index];
+    if (entry && (event.key === "ContextMenu" || (event.key === "F10" && event.shiftKey))) {
+      event.preventDefault();
+      const row = document.getElementById(`commit-row-${index}`)?.getBoundingClientRect();
+      openMenu(entry.id, row ? row.left + 24 : 0, row ? row.bottom : 0);
+    } else if (event.key === "ArrowDown" || event.key === "ArrowUp") {
       event.preventDefault();
       move(event.key === "ArrowDown" ? 1 : -1);
     } else if (event.key === "Enter") {
@@ -150,54 +236,90 @@ function CommitList({ entries, files }: ListProps) {
     );
   }
   return (
-    <div
-      ref={scroller}
-      className="dl-list app-log-commits"
-      role="listbox"
-      aria-label="Branch commits"
-      tabIndex={0}
-      aria-activedescendant={active}
-      onKeyDown={onKeyDown}
-    >
-      <div className="app-virtual" style={{ height: virtualizer.getTotalSize() }}>
-        {items.map((item) => {
-          const entry = entries[item.index];
-          if (!entry) return null;
-          const isSelected = entry.id === selected;
-          return (
-            <div
-              key={entry.id}
-              id={`commit-row-${item.index}`}
-              className={`dl-row dl-commit app-virtual-row ${isSelected ? "is-selected" : ""}`}
-              role="option"
-              aria-selected={isSelected}
-              aria-label={entry.subject}
-              style={{ transform: `translateY(${item.start}px)` }}
-              tabIndex={-1}
-              onMouseDown={keepFocus}
-              onClick={() => selectCommit(entry.id)}
-              onKeyDown={(event) => onActivateKey(event, () => selectCommit(entry.id))}
-            >
-              <span className="dl-commit-hash">{entry.short}</span>
-              <span className="dl-commit-subject">{entry.subject}</span>
-              <span className="dl-commit-meta">{fileCount(entry.files)}</span>
-              <span className="dl-commit-meta">{entry.author}</span>
-              <span className="dl-commit-meta">{relativeDate(entry.time)}</span>
-            </div>
-          );
-        })}
+    <>
+      <div
+        ref={scroller}
+        className="dl-list app-log-commits"
+        role="listbox"
+        aria-label="Branch commits"
+        tabIndex={0}
+        aria-activedescendant={active}
+        onKeyDown={onKeyDown}
+        onScroll={closeMenu}
+      >
+        <div className="app-virtual" style={{ height: virtualizer.getTotalSize() }}>
+          {items.map((item) => {
+            const entry = entries[item.index];
+            if (!entry) return null;
+            const isSelected = entry.id === selected;
+            return (
+              <div
+                key={entry.id}
+                id={`commit-row-${item.index}`}
+                className={`dl-row dl-commit app-virtual-row ${commitClass(entry, first, last)} ${isSelected ? "is-selected" : ""}`}
+                role="option"
+                aria-selected={isSelected}
+                aria-label={entry.subject}
+                style={{ transform: `translateY(${item.start}px)` }}
+                tabIndex={-1}
+                onMouseDown={keepFocus}
+                onClick={() => selectCommit(entry.id)}
+                onContextMenu={(event) => {
+                  event.preventDefault();
+                  selectCommit(entry.id);
+                  openMenu(entry.id, event.clientX, event.clientY);
+                }}
+                onKeyDown={(event) => onActivateKey(event, () => selectCommit(entry.id))}
+              >
+                <span className="dl-commit-graph" aria-hidden="true">
+                  <i className="dl-commit-dot" />
+                </span>
+                <span className="dl-commit-subject">{entry.subject}</span>
+                <span className="dl-commit-meta">{entry.author}</span>
+                <span className="dl-commit-meta">{relativeDate(entry.time)}</span>
+              </div>
+            );
+          })}
+        </div>
       </div>
-    </div>
+      {menu && (
+        <Popup
+          label="Commit actions"
+          role="menu"
+          className="app-context-menu"
+          style={{ top: menu.y, left: menu.x }}
+          onClose={closeMenu}
+        >
+          <MenuRow
+            label="Copy Revision Number"
+            onActivate={() => {
+              void navigator.clipboard?.writeText(menu.id);
+              closeMenu();
+            }}
+          >
+            <Icon name="general-copy" />
+            <span className="dl-row-name app-row-wide">Copy Revision Number</span>
+          </MenuRow>
+        </Popup>
+      )}
+    </>
   );
 }
 
-function CommitPane({ files }: { files: RefObject<HTMLDivElement | null> }) {
+function CommitPane({
+  files,
+  height,
+}: {
+  files: RefObject<HTMLDivElement | null>;
+  height: number;
+}) {
+  const size = { height };
   const commit = useApp((state) => state.commit);
   const commitError = useApp((state) => state.commitError);
   const selected = useApp((state) => state.logCommit);
   if (!selected) {
     return (
-      <div className="dl-empty app-log-details">
+      <div className="dl-empty app-log-details" style={size}>
         <span className="dl-empty-title">Pick a commit</span>
         <span>Its message and changed files show here.</span>
       </div>
@@ -205,15 +327,15 @@ function CommitPane({ files }: { files: RefObject<HTMLDivElement | null> }) {
   }
   if (commitError) {
     return (
-      <div className="dl-empty app-log-details" role="alert">
+      <div className="dl-empty app-log-details" style={size} role="alert">
         <span className="dl-empty-title">The commit could not be read</span>
         <span>{commitError.message}</span>
       </div>
     );
   }
-  if (!commit) return <div className="app-log-details" />;
+  if (!commit) return <div className="app-log-details" style={size} />;
   return (
-    <section className="app-log-details" aria-label="Commit details">
+    <section className="app-log-details" style={size} aria-label="Commit details">
       <div className="app-log-message">
         <div className="ui-heading">{commit.subject}</div>
         <div className="app-log-meta">

@@ -656,23 +656,27 @@ button {
   flex: none;
 }
 
+.app-log-panes {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
 .app-log-commits {
   position: relative;
-  flex: 0 1 auto;
+  flex: 1 1 0;
   min-height: 96px;
-  max-height: 60%;
   overflow-y: auto;
 }
 
-.app-log-split {
-  flex: none;
-  height: 1px;
-  background: var(--border);
+.app-log-panes .app-hsplit {
+  background: linear-gradient(var(--border), var(--border)) center / 100% 1px no-repeat;
 }
 
 .app-log-details {
   display: flex;
-  flex: 1 1 0;
+  flex: none;
   flex-direction: column;
   min-height: 120px;
   overflow-y: auto;
@@ -718,6 +722,12 @@ button {
   position: fixed;
   z-index: 5;
   width: 320px;
+}
+
+.app-context-menu {
+  position: fixed;
+  z-index: 5;
+  min-width: 200px;
 }
 
 .app-row-disabled {
