@@ -2,7 +2,14 @@ import { act, fireEvent, screen } from "@testing-library/react";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { CommitDetails, LogEntry } from "../api";
 import { fakeCore, renderWithStore, repoInfo } from "../test/render";
-import { BranchLogView, commitClass, commitCount, matches } from "./BranchLogView";
+import {
+  BranchLogView,
+  commitAuthor,
+  commitClass,
+  commitCount,
+  commitMessage,
+  matches,
+} from "./BranchLogView";
 
 const clock = new Date(2026, 9, 22, 18, 0);
 const now = Math.floor(clock.getTime() / 1000);
@@ -52,6 +59,16 @@ function core(entries: () => LogEntry[]) {
     },
   });
 }
+
+describe("commitMessage and commitAuthor", () => {
+  it("joins the subject and body, and the name and email", () => {
+    const commit = { ...details(skip), body: "Empty invoices broke the CSV." };
+    expect(commitMessage(commit)).toBe(`${skip.subject}\n\nEmpty invoices broke the CSV.`);
+    expect(commitMessage(details(skip))).toBe(skip.subject);
+    expect(commitAuthor(commit)).toBe("Ada Lovelace <ada@example.com>");
+    expect(commitAuthor({ ...commit, email: "" })).toBe("Ada Lovelace");
+  });
+});
 
 describe("matches", () => {
   it("finds commits by subject, hash or author", () => {
@@ -112,6 +129,23 @@ describe("BranchLogView", () => {
     fireEvent.click(await screen.findByRole("menuitem", { name: "Copy Revision Number" }));
     expect(writeText).toHaveBeenCalledWith(skip.id);
     expect(screen.queryByRole("menu", { name: "Commit actions" })).not.toBeInTheDocument();
+  });
+
+  it("copies the full message and the author from the row's context menu", async () => {
+    const writeText = vi.fn(async () => undefined);
+    Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
+    await renderWithStore(
+      <BranchLogView />,
+      core(() => [skip, merge]),
+    );
+    const row = await screen.findByRole("option", { name: skip.subject });
+    fireEvent.contextMenu(row, { clientX: 20, clientY: 30 });
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Copy Commit Message" }));
+    fireEvent.contextMenu(row, { clientX: 20, clientY: 30 });
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Copy Author" }));
+    await vi.waitFor(() => expect(writeText).toHaveBeenCalledTimes(2));
+    expect(writeText).toHaveBeenNthCalledWith(1, skip.subject);
+    expect(writeText).toHaveBeenNthCalledWith(2, "Ada Lovelace <ada@example.com>");
   });
 
   it("opens the commit menu from the keyboard and closes it on scroll", async () => {
