@@ -2,6 +2,29 @@
 
 Each release lists what changed for the person who uses Diffloupe, and every change to stored data with its migration.
 
+## 0.2.1
+
+A simpler branch log, a working Rollback and an update check on diffloupe.com.
+
+### Review
+
+- The branch log shows the branch's commit history, newest first, with merges as ordinary commits. It works on the default branch too.
+- The target branch belongs to the Changes tab, and the current branch is no longer offered as a target.
+- Rollback restores the files you tick to their last commit. Added files keep their copy unless you choose to delete it.
+
+### Updates
+
+- Diffloupe asks diffloupe.com for the latest version. The request names only the operating system, with no identifier and no usage data. Downloads still come from GitHub and are checked against their SHA-256 checksum.
+
+### Fixed
+
+- An installed or updated Diffloupe shows in Spotlight at once.
+- The Uninstall dialog no longer lists every file it deletes.
+
+### Install
+
+- Nothing in your stored data changes.
+
 ## 0.2.0
 
 The first public release, open source on GitHub, with updates from inside the app. Install it with one Terminal command from diffloupe.com, or from the disk image.
