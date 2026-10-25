@@ -14,7 +14,7 @@ A simpler branch log, a working Rollback and an update check on diffloupe.com.
 
 ### Updates
 
-- Diffloupe asks diffloupe.com for the latest version. The request names only the operating system, with no identifier and no usage data. Downloads still come from GitHub and are checked against their SHA-256 checksum.
+- The update check is ready for more platforms. Each update is still checked against its SHA-256 checksum before it installs.
 
 ### Fixed
 
