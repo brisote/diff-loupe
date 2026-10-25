@@ -1,6 +1,8 @@
+use crate::platform::{self, Platform};
 use std::path::Path;
 use std::process::{Command, Stdio};
 use std::sync::{Arc, OnceLock};
+#[cfg(unix)]
 use std::time::{Duration, Instant};
 
 #[derive(Debug, Clone)]
@@ -40,14 +42,17 @@ impl ShellEnv {
     }
 
     pub fn curl(&self) -> Command {
-        let mut cmd = Command::new("/usr/bin/curl");
-        cmd.stdin(Stdio::null());
+        let mut cmd = Command::new(curl_program(Platform::CURRENT, |name| {
+            std::env::var(name).ok()
+        }));
+        platform::hidden(&mut cmd).stdin(Stdio::null());
         cmd
     }
 
     pub fn git(&self, cwd: &Path) -> Command {
         let mut cmd = Command::new("git");
-        cmd.current_dir(cwd)
+        platform::hidden(&mut cmd)
+            .current_dir(cwd)
             .env("PATH", self.path())
             .env("GIT_TERMINAL_PROMPT", "0")
             .env("GIT_OPTIONAL_LOCKS", "0")
@@ -56,10 +61,33 @@ impl ShellEnv {
     }
 }
 
+pub fn curl_program(platform: Platform, get: impl Fn(&str) -> Option<String>) -> String {
+    match platform {
+        Platform::Macos => "/usr/bin/curl".to_string(),
+        Platform::Windows => {
+            let root = get("SystemRoot").unwrap_or_else(|| "C:\\Windows".to_string());
+            format!("{}\\System32\\curl.exe", root.trim_end_matches('\\'))
+        }
+        Platform::Linux => "curl".to_string(),
+    }
+}
+
+#[cfg(unix)]
 fn login_shell() -> String {
     std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".to_string())
 }
 
+#[cfg(not(unix))]
+fn login_shell() -> String {
+    "powershell.exe".to_string()
+}
+
+#[cfg(not(unix))]
+fn login_shell_path() -> Option<String> {
+    None
+}
+
+#[cfg(unix)]
 fn login_shell_path() -> Option<String> {
     let shell = login_shell();
     let mut child = Command::new(shell)
@@ -93,6 +121,7 @@ fn login_shell_path() -> Option<String> {
     parse_path(&receiver.recv_timeout(Duration::from_secs(1)).ok()?)
 }
 
+#[cfg(unix)]
 fn parse_path(raw: &str) -> Option<String> {
     let line = raw.lines().last()?.trim();
     if line.is_empty() || !line.contains('/') {
@@ -106,6 +135,23 @@ fn parse_path(raw: &str) -> Option<String> {
 mod tests {
     use super::*;
 
+    #[test]
+    fn curl_comes_from_the_place_each_system_keeps_it() {
+        let none = |_: &str| None;
+        assert_eq!(curl_program(Platform::Macos, none), "/usr/bin/curl");
+        assert_eq!(curl_program(Platform::Linux, none), "curl");
+        assert_eq!(
+            curl_program(Platform::Windows, none),
+            "C:\\Windows\\System32\\curl.exe"
+        );
+        assert_eq!(
+            curl_program(Platform::Windows, |name| (name == "SystemRoot")
+                .then(|| "D:\\Win\\".into())),
+            "D:\\Win\\System32\\curl.exe"
+        );
+    }
+
+    #[cfg(unix)]
     #[test]
     fn parse_takes_the_last_line_and_ignores_noise() {
         assert_eq!(

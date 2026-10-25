@@ -12,6 +12,7 @@ use crate::gitops::{self, Cancels, CommitResult, Destination, PushResult};
 use crate::history::{self, BranchLog, CommitDetails, CommitDiff, HistoryCache};
 use crate::merge::{self, MergeOutcome};
 use crate::merge3;
+use crate::platform::{self, Platform};
 use crate::repo::Repo;
 use crate::shellenv::ShellEnv;
 use crate::status::{self, FileChange, Untracked};
@@ -56,6 +57,8 @@ pub struct Core {
     release: Mutex<Option<update::Release>>,
     update_ready: Mutex<Option<(String, PathBuf)>>,
     update_failure: Mutex<Option<String>>,
+    package: Option<update::PackageKind>,
+    platform: Platform,
 }
 
 struct OpenRepo {
@@ -66,8 +69,34 @@ struct OpenRepo {
 
 impl Core {
     pub fn new(data_dir: &Path, env: ShellEnv, events: Arc<dyn EventSink>) -> Result<Core> {
+        Core::build(
+            data_dir,
+            env,
+            events,
+            Platform::CURRENT,
+            update::PackageKind::current(),
+        )
+    }
+
+    pub fn for_platform(
+        data_dir: &Path,
+        env: ShellEnv,
+        events: Arc<dyn EventSink>,
+        platform: Platform,
+    ) -> Result<Core> {
+        let package = update::PackageKind::of(platform, "x86_64", Some(update::PackageKind::Deb));
+        Core::build(data_dir, env, events, platform, package)
+    }
+
+    fn build(
+        data_dir: &Path,
+        env: ShellEnv,
+        events: Arc<dyn EventSink>,
+        platform: Platform,
+        package: Option<update::PackageKind>,
+    ) -> Result<Core> {
         let store = Store::open(data_dir)?;
-        let pending = update::pending(&data_dir.join(UPDATES), env!("CARGO_PKG_VERSION"));
+        let pending = update::pending(&data_dir.join(UPDATES), env!("CARGO_PKG_VERSION"), package);
         Ok(Core {
             store: Mutex::new(store),
             repo: Mutex::new(None),
@@ -86,6 +115,8 @@ impl Core {
             release: Mutex::new(None),
             update_ready: Mutex::new(pending.ready),
             update_failure: Mutex::new(pending.failure),
+            package,
+            platform,
         })
     }
 
@@ -189,6 +220,7 @@ impl Core {
                     &url,
                     self.update_max_time.load(Ordering::SeqCst),
                     env!("CARGO_PKG_VERSION"),
+                    self.package,
                 )?;
                 let check = release.check.clone();
                 if let Ok(mut stored) = self.release.lock() {
@@ -420,16 +452,14 @@ impl Core {
                 .ok()
                 .filter(|output| output.status.success())
                 .and_then(|output| String::from_utf8(output.stdout).ok())
-                .and_then(|text| text.lines().next().map(|line| line.trim().to_string()))
-                .filter(|line| !line.is_empty())
+                .and_then(|text| platform::first_line(&text))
         };
         ReportEnv {
             version: env!("CARGO_PKG_VERSION").to_string(),
-            macos: first_line(
-                std::process::Command::new("/usr/bin/sw_vers")
-                    .arg("-productVersion")
-                    .output(),
-            ),
+            os: platform::os_name(Platform::CURRENT, &|program, args| {
+                let mut command = std::process::Command::new(program);
+                first_line(platform::hidden(&mut command).args(args).output())
+            }),
             arch: std::env::consts::ARCH.to_string(),
             git: first_line(self.env.git(Path::new("/")).arg("--version").output())
                 .map(|line| line.trim_start_matches("git version ").to_string()),
@@ -440,7 +470,13 @@ impl Core {
         Ok(AppInfo {
             version: env!("CARGO_PKG_VERSION").to_string(),
             settings_notice: self.store()?.notice().map(str::to_string),
-            home: std::env::var("HOME").ok(),
+            home: std::env::var(if Platform::CURRENT == Platform::Windows {
+                "USERPROFILE"
+            } else {
+                "HOME"
+            })
+            .ok(),
+            platform: self.platform,
         })
     }
 

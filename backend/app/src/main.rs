@@ -1,5 +1,9 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+#[cfg(target_os = "macos")]
+mod install;
+#[cfg(not(target_os = "macos"))]
+#[path = "install_unsupported.rs"]
 mod install;
 #[cfg(debug_assertions)]
 mod smoke;
@@ -10,6 +14,7 @@ use diffloupe_core::footprint;
 use diffloupe_core::shellenv::ShellEnv;
 use serde_json::{Value, json};
 use std::path::PathBuf;
+#[cfg(unix)]
 use std::process::{Command, Stdio};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -78,7 +83,11 @@ async fn uninstall(app: AppHandle, data: State<'_, DataDir>) -> Result<(), Strin
             );
         }
         let system = touches_system();
-        clean_up_after_exit(&locations, system.then_some(footprint::BUNDLE_ID))?;
+        if let Err(reason) = clean_up_after_exit(&locations, system.then_some(footprint::BUNDLE_ID))
+        {
+            LEAVING.store(false, Ordering::SeqCst);
+            return Err(reason);
+        }
         if let Some(core) = worker.try_state::<Arc<Core>>() {
             core.shutdown();
         }
@@ -173,6 +182,12 @@ fn touches_system() -> bool {
     true
 }
 
+#[cfg(not(unix))]
+fn clean_up_after_exit(_locations: &[PathBuf], _defaults: Option<&str>) -> Result<(), String> {
+    Err("Uninstall is not available on this system yet.".to_string())
+}
+
+#[cfg(unix)]
 fn clean_up_after_exit(locations: &[PathBuf], defaults: Option<&str>) -> Result<(), String> {
     use std::os::unix::process::CommandExt;
     Command::new("/bin/sh")

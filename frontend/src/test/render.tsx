@@ -36,7 +36,12 @@ export function repoInfo(name: string, branch = "main"): RepoInfo {
 
 export function fakeCore(handlers: Record<string, Handler> = {}) {
   return new FakeTransport({
-    app_info: () => ({ version: "0.1.0", settingsNotice: null, home: "/Users/ada" }),
+    app_info: () => ({
+      version: "0.1.0",
+      settingsNotice: null,
+      home: "/Users/ada",
+      platform: "macos",
+    }),
     get_settings: () => settings,
     recent_repos: () => [],
     current_repo: () => null,
@@ -48,7 +53,7 @@ export function fakeCore(handlers: Record<string, Handler> = {}) {
     set_ui_value: () => null,
     set_settings: (args) => (args as { settings: Settings }).settings,
     update_state: () => ({ ready: null, failure: null, page: null }),
-    report_env: () => ({ version: "0.2.0", macos: "26.1", arch: "aarch64", git: "2.50.1" }),
+    report_env: () => ({ version: "0.2.0", os: "macOS 26.1", arch: "aarch64", git: "2.50.1" }),
     ...handlers,
   });
 }

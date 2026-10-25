@@ -2,7 +2,7 @@
 
 use diffloupe_core::Core;
 use diffloupe_core::events::{CoreEvent, RecordedEvents};
-use diffloupe_core::testutil::{TempRepo, git_in, isolate, test_env};
+use diffloupe_core::testutil::{TempRepo, git_in, isolate, make_executable, test_env};
 use serde_json::{Value, json};
 use std::fs;
 use std::path::Path;
@@ -143,9 +143,7 @@ fn a_commit_needs_a_message_and_files_and_reports_a_failing_hook() {
         "#!/bin/sh\necho 'lint found 2 problems' >&2\nexit 1\n",
     )
     .unwrap();
-    let mut permissions = fs::metadata(&hook).unwrap().permissions();
-    std::os::unix::fs::PermissionsExt::set_mode(&mut permissions, 0o755);
-    fs::set_permissions(&hook, permissions).unwrap();
+    make_executable(&hook);
     let err = core
         .dispatch(
             "commit",
@@ -366,9 +364,7 @@ fn a_running_fetch_can_be_cancelled() {
     let repo = TempRepo::with_commit();
     let script = repo.path().join("slow-remote.sh");
     fs::write(&script, "#!/bin/sh\nsleep 30\n").unwrap();
-    let mut permissions = fs::metadata(&script).unwrap().permissions();
-    std::os::unix::fs::PermissionsExt::set_mode(&mut permissions, 0o755);
-    fs::set_permissions(&script, permissions).unwrap();
+    make_executable(&script);
     let url = format!("ext::{}", script.display());
     repo.git(&["remote", "add", "origin", &url]);
     repo.git(&["config", "protocol.ext.allow", "always"]);
