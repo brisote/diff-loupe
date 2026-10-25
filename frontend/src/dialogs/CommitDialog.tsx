@@ -15,6 +15,7 @@ import { Checkbox } from "../lib/fields";
 import { Icon } from "../lib/icon";
 import { MenuRow } from "../lib/list";
 import { splitPath } from "../lib/paths";
+import { hasModifier, usePlatform } from "../lib/platform";
 import { Popup } from "../lib/popup";
 import { useApp } from "../state/context";
 
@@ -89,6 +90,7 @@ export function groupCount(total: number, checked: number): string {
 }
 
 export function CommitDialog() {
+  const platform = usePlatform();
   const repo = useApp((state) => state.repo);
   const changes = useApp((state) => state.uncommitted);
   const backend = useApp((state) => state.backend);
@@ -276,7 +278,7 @@ export function CommitDialog() {
           value={message}
           onChange={(event) => setMessage(event.target.value)}
           onKeyDown={(event) => {
-            if (event.key === "Enter" && event.metaKey) {
+            if (event.key === "Enter" && hasModifier(platform, event)) {
               event.preventDefault();
               void submit(false);
             }

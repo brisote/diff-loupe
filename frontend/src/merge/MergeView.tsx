@@ -17,6 +17,7 @@ import {
 import { LineNumbers } from "../diff/LineNumbers";
 import { Dialog } from "../lib/dialog";
 import { Icon } from "../lib/icon";
+import { shortcut, usePlatform } from "../lib/platform";
 import {
   acceptSide,
   applyNonConflicting,
@@ -121,6 +122,7 @@ export function MergeView({
   onCancel,
   cancelRef,
 }: Props) {
+  const platform = usePlatform();
   const initialChunks = useMemo(() => initialStates(file), [file]);
   const [states, setStates] = useState<ChunkState[]>(initialChunks);
   const [doc, setDoc] = useState<Text | null>(null);
@@ -464,7 +466,11 @@ export function MergeView({
     },
     { label: "Resolve Simple Conflicts", icon: "diff-magicResolveToolbar", run: simple },
     "separator",
-    { label: "Previous Difference ⇧F7", icon: "general-up", run: () => move(-1) },
+    {
+      label: `Previous Difference ${shortcut(platform, "Shift+F7")}`,
+      icon: "general-up",
+      run: () => move(-1),
+    },
     { label: "Next Difference F7", icon: "general-down", run: () => move(1) },
   ];
 

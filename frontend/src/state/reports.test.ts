@@ -94,3 +94,17 @@ describe("error reports", () => {
     expect(text).toContain("| 14:12:05.042 | set_ui_value | store | 5002 |");
   });
 });
+
+describe("hidePaths on Windows", () => {
+  it("hides repositories and the home folder whatever the separators and case", () => {
+    const text =
+      "failed in C:\\Users\\Ada\\work\\acme: C:/Users/ada/work/acme/src/a.kt and \\\\?\\C:\\Users\\ada\\notes";
+    expect(hidePaths(text, "C:\\Users\\ada", ["C:\\Users\\ada\\work\\acme"])).toBe(
+      "failed in <repository>: <repository>/src/a.kt and ~\\notes",
+    );
+  });
+
+  it("does not hide a folder that only shares a prefix", () => {
+    expect(hidePaths("C:\\Users\\adam\\x", "C:\\Users\\ada", [])).toBe("C:\\Users\\adam\\x");
+  });
+});

@@ -68,11 +68,8 @@ type StartOptions = {
   platform?: PlatformName;
 };
 
-export const hostPlatform: PlatformName =
-  process.platform === "darwin" ? "macos" : process.platform === "win32" ? "windows" : "linux";
-
 export const platformUnderTest: PlatformName =
-  (process.env.DL_PLATFORM as PlatformName | undefined) ?? hostPlatform;
+  (process.env.DL_PLATFORM as PlatformName | undefined) ?? "macos";
 
 export const packageSuffix = {
   macos: ".dmg",

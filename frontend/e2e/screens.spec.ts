@@ -295,3 +295,27 @@ test("error report screen", async ({ page, workspace, startApp }) => {
   await page.waitForTimeout(300);
   await shoot(page, "ErrorReport");
 });
+
+for (const platform of ["windows", "linux"] as const) {
+  test(`the main window as ${platform}`, async ({ page, workspace, startApp }) => {
+    const billing = designRepo(workspace);
+    await startApp({ open: [workspace.repo("payments-api"), billing], platform });
+    await page.getByRole("button", { name: "Recent projects" }).waitFor();
+    await page.getByRole("treeitem", { name: /InvoiceExporter.kt/ }).click();
+    await page.getByRole("region", { name: "Side-by-side diff" }).waitFor();
+    await page.waitForTimeout(300);
+    const name = platform === "windows" ? "ChangesWindows" : "ChangesLinux";
+    await shoot(page, name);
+    await page.getByRole("button", { name: "Settings menu" }).click();
+    await shoot(page, platform === "windows" ? "SettingsMenuWindows" : "SettingsMenuLinux");
+    await page.getByRole("menuitem", { name: "About Diffloupe" }).click();
+    await shoot(page, platform === "windows" ? "AboutWindows" : "AboutLinux");
+    await page
+      .getByRole("dialog", { name: "About Diffloupe" })
+      .getByRole("button", { name: "Close" })
+      .click();
+    await page.getByRole("button", { name: "Settings menu" }).click();
+    await page.getByRole("menuitem", { name: "Uninstall Diffloupe…" }).click();
+    await shoot(page, platform === "windows" ? "UninstallWindows" : "UninstallLinux");
+  });
+}
