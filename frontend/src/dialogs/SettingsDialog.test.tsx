@@ -110,18 +110,20 @@ describe("the Updates section", () => {
     expect(transport.installed).toBe(true);
   });
 
-  it("says when GitHub could not be reached, and checks again on Check now", async () => {
+  it("says when the site could not be reached, and checks again on Check now", async () => {
     const user = userEvent.setup();
     let answers = 0;
     await updates(() => {
       answers++;
       throw {
         code: "update",
-        message: "GitHub could not be reached. Check the connection and try again.",
+        message: "diffloupe.com could not be reached. Check the connection and try again.",
       };
     });
     expect(
-      await screen.findByText("GitHub could not be reached. Check the connection and try again."),
+      await screen.findByText(
+        "diffloupe.com could not be reached. Check the connection and try again.",
+      ),
     ).toBeTruthy();
     await user.click(screen.getByRole("button", { name: "Check now" }));
     expect(answers).toBe(2);

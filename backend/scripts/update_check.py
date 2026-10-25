@@ -1,7 +1,7 @@
 """Updates a copy of the debug build to a newer test release on the Mac and checks the result.
 
-The copy lives in a temporary folder with a temporary home. A local server plays GitHub:
-it offers version 99.0.0 once, with a disk image of the same build marked 99.0.0, and
+The copy lives in a temporary folder with a temporary home. A local server plays diffloupe.com and
+the GitHub release: it offers version 99.0.0 once, with a disk image of the same build marked 99.0.0, and
 answers with an older version afterwards, so the updated copy does not update again.
 The second run serves a wrong checksum and checks that the old copy stays in place.
 """
@@ -39,38 +39,44 @@ class Release:
 
     @property
     def url(self) -> str:
-        return f"{self.base}/repos/brisote/diff-loupe/releases/latest"
+        return f"{self.base}/download/latest/macos/version"
 
     def latest(self) -> bytes:
-        tag = "v0.0.1" if self.offered else f"v{VERSION}"
+        version = "0.0.1" if self.offered else VERSION
         self.offered = True
-        name = f"Diffloupe-{VERSION}.dmg"
-        return json.dumps(
-            {
-                "tag_name": tag,
-                "html_url": f"https://github.com/brisote/diff-loupe/releases/tag/{tag}",
-                "assets": [
-                    {"name": name, "size": self.image.stat().st_size, "browser_download_url": f"{self.base}/download/{name}"},
-                    {"name": f"{name}.sha256", "size": 90, "browser_download_url": f"{self.base}/download/{name}.sha256"},
-                ],
-            }
-        ).encode()
+        return f"{version}\n".encode()
 
     def handler(self):
         release = self
+        image = f"/download/v{VERSION}/Diffloupe-{VERSION}.dmg"
 
         class Handler(BaseHTTPRequestHandler):
-            def do_GET(self):
-                if self.path.endswith(".dmg"):
-                    body = release.image.read_bytes()
-                elif self.path.endswith(".dmg.sha256"):
-                    body = f"{release.checksum}  Diffloupe-{VERSION}.dmg\n".encode()
-                else:
-                    body = release.latest()
+            def body(self) -> bytes | None:
+                if self.path == image:
+                    return release.image.read_bytes()
+                if self.path == f"{image}.sha256":
+                    return f"{release.checksum}  Diffloupe-{VERSION}.dmg\n".encode()
+                if self.path == "/download/latest/macos/version":
+                    return release.latest()
+                return None
+
+            def answer(self, send_body: bool) -> None:
+                body = self.body()
+                if body is None:
+                    self.send_response(404)
+                    self.end_headers()
+                    return
                 self.send_response(200)
                 self.send_header("Content-Length", str(len(body)))
                 self.end_headers()
-                self.wfile.write(body)
+                if send_body:
+                    self.wfile.write(body)
+
+            def do_GET(self):
+                self.answer(True)
+
+            def do_HEAD(self):
+                self.answer(False)
 
             def log_message(self, *_):
                 pass

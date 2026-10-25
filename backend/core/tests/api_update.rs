@@ -18,7 +18,7 @@ struct Server {
 fn serve(status: &'static str, body: String) -> Server {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let url = format!(
-        "http://{}/repos/brisote/diff-loupe/releases/latest",
+        "http://{}/download/latest/macos/version",
         listener.local_addr().unwrap()
     );
     let hits = Arc::new(AtomicUsize::new(0));
@@ -30,7 +30,7 @@ fn serve(status: &'static str, body: String) -> Server {
             let _ = stream.read(&mut request);
             counted.fetch_add(1, Ordering::SeqCst);
             let reply = format!(
-                "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                "HTTP/1.1 {status}\r\nContent-Type: text/plain\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
                 body.len()
             );
             let _ = stream.write_all(reply.as_bytes());
@@ -39,12 +39,8 @@ fn serve(status: &'static str, body: String) -> Server {
     Server { url, hits }
 }
 
-fn release(tag: &str) -> String {
-    json!({
-        "tag_name": tag,
-        "html_url": format!("https://github.com/brisote/diff-loupe/releases/tag/{tag}"),
-    })
-    .to_string()
+fn release(version: &str) -> String {
+    format!("{version}\n")
 }
 
 fn core(url: &str) -> (tempfile::TempDir, Core) {
@@ -72,8 +68,8 @@ fn silent() -> String {
 }
 
 #[test]
-fn a_newer_release_is_offered() {
-    let server = serve("200 OK", release("v99.0.0"));
+fn a_newer_version_is_offered_with_its_release_page() {
+    let server = serve("200 OK", release("99.0.0"));
     let check = check(&server.url).unwrap();
     assert_eq!(check["latest"], "99.0.0");
     assert_eq!(check["current"], env!("CARGO_PKG_VERSION"));
@@ -87,12 +83,9 @@ fn a_newer_release_is_offered() {
 
 #[test]
 fn the_same_or_an_older_release_is_not_offered() {
-    let same = serve(
-        "200 OK",
-        release(&format!("v{}", env!("CARGO_PKG_VERSION"))),
-    );
+    let same = serve("200 OK", release(env!("CARGO_PKG_VERSION")));
     assert_eq!(check(&same.url).unwrap()["newer"], false);
-    let older = serve("200 OK", release("v0.0.1"));
+    let older = serve("200 OK", release("0.0.1"));
     assert_eq!(check(&older.url).unwrap()["newer"], false);
 }
 
@@ -103,21 +96,18 @@ fn a_server_error_says_to_try_again_later() {
     assert_eq!(error["code"], "update");
     assert_eq!(
         error["message"],
-        "GitHub did not return the latest release. Try again later."
+        "diffloupe.com did not return the latest version. Try again later."
     );
 }
 
 #[test]
-fn a_missing_release_says_github_returned_none() {
-    let server = serve(
-        "404 Not Found",
-        json!({ "message": "Not Found" }).to_string(),
-    );
+fn a_missing_version_file_says_none_was_returned() {
+    let server = serve("404 Not Found", "Not Found".to_string());
     let error = check(&server.url).unwrap_err();
     assert_eq!(error["code"], "update");
     assert_eq!(
         error["message"],
-        "GitHub did not return the latest release. Try again later."
+        "diffloupe.com did not return the latest version. Try again later."
     );
 }
 
@@ -130,12 +120,12 @@ fn a_server_that_does_not_answer_times_out() {
     assert!(started.elapsed() < std::time::Duration::from_secs(5));
     assert_eq!(
         error["message"],
-        "GitHub could not be reached. Check the connection and try again."
+        "diffloupe.com could not be reached. Check the connection and try again."
     );
 }
 
 #[test]
-fn a_closed_port_says_github_could_not_be_reached() {
+fn a_closed_port_says_the_site_could_not_be_reached() {
     let port = TcpListener::bind("127.0.0.1:0")
         .unwrap()
         .local_addr()
@@ -146,13 +136,26 @@ fn a_closed_port_says_github_could_not_be_reached() {
 }
 
 #[test]
-fn an_answer_that_is_not_a_release_is_refused() {
-    let server = serve("200 OK", json!({ "message": "Not Found" }).to_string());
+fn an_answer_that_is_not_a_version_is_refused() {
+    for body in ["<html>Moved</html>", "v99.0.0", "99.0"] {
+        let server = serve("200 OK", body.to_string());
+        let error = check(&server.url).unwrap_err();
+        assert_eq!(error["code"], "update");
+        assert_eq!(
+            error["message"],
+            "diffloupe.com answered with a version that Diffloupe cannot read."
+        );
+    }
+}
+
+#[test]
+fn a_long_answer_is_refused_without_reading_it() {
+    let server = serve("200 OK", "9".repeat(5000));
     let error = check(&server.url).unwrap_err();
     assert_eq!(error["code"], "update");
     assert_eq!(
         error["message"],
-        "GitHub answered with a release that Diffloupe cannot read."
+        "diffloupe.com answered with a version that Diffloupe cannot read."
     );
 }
 
@@ -169,7 +172,7 @@ fn the_setting_is_on_by_default_and_kept_when_saved() {
     assert_eq!(saved["updates"]["check"], false);
 }
 
-type Files = Arc<Mutex<HashMap<String, (&'static str, Vec<u8>)>>>;
+type Files = Arc<Mutex<HashMap<String, (&'static str, Vec<u8>, Option<usize>)>>>;
 
 fn serve_files() -> (String, Files) {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
@@ -182,19 +185,26 @@ fn serve_files() -> (String, Files) {
             let mut request = [0u8; 4096];
             let read = stream.read(&mut request).unwrap_or(0);
             let line = String::from_utf8_lossy(&request[..read]).to_string();
-            let path = line.split_whitespace().nth(1).unwrap_or("/").to_string();
-            let (status, body) = served
-                .lock()
-                .unwrap()
-                .get(&path)
-                .cloned()
-                .unwrap_or(("404 Not Found", Vec::new()));
-            let head = format!(
-                "HTTP/1.1 {status}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+            let mut words = line.split_whitespace();
+            let method = words.next().unwrap_or("GET").to_string();
+            let path = words.next().unwrap_or("/").to_string();
+            let (status, body, announced) = served.lock().unwrap().get(&path).cloned().unwrap_or((
+                "404 Not Found",
+                Vec::new(),
+                None,
+            ));
+            let length = if method == "HEAD" {
+                announced.unwrap_or(body.len())
+            } else {
                 body.len()
+            };
+            let head = format!(
+                "HTTP/1.1 {status}\r\nContent-Length: {length}\r\nConnection: close\r\n\r\n"
             );
             let _ = stream.write_all(head.as_bytes());
-            let _ = stream.write_all(&body);
+            if method != "HEAD" {
+                let _ = stream.write_all(&body);
+            }
         }
     });
     (base, files)
@@ -209,45 +219,31 @@ fn hex(bytes: &[u8]) -> String {
 }
 
 fn newer_release(image: Option<&[u8]>, checksum: &str) -> String {
-    newer_release_sized(image, checksum, image.map_or(0, <[u8]>::len))
+    newer_release_sized(image, checksum, None)
 }
 
-fn newer_release_sized(image: Option<&[u8]>, checksum: &str, size: usize) -> String {
+fn newer_release_sized(image: Option<&[u8]>, checksum: &str, announced: Option<usize>) -> String {
     let (base, files) = serve_files();
     let mut files = files.lock().unwrap();
-    let mut assets = vec![json!({
-        "name": "Diffloupe-99.0.0.dmg.sha256",
-        "size": 90,
-        "browser_download_url": format!("{base}/download/Diffloupe-99.0.0.dmg.sha256"),
-    })];
     files.insert(
-        "/download/Diffloupe-99.0.0.dmg.sha256".to_string(),
+        "/download/v99.0.0/Diffloupe-99.0.0.dmg.sha256".to_string(),
         (
             "200 OK",
             format!("{checksum}  Diffloupe-99.0.0.dmg\n").into_bytes(),
+            None,
         ),
     );
     if let Some(image) = image {
-        assets.push(json!({
-            "name": "Diffloupe-99.0.0.dmg",
-            "size": size,
-            "browser_download_url": format!("{base}/download/Diffloupe-99.0.0.dmg"),
-        }));
         files.insert(
-            "/download/Diffloupe-99.0.0.dmg".to_string(),
-            ("200 OK", image.to_vec()),
+            "/download/v99.0.0/Diffloupe-99.0.0.dmg".to_string(),
+            ("200 OK", image.to_vec(), announced),
         );
     }
-    let body = json!({
-        "tag_name": "v99.0.0",
-        "html_url": "https://github.com/brisote/diff-loupe/releases/tag/v99.0.0",
-        "assets": assets,
-    });
     files.insert(
-        "/latest".to_string(),
-        ("200 OK", body.to_string().into_bytes()),
+        "/download/latest/macos/version".to_string(),
+        ("200 OK", b"99.0.0\n".to_vec(), None),
     );
-    format!("{base}/latest")
+    format!("{base}/download/latest/macos/version")
 }
 
 fn downloaded(
@@ -344,25 +340,10 @@ fn a_download_of_another_version_is_refused() {
 }
 
 #[test]
-fn a_download_of_another_size_is_deleted() {
-    let image = vec![7u8; 1000];
-    let (data, core, _events, result) =
-        downloaded(&newer_release_sized(Some(&image), &hex(&image), 2000));
-    assert!(
-        result.unwrap_err()["message"]
-            .as_str()
-            .unwrap()
-            .contains("because its download is not the size the release gives")
-    );
-    assert!(core.update_ready().is_none());
-    assert!(!data.path().join("updates").exists());
-}
-
-#[test]
-fn a_download_larger_than_the_release_says_is_stopped() {
+fn a_download_larger_than_the_server_announced_is_stopped() {
     let image = vec![7u8; 5000];
     let (data, _core, _events, result) =
-        downloaded(&newer_release_sized(Some(&image), &hex(&image), 1000));
+        downloaded(&newer_release_sized(Some(&image), &hex(&image), Some(1000)));
     assert!(
         result.unwrap_err()["message"]
             .as_str()

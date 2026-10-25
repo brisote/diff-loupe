@@ -23,7 +23,7 @@ BACKEND = ROOT / "backend"
 APP = BACKEND / "target/debug/bundle/macos/Diffloupe.app/Contents/MacOS/diffloupe"
 BRIDGE = BACKEND / "target/debug/diffloupe-devbridge"
 BUNDLE_ID = "com.diffloupe.app"
-NO_UPDATES = "http://127.0.0.1:9/repos/brisote/diff-loupe/releases/latest"
+NO_UPDATES = "http://127.0.0.1:9/download/latest/macos/version"
 
 
 def report(home: Path, while_running=None) -> dict:

@@ -6,7 +6,6 @@ use std::process::Stdio;
 use std::time::Duration;
 
 use serde::Serialize;
-use serde_json::Value;
 use sha2::{Digest, Sha256};
 use ts_rs::TS;
 
@@ -15,14 +14,22 @@ use crate::events::Task;
 use crate::gitops::{self, Watch};
 use crate::shellenv::ShellEnv;
 
-pub const LATEST: &str = "https://api.github.com/repos/brisote/diff-loupe/releases/latest";
+#[cfg(target_os = "macos")]
+pub const LATEST: &str = "https://diffloupe.com/download/latest/macos/version";
+#[cfg(target_os = "linux")]
+pub const LATEST: &str = "https://diffloupe.com/download/latest/linux/version";
+#[cfg(target_os = "windows")]
+pub const LATEST: &str = "https://diffloupe.com/download/latest/windows/version";
 pub const REPOSITORY: &str = "https://github.com/brisote/diff-loupe";
 pub const RELEASES: &str = "https://github.com/brisote/diff-loupe/releases/";
 pub const MAX_TIME: u64 = 20;
 const DOWNLOAD_TIME: u64 = 1800;
-const UNREACHABLE: &str = "GitHub could not be reached. Check the connection and try again.";
-const NO_RELEASE: &str = "GitHub did not return the latest release. Try again later.";
+const MAX_IMAGE: u64 = 500 * 1024 * 1024;
+const UNREACHABLE: &str = "diffloupe.com could not be reached. Check the connection and try again.";
+const NO_RELEASE: &str = "diffloupe.com did not return the latest version. Try again later.";
+const UNREADABLE: &str = "diffloupe.com answered with a version that Diffloupe cannot read.";
 const CURL_HTTP_ERROR: i32 = 22;
+const CURL_TOO_LARGE: i32 = 63;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
@@ -35,16 +42,10 @@ pub struct UpdateCheck {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Asset {
-    pub url: String,
-    pub size: u64,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Release {
     pub check: UpdateCheck,
-    pub image: Option<Asset>,
-    pub checksum: Option<Asset>,
+    pub image: String,
+    pub checksum: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
@@ -153,15 +154,17 @@ pub fn check(env: &ShellEnv, url: &str, max_time: u64, current: &str) -> Result<
             "--location",
             "--max-time",
             &max_time,
-            "--header",
-            "Accept: application/vnd.github+json",
-            url,
+            "--max-filesize",
+            "64",
         ])
+        .args(protocols(url))
+        .arg(url)
         .output()
         .map_err(|_| Error::Update(UNREACHABLE.to_string()))?;
     match output.status.code() {
         Some(0) => {}
         Some(CURL_HTTP_ERROR) => return Err(Error::Update(NO_RELEASE.to_string())),
+        Some(CURL_TOO_LARGE) => return Err(Error::Update(UNREADABLE.to_string())),
         _ => return Err(Error::Update(UNREACHABLE.to_string())),
     }
     parse(&output.stdout, current, &downloads(url))
@@ -174,51 +177,25 @@ pub fn downloads(source: &str) -> String {
     let rest = source.split_once("://").map_or("", |(_, rest)| rest);
     let host = rest.split('/').next().unwrap_or_default();
     let scheme = source.split("://").next().unwrap_or_default();
-    format!("{scheme}://{host}/")
+    format!("{scheme}://{host}/download/")
 }
 
 pub fn parse(body: &[u8], current: &str, downloads: &str) -> Result<Release> {
-    let invalid =
-        || Error::Update("GitHub answered with a release that Diffloupe cannot read.".to_string());
-    let release: Value = serde_json::from_slice(body).map_err(|_| invalid())?;
-    let latest = release
-        .get("tag_name")
-        .and_then(Value::as_str)
-        .and_then(|tag| tag.strip_prefix('v'))
+    let latest = std::str::from_utf8(body)
+        .map(str::trim)
+        .ok()
         .filter(|version| parts(version).is_some())
-        .ok_or_else(invalid)?;
-    let page = release
-        .get("html_url")
-        .and_then(Value::as_str)
-        .filter(|page| page.starts_with(RELEASES) && repository_page(page))
-        .ok_or_else(invalid)?;
-    let asset = |name: String| {
-        release
-            .get("assets")
-            .and_then(Value::as_array)
-            .into_iter()
-            .flatten()
-            .find(|asset| asset.get("name").and_then(Value::as_str) == Some(name.as_str()))
-            .and_then(|asset| {
-                let url = asset.get("browser_download_url").and_then(Value::as_str)?;
-                let size = asset.get("size").and_then(Value::as_u64)?;
-                (url.starts_with(downloads) && !url.contains("/.") && !url.contains('%')).then(
-                    || Asset {
-                        url: url.to_string(),
-                        size,
-                    },
-                )
-            })
-    };
+        .ok_or_else(|| Error::Update(UNREADABLE.to_string()))?;
+    let image = format!("{downloads}v{latest}/Diffloupe-{latest}.dmg");
     Ok(Release {
         check: UpdateCheck {
             current: current.to_string(),
             latest: latest.to_string(),
             newer: newer(latest, current),
-            page: page.to_string(),
+            page: format!("{RELEASES}tag/v{latest}"),
         },
-        image: asset(format!("Diffloupe-{latest}.dmg")),
-        checksum: asset(format!("Diffloupe-{latest}.dmg.sha256")),
+        checksum: format!("{image}.sha256"),
+        image,
     })
 }
 
@@ -237,23 +214,23 @@ pub fn download(
             "Diffloupe {latest} was not installed because {why}, and {current} is unchanged."
         ))
     };
-    let (Some(image), Some(checksum)) = (&release.image, &release.checksum) else {
-        return Err(not_installed("its release has no disk image"));
-    };
+    let headers =
+        head(env, &release.image).ok_or_else(|| not_installed("its release has no disk image"))?;
+    let size = content_length(&headers);
+    if size.is_some_and(|size| size > MAX_IMAGE) {
+        return Err(not_installed(
+            "its disk image is larger than Diffloupe accepts",
+        ));
+    }
     let _ = fs::remove_dir_all(dir);
     let target = dir.join(format!("Diffloupe-{latest}.dmg"));
     let part = dir.join(format!("Diffloupe-{latest}.dmg.part"));
     let verified = fs::create_dir_all(dir)
         .map_err(Error::from)
-        .and_then(|()| fetch(env, &image.url, &part, image.size, watch, task, latest))
+        .and_then(|()| fetch(env, &release.image, &part, size, watch, task, latest))
         .and_then(|()| {
             task.uncancellable();
-            if fs::metadata(&part)?.len() != image.size {
-                return Err(not_installed(
-                    "its download is not the size the release gives",
-                ));
-            }
-            let expected = expected_digest(env, &checksum.url)
+            let expected = expected_digest(env, &release.checksum)
                 .ok_or_else(|| not_installed("its checksum could not be read"))?;
             if digest(&part)? != expected {
                 return Err(not_installed("its download does not match the checksum"));
@@ -276,7 +253,7 @@ fn fetch(
     env: &ShellEnv,
     url: &str,
     part: &Path,
-    size: u64,
+    size: Option<u64>,
     watch: &Watch<'_>,
     task: &mut Task<'_>,
     latest: &str,
@@ -288,7 +265,7 @@ fn fetch(
         .arg("--max-time")
         .arg(DOWNLOAD_TIME.to_string())
         .arg("--max-filesize")
-        .arg(size.to_string())
+        .arg(size.unwrap_or(MAX_IMAGE).to_string())
         .arg("--output")
         .arg(part)
         .arg(url)
@@ -307,9 +284,8 @@ fn fetch(
             return Err(Error::Cancelled);
         }
         let received = fs::metadata(part).map_or(0, |meta| meta.len());
-        let percent = received
-            .saturating_mul(100)
-            .checked_div(size)
+        let percent = size
+            .and_then(|size| received.saturating_mul(100).checked_div(size))
             .map(|p| p.min(100));
         if percent.is_some() && percent != shown {
             shown = percent;
@@ -322,6 +298,35 @@ fn fetch(
     } else {
         Err(Error::Io(std::io::Error::other("the download stopped")))
     }
+}
+
+fn head(env: &ShellEnv, url: &str) -> Option<String> {
+    let output = env
+        .curl()
+        .args(["-q", "--fail", "--silent", "--location", "--head"])
+        .args(protocols(url))
+        .arg("--max-time")
+        .arg(MAX_TIME.to_string())
+        .arg(url)
+        .output()
+        .ok()
+        .filter(|output| output.status.success())?;
+    Some(String::from_utf8_lossy(&output.stdout).into_owned())
+}
+
+fn content_length(headers: &str) -> Option<u64> {
+    let last = headers
+        .rfind("HTTP/")
+        .map_or(headers, |start| &headers[start..]);
+    last.lines()
+        .find_map(|line| {
+            let (name, value) = line.split_once(':')?;
+            name.trim()
+                .eq_ignore_ascii_case("content-length")
+                .then(|| value.trim().parse().ok())
+                .flatten()
+        })
+        .filter(|size| *size > 0)
 }
 
 fn expected_digest(env: &ShellEnv, url: &str) -> Option<String> {
@@ -374,7 +379,11 @@ pub fn newer(candidate: &str, current: &str) -> bool {
 }
 
 fn parts(version: &str) -> Option<[u64; 3]> {
-    let mut parts = version.split('.').map(|part| part.parse::<u64>().ok());
+    let mut parts = version.split('.').map(|part| {
+        (!part.is_empty() && part.bytes().all(|byte| byte.is_ascii_digit()))
+            .then(|| part.parse::<u64>().ok())
+            .flatten()
+    });
     let found = [parts.next()??, parts.next()??, parts.next()??];
     parts.next().is_none().then_some(found)
 }
@@ -384,12 +393,6 @@ mod tests {
     use super::*;
 
     const GITHUB: &str = "https://github.com/brisote/diff-loupe/releases/download/";
-
-    fn release(tag: &str, page: &str) -> Vec<u8> {
-        serde_json::json!({ "tag_name": tag, "html_url": page })
-            .to_string()
-            .into_bytes()
-    }
 
     #[test]
     fn opens_only_pages_of_the_repository() {
@@ -425,96 +428,59 @@ mod tests {
     }
 
     #[test]
-    fn reads_the_latest_release() {
-        let page = "https://github.com/brisote/diff-loupe/releases/tag/v0.3.0";
-        let check = parse(&release("v0.3.0", page), "0.2.0", GITHUB)
-            .unwrap()
-            .check;
+    fn reads_the_latest_version_and_points_to_its_release() {
+        let release = parse(b"0.3.0\n", "0.2.0", GITHUB).unwrap();
         assert_eq!(
-            check,
+            release.check,
             UpdateCheck {
                 current: "0.2.0".to_string(),
                 latest: "0.3.0".to_string(),
                 newer: true,
-                page: page.to_string(),
+                page: "https://github.com/brisote/diff-loupe/releases/tag/v0.3.0".to_string(),
             }
         );
-    }
-
-    #[test]
-    fn refuses_a_release_it_cannot_trust() {
-        let page = "https://github.com/brisote/diff-loupe/releases/tag/v0.3.0";
-        assert!(parse(b"not json", "0.2.0", GITHUB).is_err());
-        assert!(parse(&release("0.3.0", page), "0.2.0", GITHUB).is_err());
-        assert!(parse(&release("vnext", page), "0.2.0", GITHUB).is_err());
-        assert!(
-            parse(
-                &release("v0.3.0", "https://example.com/v0.3.0"),
-                "0.2.0",
-                GITHUB
-            )
-            .is_err()
-        );
-        assert!(
-            parse(
-                &release(
-                    "v0.3.0",
-                    "https://github.com/brisote/diff-loupe/releases/../../../x"
-                ),
-                "0.2.0",
-                GITHUB
-            )
-            .is_err()
-        );
-    }
-
-    #[test]
-    fn reads_the_disk_image_and_its_checksum_from_the_release() {
-        let base = "https://github.com/brisote/diff-loupe/releases/download/v0.3.0";
-        let body = serde_json::json!({
-            "tag_name": "v0.3.0",
-            "html_url": "https://github.com/brisote/diff-loupe/releases/tag/v0.3.0",
-            "assets": [
-                { "name": "Diffloupe-0.3.0.dmg", "size": 42, "browser_download_url": format!("{base}/Diffloupe-0.3.0.dmg") },
-                { "name": "Diffloupe-0.3.0.dmg.sha256", "size": 90, "browser_download_url": format!("{base}/Diffloupe-0.3.0.dmg.sha256") },
-                { "name": "notes.txt", "size": 1, "browser_download_url": format!("{base}/notes.txt") }
-            ]
-        });
-        let release = parse(body.to_string().as_bytes(), "0.2.0", GITHUB).unwrap();
         assert_eq!(
             release.image,
-            Some(Asset {
-                url: format!("{base}/Diffloupe-0.3.0.dmg"),
-                size: 42
-            })
+            "https://github.com/brisote/diff-loupe/releases/download/v0.3.0/Diffloupe-0.3.0.dmg"
         );
-        assert_eq!(
-            release.checksum.map(|asset| asset.url),
-            Some(format!("{base}/Diffloupe-0.3.0.dmg.sha256"))
-        );
+        assert_eq!(release.checksum, format!("{}.sha256", release.image));
+        assert!(repository_page(&release.check.page));
     }
 
     #[test]
-    fn ignores_disk_images_from_other_places() {
-        let body = serde_json::json!({
-            "tag_name": "v0.3.0",
-            "html_url": "https://github.com/brisote/diff-loupe/releases/tag/v0.3.0",
-            "assets": [
-                { "name": "Diffloupe-0.3.0.dmg", "size": 42, "browser_download_url": "https://example.com/Diffloupe-0.3.0.dmg" },
-                { "name": "Diffloupe-0.3.0.dmg.sha256", "size": 90, "browser_download_url": "https://github.com/brisote/diff-loupe/releases/download/../../x" }
-            ]
-        });
-        let release = parse(body.to_string().as_bytes(), "0.2.0", GITHUB).unwrap();
-        assert_eq!(release.image, None);
-        assert_eq!(release.checksum, None);
+    fn refuses_a_version_it_cannot_read() {
+        for body in [
+            &b"v0.3.0"[..],
+            b"0.3",
+            b"0.3.0-beta",
+            b"<html>",
+            b"",
+            b"0.3.0/../x",
+            b"+0.3.0",
+            b"0.-3.0",
+        ] {
+            assert!(parse(body, "0.2.0", GITHUB).is_err(), "{body:?}");
+        }
+    }
+
+    #[test]
+    fn reads_the_size_of_the_final_response_only() {
+        let redirected = "HTTP/2 302\r\ncontent-length: 0\r\nlocation: https://cdn\r\n\r\nHTTP/2 200\r\ncontent-length: 8510032\r\n\r\n";
+        assert_eq!(content_length(redirected), Some(8_510_032));
+        let unknown = "HTTP/2 302\r\ncontent-length: 0\r\n\r\nHTTP/2 200\r\ntransfer-encoding: chunked\r\n\r\n";
+        assert_eq!(content_length(unknown), None);
+        assert_eq!(
+            content_length("HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n"),
+            None
+        );
     }
 
     #[test]
     fn downloads_come_from_github_or_the_test_server() {
         assert_eq!(downloads(LATEST), GITHUB);
         assert_eq!(
-            downloads("http://127.0.0.1:4100/repos/brisote/diff-loupe/releases/latest"),
-            "http://127.0.0.1:4100/"
+            downloads("http://127.0.0.1:4100/download/latest/macos/version"),
+            "http://127.0.0.1:4100/download/"
         );
     }
 
