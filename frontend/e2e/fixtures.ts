@@ -60,7 +60,7 @@ export class Workspace {
 
 type StartOptions = { open?: string[]; pick?: string; dataDir?: string; updateUrl?: string };
 
-export const noUpdates = "http://127.0.0.1:9/repos/brisote/diff-loupe/releases/latest";
+export const noUpdates = "http://127.0.0.1:9/download/latest/macos/version";
 
 export class Bridge {
   private nextId = 1;

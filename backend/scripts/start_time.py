@@ -17,7 +17,7 @@ APP = BACKEND / "target/release/bundle/macos/Diffloupe.app"
 READY = "Diffloupe page loaded"
 TARGET_MS = 500
 RUNS = 5
-NO_UPDATES = "http://127.0.0.1:9/repos/brisote/diff-loupe/releases/latest"
+NO_UPDATES = "http://127.0.0.1:9/download/latest/macos/version"
 
 
 def running() -> bool:
