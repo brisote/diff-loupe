@@ -8,6 +8,8 @@ installs the packages into fresh containers of ubuntu:22.04, debian:12 and fedor
 app under a virtual display, runs Uninstall from the app with a stand-in for `pkexec`, and checks
 that the package and every file Diffloupe owns are gone while other apps' files stay. It also
 runs Uninstall without `pkexec`, which must delete nothing and say how to remove the package.
+`release` runs the Release workflow's Linux job in the same container: it builds the release
+packages and checks them and the app with release_check.py, and takes no --system.
 """
 
 import argparse
@@ -26,6 +28,14 @@ BUNDLE_ID = "com.diffloupe.app"
 NEWER = "99.0.0"
 SERVER = Path(__file__).resolve().parent / "linux" / "release_server.py"
 PORT = 4100
+VOLUMES = {
+    "diffloupe-pkg-target": "/work/backend/target",
+    "diffloupe-pkg-node": "/work/node_modules",
+    "diffloupe-pkg-frontend-node": "/work/frontend/node_modules",
+    "diffloupe-pkg-frontend-dist": "/work/frontend/dist",
+    "diffloupe-pkg-pnpm": "/pnpm-store",
+    "diffloupe-pkg-cargo": "/usr/local/cargo/registry",
+}
 PACKAGE = "diffloupe"
 USER = "tester"
 
@@ -89,16 +99,8 @@ def build() -> None:
         f"pnpm tauri build --debug --bundles deb,rpm --config '{{\"version\":\"{NEWER}\"}}' && "
         "cp backend/target/debug/bundle/deb/*.deb backend/target/debug/bundle/rpm/*.rpm /out/new/"
     )
-    volumes = {
-        "diffloupe-pkg-target": "/work/backend/target",
-        "diffloupe-pkg-node": "/work/node_modules",
-        "diffloupe-pkg-frontend-node": "/work/frontend/node_modules",
-        "diffloupe-pkg-frontend-dist": "/work/frontend/dist",
-        "diffloupe-pkg-pnpm": "/pnpm-store",
-        "diffloupe-pkg-cargo": "/usr/local/cargo/registry",
-    }
     args = ["run", "--rm", "--init", "-v", f"{ROOT}:/work", "-v", f"{OUT}:/out"]
-    for name, path in volumes.items():
+    for name, path in VOLUMES.items():
         args += ["-v", f"{name}:{path}"]
     args += ["-w", "/work", image, "bash", "-lc", command]
     print("----  building the packages", flush=True)
@@ -108,6 +110,22 @@ def build() -> None:
     print("ok    built " + ", ".join(names))
     if not any(name.endswith(".deb") for name in names) or not any(name.endswith(".rpm") for name in names) or "diffloupe-devbridge" not in names:
         raise SystemExit("FAIL  the build produced no .deb or no .rpm")
+
+
+def release() -> None:
+    image = builder_image()
+    command = (
+        "pnpm install --frozen-lockfile --store-dir /pnpm-store && "
+        "dbus-run-session -- xvfb-run -a -s '-screen 0 1440x900x24' python3 backend/scripts/release_check.py --only build"
+    )
+    args = ["run", "--rm", "--init", "-v", f"{ROOT}:/work"]
+    for name, path in VOLUMES.items():
+        args += ["-v", f"{name}:{path}"]
+    args += ["-w", "/work", image, "bash", "-lc", command]
+    print("----  the release build and its checks", flush=True)
+    if subprocess.run(["docker", *args]).returncode != 0:
+        raise SystemExit("FAIL  the release check failed")
+    print("ok    the release build passes its checks")
 
 
 class Box:
@@ -298,9 +316,14 @@ def test(only: list[str]) -> bool:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("mode", choices=["build", "test", "all"], nargs="?", default="all")
+    parser.add_argument("mode", choices=["build", "test", "release", "all"], nargs="?", default="all")
     parser.add_argument("--system", action="append", default=[], help="try one system only, such as fedora:40; repeat for more")
     args = parser.parse_args()
+    if args.mode == "release":
+        if args.system:
+            parser.error("release takes no --system")
+        release()
+        return 0
     if args.mode in ("build", "all"):
         build()
     if args.mode in ("test", "all") and not test(args.system):
