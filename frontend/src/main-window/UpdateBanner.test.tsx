@@ -132,7 +132,7 @@ describe("the update banner", () => {
   });
 
   it("says nothing when an automatic check fails", async () => {
-    const transport = core(null, new Error("GitHub could not be reached."));
+    const transport = core(null, new Error("diffloupe.com could not be reached."));
     const { store } = await renderWithStore(<NoticeBanner />, transport);
     await settle();
     expect(screen.queryByRole("status")).toBeNull();
