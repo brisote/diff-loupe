@@ -21,7 +21,7 @@ pub struct LogEntry {
     pub author: String,
     #[ts(type = "number")]
     pub time: i64,
-    pub files: u32,
+    pub merge: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
@@ -124,59 +124,27 @@ pub fn branch_log(repo: &gix::Repository) -> Result<BranchLog> {
             truncated: false,
         });
     };
-    let head = head.detach();
     let walk = repo
-        .rev_walk([head])
+        .rev_walk([head.detach()])
         .first_parent_only()
         .all()
         .map_err(git_error)?;
-    let mut ids = Vec::new();
+    let mut entries = Vec::new();
     let mut truncated = false;
     for info in walk {
-        if ids.len() == LOG_LIMIT {
+        if entries.len() == LOG_LIMIT {
             truncated = true;
             break;
         }
-        ids.push(info.map_err(git_error)?.id);
+        let commit = repo
+            .find_commit(info.map_err(git_error)?.id)
+            .map_err(git_error)?;
+        entries.push(entry(&commit)?);
     }
-    let shared = repo.clone().into_sync();
-    let threads = std::thread::available_parallelism().map_or(4, |n| n.get().min(8));
-    let chunk = ids.len().div_ceil(threads).max(1);
-    let entries = std::thread::scope(|scope| {
-        let workers: Vec<_> = ids
-            .chunks(chunk)
-            .map(|part| {
-                let shared = &shared;
-                scope.spawn(move || -> Result<Vec<LogEntry>> {
-                    let mut repo = shared.to_thread_local();
-                    repo.object_cache_size_if_unset(64 * 1024 * 1024);
-                    part.iter()
-                        .map(|id| {
-                            let commit = repo.find_commit(*id).map_err(git_error)?;
-                            let parent = commit.parent_ids().next().map(|id| id.detach());
-                            let files = changes(&repo, &commit, parent)?.len() as u32;
-                            entry(&commit, files)
-                        })
-                        .collect()
-                })
-            })
-            .collect();
-        workers
-            .into_iter()
-            .map(|worker| {
-                worker.join().map_err(|_| {
-                    Error::InvalidArgs("the branch history could not be read".into())
-                })?
-            })
-            .collect::<Result<Vec<Vec<LogEntry>>>>()
-    })?;
-    Ok(BranchLog {
-        entries: entries.into_iter().flatten().collect(),
-        truncated,
-    })
+    Ok(BranchLog { entries, truncated })
 }
 
-fn entry(commit: &gix::Commit<'_>, files: u32) -> Result<LogEntry> {
+fn entry(commit: &gix::Commit<'_>) -> Result<LogEntry> {
     let message = commit.message().map_err(git_error)?;
     let author = commit.author().map_err(git_error)?;
     Ok(LogEntry {
@@ -185,7 +153,7 @@ fn entry(commit: &gix::Commit<'_>, files: u32) -> Result<LogEntry> {
         subject: message.summary().to_str_lossy().into_owned(),
         author: author.name.to_str_lossy().into_owned(),
         time: author.time().map(|t| t.seconds).unwrap_or_default(),
-        files,
+        merge: commit.parent_ids().nth(1).is_some(),
     })
 }
 
