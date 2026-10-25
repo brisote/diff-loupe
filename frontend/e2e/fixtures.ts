@@ -58,9 +58,31 @@ export class Workspace {
   }
 }
 
-type StartOptions = { open?: string[]; pick?: string; dataDir?: string; updateUrl?: string };
+export type PlatformName = "macos" | "windows" | "linux";
 
-export const noUpdates = "http://127.0.0.1:9/download/latest/macos/version";
+type StartOptions = {
+  open?: string[];
+  pick?: string;
+  dataDir?: string;
+  updateUrl?: string;
+  platform?: PlatformName;
+};
+
+export const hostPlatform: PlatformName =
+  process.platform === "darwin" ? "macos" : process.platform === "win32" ? "windows" : "linux";
+
+export const platformUnderTest: PlatformName =
+  (process.env.DL_PLATFORM as PlatformName | undefined) ?? hostPlatform;
+
+export const packageSuffix = {
+  macos: ".dmg",
+  windows: "-windows-x64-setup.exe",
+  linux: "-linux-amd64.deb",
+}[platformUnderTest];
+
+export const latestPath = `/download/latest/${platformUnderTest}/version`;
+
+export const noUpdates = `http://127.0.0.1:9${latestPath}`;
 
 export class Bridge {
   private nextId = 1;
@@ -116,6 +138,7 @@ export async function startBridge(options: StartOptions, scratch: string): Promi
   const args = ["--port", "0", "--data-dir", dataDir];
   for (const path of options.open ?? []) args.push("--open", path);
   if (options.pick) args.push("--pick", options.pick);
+  args.push("--platform", options.platform ?? platformUnderTest);
   const child = spawn(bridgeBinary, args, {
     stdio: ["ignore", "pipe", "inherit"],
     env: {

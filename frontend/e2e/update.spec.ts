@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
-import { expect, test } from "./fixtures";
+import { expect, latestPath, packageSuffix, test } from "./fixtures";
 
 const page = "https://github.com/brisote/diff-loupe/releases/tag/v99.0.0";
 
@@ -15,17 +15,17 @@ async function release(tag = "v99.0.0", checksum = digest): Promise<Release> {
   const version = tag.slice(1);
   const server = createServer((request, response) => {
     const path = request.url ?? "/";
-    if (path === `/download/${tag}/Diffloupe-${version}.dmg`) {
+    if (path === `/download/${tag}/Diffloupe-${version}${packageSuffix}`) {
       response.writeHead(200, { "Content-Length": image.length });
       response.end(request.method === "HEAD" ? undefined : image);
       return;
     }
-    if (path === `/download/${tag}/Diffloupe-${version}.dmg.sha256`) {
+    if (path === `/download/${tag}/Diffloupe-${version}${packageSuffix}.sha256`) {
       response.writeHead(200);
-      response.end(`${checksum}  Diffloupe-${version}.dmg\n`);
+      response.end(`${checksum}  Diffloupe-${version}${packageSuffix}\n`);
       return;
     }
-    if (path === "/download/latest/macos/version") {
+    if (path === latestPath) {
       hits++;
       response.writeHead(200, { "Content-Type": "text/plain" });
       response.end(`${version}\n`);
@@ -38,7 +38,7 @@ async function release(tag = "v99.0.0", checksum = digest): Promise<Release> {
   const { port } = server.address() as AddressInfo;
   return {
     server,
-    url: `http://127.0.0.1:${port}/download/latest/macos/version`,
+    url: `http://127.0.0.1:${port}${latestPath}`,
     hits: () => hits,
   };
 }
@@ -157,7 +157,7 @@ test("Update downloads and verifies the new version, and Restart now installs it
   await ready.getByRole("button", { name: "Restart now" }).click();
   await expect
     .poll(() => app.bridge.call("devbridge_update_installed"))
-    .toMatch(/updates\/Diffloupe-99\.0\.0\.dmg$/);
+    .toContain(`updates/Diffloupe-99.0.0${packageSuffix}`);
 });
 
 test("a download that does not match its checksum is not installed", async ({
@@ -200,5 +200,5 @@ test("a verified download is still ready after a restart", async ({
   await ready.getByRole("button", { name: "Restart now" }).click();
   await expect
     .poll(() => app.bridge.call("devbridge_update_installed"))
-    .toMatch(/updates\/Diffloupe-99\.0\.0\.dmg$/);
+    .toContain(`updates/Diffloupe-99.0.0${packageSuffix}`);
 });

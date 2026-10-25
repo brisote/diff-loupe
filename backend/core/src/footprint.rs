@@ -1,15 +1,56 @@
+use crate::platform::Platform;
 use std::fs;
 use std::path::{Path, PathBuf};
+#[cfg(target_os = "macos")]
 use std::process::Command;
 
 pub const BUNDLE_ID: &str = "com.diffloupe.app";
 
 pub fn app_data_dir(home: &Path) -> PathBuf {
-    home.join("Library/Application Support").join(BUNDLE_ID)
+    data_dir(Platform::CURRENT, home, &|name| std::env::var(name).ok())
+}
+
+pub fn data_dir(platform: Platform, home: &Path, get: &dyn Fn(&str) -> Option<String>) -> PathBuf {
+    match platform {
+        Platform::Macos => home.join("Library/Application Support").join(BUNDLE_ID),
+        Platform::Windows => {
+            base(platform, get, "APPDATA", home.join("AppData/Roaming")).join(BUNDLE_ID)
+        }
+        Platform::Linux => {
+            base(platform, get, "XDG_DATA_HOME", home.join(".local/share")).join(BUNDLE_ID)
+        }
+    }
+}
+
+fn base(
+    platform: Platform,
+    get: &dyn Fn(&str) -> Option<String>,
+    name: &str,
+    fallback: PathBuf,
+) -> PathBuf {
+    get(name)
+        .filter(|value| absolute(platform, value))
+        .map(PathBuf::from)
+        .unwrap_or(fallback)
+}
+
+fn absolute(platform: Platform, path: &str) -> bool {
+    match platform {
+        Platform::Windows => {
+            let bytes = path.as_bytes();
+            path.starts_with("\\\\")
+                || (bytes.len() > 2
+                    && bytes[0].is_ascii_alphabetic()
+                    && bytes[1] == b':'
+                    && matches!(bytes[2], b'\\' | b'/'))
+        }
+        _ => path.starts_with('/'),
+    }
 }
 
 const WEBKIT_SERVICES: [&str; 3] = ["GPU", "Networking", "WebContent"];
 
+#[cfg(target_os = "macos")]
 pub fn user_dirs() -> Vec<PathBuf> {
     ["DARWIN_USER_CACHE_DIR", "DARWIN_USER_TEMP_DIR"]
         .into_iter()
@@ -22,7 +63,37 @@ pub fn user_dirs() -> Vec<PathBuf> {
         .collect()
 }
 
+#[cfg(not(target_os = "macos"))]
+pub fn user_dirs() -> Vec<PathBuf> {
+    Vec::new()
+}
+
 pub fn locations(home: &Path, data_dir: &Path, user_dirs: &[PathBuf]) -> Vec<PathBuf> {
+    locations_for(Platform::CURRENT, home, data_dir, user_dirs, &|name| {
+        std::env::var(name).ok()
+    })
+}
+
+pub fn locations_for(
+    platform: Platform,
+    home: &Path,
+    data_dir: &Path,
+    user_dirs: &[PathBuf],
+    get: &dyn Fn(&str) -> Option<String>,
+) -> Vec<PathBuf> {
+    let mut found = vec![data_dir.to_path_buf()];
+    match platform {
+        Platform::Macos => found.extend(macos(home, user_dirs)),
+        Platform::Windows => found
+            .push(base(platform, get, "LOCALAPPDATA", home.join("AppData/Local")).join(BUNDLE_ID)),
+        Platform::Linux => {
+            found.push(base(platform, get, "XDG_CACHE_HOME", home.join(".cache")).join(BUNDLE_ID))
+        }
+    }
+    found
+}
+
+fn macos(home: &Path, user_dirs: &[PathBuf]) -> Vec<PathBuf> {
     let library = home.join("Library");
     let in_user_dirs = user_dirs.iter().flat_map(|dir| {
         std::iter::once(dir.join(BUNDLE_ID)).chain(
@@ -32,7 +103,6 @@ pub fn locations(home: &Path, data_dir: &Path, user_dirs: &[PathBuf]) -> Vec<Pat
         )
     });
     let mut found = vec![
-        data_dir.to_path_buf(),
         library.join("Caches").join(BUNDLE_ID),
         library
             .join("Preferences")
@@ -95,10 +165,14 @@ pub fn owns(home: &Path, data_dir: &Path, candidate: &Path) -> bool {
 mod tests {
     use super::*;
 
+    fn no_env(_: &str) -> Option<String> {
+        None
+    }
+
     #[test]
     fn every_location_is_named_by_the_bundle_id_and_stays_out_of_claude() {
         let home = Path::new("/Users/ada");
-        let data = app_data_dir(home);
+        let data = data_dir(Platform::Macos, home, &no_env);
         assert_eq!(
             data,
             Path::new("/Users/ada/Library/Application Support/com.diffloupe.app")
@@ -107,7 +181,7 @@ mod tests {
             PathBuf::from("/var/folders/ab/xyz/C"),
             PathBuf::from("/var/folders/ab/xyz/T"),
         ];
-        let listed = locations(home, &data, &user);
+        let listed = locations_for(Platform::Macos, home, &data, &user, &no_env);
         assert!(listed.contains(&PathBuf::from(
             "/var/folders/ab/xyz/C/com.apple.WebKit.WebContent+com.diffloupe.app"
         )));
@@ -126,7 +200,7 @@ mod tests {
     fn remove_deletes_the_listed_locations_and_nothing_else() {
         let home = tempfile::tempdir().unwrap();
         let home = home.path();
-        let data = app_data_dir(home);
+        let data = data_dir(Platform::Macos, home, &no_env);
         let library = home.join("Library");
         fs::create_dir_all(data.join("backups/2026-10-22-120000-from-0.1.0")).unwrap();
         fs::write(data.join("state.db"), "x").unwrap();
@@ -155,11 +229,13 @@ mod tests {
             fs::create_dir_all(path.parent().unwrap()).unwrap();
             fs::write(path, "keep").unwrap();
         }
-        let inside: Vec<PathBuf> = locations(home, &data, &user)
-            .into_iter()
+        let all = locations_for(Platform::Macos, home, &data, &user, &no_env);
+        let inside: Vec<PathBuf> = all
+            .iter()
             .filter(|p| p.starts_with(home))
+            .cloned()
             .collect();
-        assert_eq!(inside.len(), locations(home, &data, &user).len() - 1);
+        assert_eq!(inside.len(), all.len() - 1);
         assert_eq!(
             present(&inside),
             [
@@ -181,6 +257,82 @@ mod tests {
                 "{}",
                 path.display()
             );
+        }
+    }
+
+    #[test]
+    fn windows_keeps_its_files_in_the_roaming_and_local_folders() {
+        let home = Path::new("C:\\Users\\ada");
+        let env = |name: &str| match name {
+            "APPDATA" => Some("D:\\Roaming".to_string()),
+            _ => None,
+        };
+        let data = data_dir(Platform::Windows, home, &env);
+        assert_eq!(data, Path::new("D:\\Roaming").join(BUNDLE_ID));
+        assert_eq!(
+            data_dir(Platform::Windows, home, &no_env),
+            home.join("AppData/Roaming").join(BUNDLE_ID)
+        );
+        let listed = locations_for(Platform::Windows, home, &data, &[], &env);
+        assert_eq!(
+            listed,
+            [data.clone(), home.join("AppData/Local").join(BUNDLE_ID)]
+        );
+    }
+
+    #[test]
+    fn a_relative_or_foreign_base_folder_is_ignored() {
+        assert!(absolute(Platform::Windows, "C:\\Users"));
+        assert!(absolute(Platform::Windows, "D:/Users"));
+        assert!(absolute(Platform::Windows, "\\\\server\\share"));
+        assert!(!absolute(Platform::Windows, "Users"));
+        assert!(!absolute(Platform::Windows, "C:"));
+        assert!(!absolute(Platform::Windows, "/home/ada"));
+        assert!(absolute(Platform::Linux, "/home/ada"));
+        assert!(!absolute(Platform::Linux, "home/ada"));
+        assert!(!absolute(Platform::Linux, "C:\\Users"));
+    }
+
+    #[test]
+    fn linux_follows_the_xdg_folders_and_ignores_relative_ones() {
+        let home = Path::new("/home/ada");
+        let env = |name: &str| match name {
+            "XDG_DATA_HOME" => Some("/data".to_string()),
+            "XDG_CACHE_HOME" => Some("relative/cache".to_string()),
+            _ => None,
+        };
+        let data = data_dir(Platform::Linux, home, &env);
+        assert_eq!(data, Path::new("/data").join(BUNDLE_ID));
+        assert_eq!(
+            data_dir(Platform::Linux, home, &no_env),
+            Path::new("/home/ada/.local/share").join(BUNDLE_ID)
+        );
+        assert_eq!(
+            locations_for(Platform::Linux, home, &data, &[], &env),
+            [data.clone(), home.join(".cache").join(BUNDLE_ID)]
+        );
+    }
+
+    #[test]
+    fn every_location_on_every_platform_names_the_bundle_id_and_stays_out_of_claude() {
+        let cases = [
+            (Platform::Macos, Path::new("/Users/ada")),
+            (Platform::Windows, Path::new("C:\\Users\\ada")),
+            (Platform::Linux, Path::new("/home/ada")),
+        ];
+        for (platform, home) in cases {
+            let data = data_dir(platform, home, &no_env);
+            for location in locations_for(platform, home, &data, &[], &no_env) {
+                assert!(
+                    location
+                        .to_string_lossy()
+                        .replace('_', ".")
+                        .contains(BUNDLE_ID),
+                    "{platform:?} {}",
+                    location.display()
+                );
+                assert!(!location.starts_with(home.join(".claude")));
+            }
         }
     }
 

@@ -527,6 +527,7 @@ fn clean_three_way_merges_match_git_merge_file() {
     }
 }
 
+#[cfg(unix)]
 #[test]
 fn a_symlink_conflict_is_not_merged_as_text() {
     let repo = TempRepo::new();

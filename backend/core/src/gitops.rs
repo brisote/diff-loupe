@@ -1,11 +1,11 @@
 use crate::api::{CommitArgs, RollbackArgs};
 use crate::error::{Error, Result};
+use crate::platform;
 use crate::shellenv::ShellEnv;
 use gix::bstr::ByteSlice;
 use serde::Serialize;
 use std::collections::HashMap;
 use std::io::{Read, Write};
-use std::os::unix::process::CommandExt;
 use std::path::{Component, Path};
 use std::process::{Command, Output, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -105,10 +105,9 @@ impl Drop for Watch<'_> {
 }
 
 fn run_until(cmd: &mut Command, cancelled: &AtomicBool) -> Result<Output> {
-    let mut child = cmd
+    let mut child = platform::isolate(cmd)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
-        .process_group(0)
         .spawn()?;
     let reader = |pipe: Option<Box<dyn Read + Send>>| {
         std::thread::spawn(move || {
@@ -136,7 +135,7 @@ fn run_until(cmd: &mut Command, cancelled: &AtomicBool) -> Result<Output> {
             break status;
         }
         if cancelled.load(Ordering::SeqCst) {
-            stop(&mut child);
+            platform::stop_tree(&mut child);
             return Err(Error::Cancelled);
         }
         std::thread::sleep(Duration::from_millis(25));
@@ -146,27 +145,6 @@ fn run_until(cmd: &mut Command, cancelled: &AtomicBool) -> Result<Output> {
         stdout: stdout.join().unwrap_or_default(),
         stderr: stderr.join().unwrap_or_default(),
     })
-}
-
-pub(crate) fn stop(child: &mut std::process::Child) {
-    let group = i32::try_from(child.id())
-        .ok()
-        .and_then(rustix::process::Pid::from_raw);
-    let signal = |signal| {
-        if let Some(group) = group {
-            let _ = rustix::process::kill_process_group(group, signal);
-        }
-    };
-    signal(rustix::process::Signal::TERM);
-    for _ in 0..40 {
-        if let Ok(Some(_)) = child.try_wait() {
-            return;
-        }
-        std::thread::sleep(Duration::from_millis(25));
-    }
-    signal(rustix::process::Signal::KILL);
-    let _ = child.kill();
-    let _ = child.wait();
 }
 
 pub(crate) fn checked(output: Output) -> Result<String> {
