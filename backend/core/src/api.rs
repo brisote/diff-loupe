@@ -41,6 +41,7 @@ pub struct RepoInfo {
     pub target: Option<String>,
     pub default_branch: Option<String>,
     pub watch_error: Option<String>,
+    pub watch_polling: bool,
     pub last_tab: ToolTab,
     pub last_selection: Option<String>,
 }
