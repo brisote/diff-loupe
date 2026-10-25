@@ -5,6 +5,7 @@ const REPORT_ENV: &str = "DIFFLOUPE_SMOKE_REPORT";
 const UNINSTALL_ENV: &str = "DIFFLOUPE_SMOKE_UNINSTALL";
 const DATA_ENV: &str = "DIFFLOUPE_SMOKE_DATA_DIR";
 const UPDATE_ENV: &str = "DIFFLOUPE_SMOKE_UPDATE";
+const PACKAGE_ENV: &str = "DIFFLOUPE_SMOKE_REMOVE_PACKAGE";
 
 const UPDATE_SCRIPT: &str = r#"
 setTimeout(async () => {
@@ -112,6 +113,10 @@ setTimeout(async () => {
 
 pub fn active() -> bool {
     std::env::var_os(REPORT_ENV).is_some()
+}
+
+pub fn removes_package() -> bool {
+    active() && std::env::var_os(PACKAGE_ENV).is_some()
 }
 
 pub fn data_dir() -> Option<std::path::PathBuf> {
