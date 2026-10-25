@@ -68,10 +68,49 @@ jobs:
           path: backend/target/release/bundle/dmg/*.dmg
           retention-days: 7
 
+  linux:
+    name: Build the Linux packages
+    needs: checks
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Rust toolchain
+        run: rustup show active-toolchain || rustup toolchain install
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: System packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libwebkit2gtk-4.1-dev libgtk-3-dev libxdo-dev libssl-dev librsvg2-dev \
+            rpm xvfb xauth dbus dbus-x11 at-spi2-core libgl1-mesa-dri
+
+      - name: Install packages
+        run: pnpm install --frozen-lockfile
+
+      - name: Build, check and smoke-test the packages
+        run: dbus-run-session -- xvfb-run -a -s '-screen 0 1440x900x24' python3 backend/scripts/release_check.py --only build
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: diffloupe-linux
+          path: |
+            backend/target/release/bundle/deb/*.deb
+            backend/target/release/bundle/rpm/*.rpm
+          retention-days: 7
+
   publish:
     name: Publish the release
     if: github.ref_type == 'tag'
-    needs: dmg
+    needs: [dmg, linux]
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
@@ -81,24 +120,35 @@ jobs:
         with:
           merge-multiple: true
 
-      - name: Name the disk image and write its checksum
+      - name: Name the packages and write their checksums
         env:
           TAG: ${{ github.ref_name }}
         run: |
-          name="Diffloupe-${TAG#v}.dmg"
-          mv Diffloupe_*.dmg "$name"
-          sha256sum "$name" > "$name.sha256"
-          cat "$name.sha256"
-          echo "DMG=$name" >> "$GITHUB_ENV"
+          version="${TAG#v}"
+          dmg="Diffloupe-${version}.dmg"
+          deb="Diffloupe-${version}-linux-amd64.deb"
+          rpm="Diffloupe-${version}-linux-x86_64.rpm"
+          mv "$(find . -name 'Diffloupe_*.dmg' | head -n 1)" "$dmg"
+          mv "$(find . -name 'Diffloupe_*_amd64.deb' | head -n 1)" "$deb"
+          mv "$(find . -name 'Diffloupe-*-1.x86_64.rpm' | head -n 1)" "$rpm"
+          for file in "$dmg" "$deb" "$rpm"; do
+            sha256sum "$file" > "$file.sha256"
+            cat "$file.sha256"
+          done
+          echo "FILES=$dmg $deb $rpm" >> "$GITHUB_ENV"
 
       - name: Create or update the release
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.ref_name }}
         run: |
+          assets=()
+          for file in $FILES; do
+            assets+=("$file" "$file.sha256")
+          done
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
-            gh release upload "$TAG" "$DMG" "$DMG.sha256" --repo "$GITHUB_REPOSITORY" --clobber
+            gh release upload "$TAG" "${assets[@]}" --repo "$GITHUB_REPOSITORY" --clobber
           else
-            gh release create "$TAG" "$DMG" "$DMG.sha256" --repo "$GITHUB_REPOSITORY" \
+            gh release create "$TAG" "${assets[@]}" --repo "$GITHUB_REPOSITORY" \
               --title "Diffloupe ${TAG#v}" --notes-file release-notes.md
           fi
