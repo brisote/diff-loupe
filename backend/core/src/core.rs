@@ -596,13 +596,14 @@ impl Core {
 
     fn target_branch(&self, root: &Path) -> Result<Option<String>> {
         let state = self.store()?.repo_state(&root.display().to_string())?;
+        if state.target_branch.is_some() {
+            return Ok(state.target_branch);
+        }
         let slot = self.repo_slot()?;
-        let open = slot.as_ref().filter(|open| open.repo.root() == root);
-        Ok(effective_target(
-            state.target_branch,
-            open.and_then(|open| open.repo.default_branch()),
-            open.and_then(|open| open.repo.branch()),
-        ))
+        Ok(slot
+            .as_ref()
+            .filter(|open| open.repo.root() == root)
+            .and_then(|open| open.repo.default_branch()))
     }
 
     fn switch_branch(&self, args: BranchArgs) -> Result<RepoInfo> {
@@ -738,6 +739,17 @@ impl Core {
         let target = self
             .target_branch(&root)?
             .ok_or_else(|| Error::GitRefused("Pick a target branch first.".into()))?;
+        let current = repo
+            .to_thread_local()
+            .head_name()
+            .ok()
+            .flatten()
+            .map(|name| name.shorten().to_string());
+        if current.as_deref() == Some(target.as_str()) {
+            return Err(Error::GitRefused(
+                "The target is the current branch. Pick another target.".into(),
+            ));
+        }
         let id = self.run_id("merge", &root);
         let watch = self.cancels.watch(&id);
         let mut task = Task::cancellable(self.events.as_ref(), &id, format!("Merging {target}"));
@@ -816,7 +828,7 @@ impl Core {
         Ok(RepoInfo {
             name: repo.name(),
             branch: repo.branch(),
-            target: effective_target(state.target_branch, default_branch.clone(), repo.branch()),
+            target: state.target_branch.or_else(|| default_branch.clone()),
             default_branch,
             watch_error: open.watcher.as_ref().err().cloned(),
             last_tab,
@@ -877,47 +889,4 @@ fn now_ms() -> i64 {
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_millis() as i64)
         .unwrap_or_default()
-}
-
-fn effective_target(
-    stored: Option<String>,
-    default_branch: Option<String>,
-    current: Option<String>,
-) -> Option<String> {
-    let other = |target: &String| Some(target) != current.as_ref();
-    stored.filter(other).or(default_branch.filter(other))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::effective_target;
-
-    fn name(text: &str) -> Option<String> {
-        Some(text.to_string())
-    }
-
-    #[test]
-    fn the_target_is_never_the_current_branch() {
-        assert_eq!(effective_target(None, name("main"), name("main")), None);
-        assert_eq!(
-            effective_target(name("release/1.2"), name("main"), name("release/1.2")),
-            name("main")
-        );
-        assert_eq!(
-            effective_target(name("main"), name("main"), name("main")),
-            None
-        );
-        assert_eq!(
-            effective_target(name("origin/main"), name("main"), name("main")),
-            name("origin/main")
-        );
-        assert_eq!(
-            effective_target(None, name("main"), name("gs/a")),
-            name("main")
-        );
-        assert_eq!(
-            effective_target(name("dev"), name("main"), None),
-            name("dev")
-        );
-    }
 }

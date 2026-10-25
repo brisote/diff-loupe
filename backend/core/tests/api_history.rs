@@ -68,8 +68,9 @@ fn the_log_lists_the_branch_history_with_merges_as_normal_rows() {
             "Add invoice"
         ]
     );
-    assert_eq!(entries[1]["files"], 2);
-    assert_eq!(entries[2]["files"], 2);
+    assert_eq!(entries[1]["merge"], true);
+    assert_eq!(entries[2]["merge"], false);
+    assert!(entries[2].get("files").is_none());
     assert_eq!(entries[2]["author"], "Ada Lovelace");
     assert_eq!(entries[2]["short"].as_str().unwrap().len(), 8);
     assert!(entries[0].get("merged").is_none());
@@ -309,11 +310,10 @@ fn the_default_branch_lists_its_own_history_newest_first() {
     let entries = log["entries"].as_array().unwrap();
     assert_eq!(subjects(entries)[0], "Second");
     assert_eq!(entries.len(), 2);
-    assert_eq!(entries[0]["files"], 1);
 }
 
 #[test]
-fn a_stored_target_equal_to_the_current_branch_falls_back_to_the_default() {
+fn a_stored_target_equal_to_the_current_branch_is_kept() {
     let repo = TempRepo::with_commit();
     repo.branch("gs/feature");
     let (_data, core, _events, path) = open(&repo);
@@ -323,7 +323,8 @@ fn a_stored_target_equal_to_the_current_branch_falls_back_to_the_default() {
     )
     .unwrap();
     let info = core.dispatch("open_repo", json!({ "path": path })).unwrap();
-    assert_eq!(info["target"], "main");
+    assert_eq!(info["target"], "gs/feature");
+    assert_eq!(info["branch"], "gs/feature");
 }
 
 #[test]
