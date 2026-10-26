@@ -20,6 +20,73 @@ function compare(before: string, after: string) {
 }
 
 describe("markdown diff", () => {
+  it("marks only the nested item that was added to a list item", () => {
+    const executors = [
+      "`EntityRankOperationExecutor` — entity positioning",
+      "`EntityValueOperationExecutor` — default fields",
+      "`EntityRedirectOperationExecutor` — records where a merged-away entity now leads",
+      "`CustomFieldValueOperationExecutor` — custom field values",
+      "`TeamOperationExecutor` — team assignments",
+    ];
+    const added =
+      "`RemoteReferenceOperationExecutor` — on a create, the records in other services the entity comes from";
+    const section = (items: string[]) =>
+      `4. **Transactional execution** — the executors run in this order:\n${items
+        .map((item, index) => `   ${index + 1}. ${item}`)
+        .join("\n")}\n`;
+    const diff = compare(
+      section(executors),
+      section([...executors.slice(0, 2), added, ...executors.slice(2)]),
+    );
+    expect(diff.kinds).toEqual(["modified"]);
+    const row = diff.rows[0];
+    if (!row) throw new Error("no row");
+    expect(markRow(row).whole).toBe(false);
+    const left = diff.html("left", 0);
+    const right = diff.html("right", 0);
+    expect(left).not.toContain("<del>");
+    expect(left).not.toContain("dl-md-row-del");
+    expect(right.match(/dl-md-row-ins/g)).toHaveLength(1);
+    expect(right).toMatch(/<li class="dl-md-row-ins">\s*<code>RemoteReferenceOperationExecutor/);
+    expect(right).not.toContain("<ins>");
+    expect(right).toContain("<code>EntityRedirectOperationExecutor</code>");
+    expect(diff.html("merged", 0).match(/dl-md-row-ins/g)).toHaveLength(1);
+  });
+
+  it("marks the changed words inside one nested item and keeps the rest plain", () => {
+    const diff = compare(
+      "- Executors:\n  1. Rank positioning\n  2. Team assignments\n",
+      "- Executors:\n  1. Rank positioning\n  2. Team and owner assignments\n",
+    );
+    expect(diff.kinds).toEqual(["modified"]);
+    expect(diff.html("left", 0)).toContain("<li>Team assignments</li>");
+    expect(diff.html("right", 0)).toContain("<li>Team <ins>and owner </ins>assignments</li>");
+    expect(diff.html("right", 0)).toContain("<li>Rank positioning</li>");
+    expect(diff.html("right", 0)).not.toContain("dl-md-row");
+  });
+
+  it("marks a removed nested item on the left only", () => {
+    const diff = compare(
+      "- Executors:\n  1. Rank positioning\n  2. Redirects\n  3. Team assignments\n",
+      "- Executors:\n  1. Rank positioning\n  2. Team assignments\n",
+    );
+    expect(diff.html("left", 0)).toContain('<li class="dl-md-row-del">Redirects</li>');
+    expect(diff.html("right", 0)).not.toContain("Redirects");
+    expect(diff.html("merged", 0)).toContain('<li class="dl-md-row-del">Redirects</li>');
+  });
+
+  it("marks only the changed paragraph of a quote with two paragraphs", () => {
+    const diff = compare(
+      "> Totals round half-up.\n>\n> Empty invoices are kept.\n",
+      "> Totals round half-up.\n>\n> Empty invoices are skipped.\n",
+    );
+    const row = diff.rows[0];
+    if (!row) throw new Error("no row");
+    expect(markRow(row).whole).toBe(false);
+    expect(diff.html("right", 0)).toContain("<p>Totals round half-up.</p>");
+    expect(diff.html("right", 0)).toContain("<p>Empty invoices are <ins>skipped.</ins></p>");
+  });
+
   it("marks the words that changed in a paragraph", () => {
     const diff = compare(
       "# acme\n\nTotals are rounded half-up to two decimals.\n",
