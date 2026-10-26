@@ -220,3 +220,43 @@ test("Collapse Unchanged Fragments folds the unchanged blocks of a rendered Mark
     await expect(folds).toHaveCount(2);
   }
 });
+
+test("adding one nested list item marks only that item", async ({ page, workspace, startApp }) => {
+  const executors = [
+    "`EntityRankOperationExecutor` — entity positioning",
+    "`EntityValueOperationExecutor` — default fields",
+    "`EntityRedirectOperationExecutor` — records where a merged-away entity now leads",
+    "`TeamOperationExecutor` — team assignments",
+  ];
+  const added = "`RemoteReferenceOperationExecutor` — the records the entity comes from";
+  const section = (items: string[]) =>
+    `# Writes\n\n4. **Transactional execution** — the executors run in this order:\n${items
+      .map((item, index) => `   ${index + 1}. ${item}`)
+      .join("\n")}\n`;
+  const repo = workspace.repo("acme-billing");
+  workspace.write(repo, "WRITES.md", section(executors));
+  git(repo, "add", "-A");
+  git(repo, "commit", "-q", "-m", "Writes");
+  workspace.write(
+    repo,
+    "WRITES.md",
+    section([...executors.slice(0, 2), added, ...executors.slice(2)]),
+  );
+  await startApp({ open: [repo] });
+  await page.getByRole("treeitem", { name: "WRITES.md" }).click();
+  const rendered = page.getByRole("region", { name: "Rendered side-by-side diff" });
+  await expect(rendered.locator("li.dl-md-row-ins")).toHaveCount(1);
+  await expect(rendered.locator("li.dl-md-row-ins")).toContainText(
+    "RemoteReferenceOperationExecutor",
+  );
+  await expect(rendered.locator("li.dl-md-row-del")).toHaveCount(0);
+  const chip = rendered.locator("li.dl-md-row-ins code").first();
+  expect(await chip.evaluate((element) => getComputedStyle(element).backgroundColor)).toBe(
+    "rgba(0, 0, 0, 0)",
+  );
+  await expect(rendered.locator(".dl-md-block.is-inserted, .dl-md-block.is-deleted")).toHaveCount(
+    0,
+  );
+  await expect(rendered.locator(".dl-md-block.is-modified")).toHaveCount(2);
+  await expect(page.getByText("1 difference", { exact: true })).toBeVisible();
+});
