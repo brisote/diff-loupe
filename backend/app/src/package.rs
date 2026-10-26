@@ -219,14 +219,17 @@ mod tests {
 
     #[test]
     fn a_dismissed_or_refused_password_dialog_is_said_in_plain_words() {
-        use std::os::unix::fs::PermissionsExt;
         let dir = std::env::temp_dir().join(format!("diffloupe-pkexec-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
-        let script = dir.join("pkexec");
+        let program = dir.join("pkexec");
+        let _ = std::fs::remove_file(&program);
+        std::os::unix::fs::symlink("/bin/sh", &program).unwrap();
         let pkexec = |code: u8| {
-            std::fs::write(&script, format!("#!/bin/sh\necho noise >&2\nexit {code}\n")).unwrap();
-            std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
-            run(&[script.display().to_string()])
+            run(&[
+                program.display().to_string(),
+                "-c".into(),
+                format!("echo noise >&2; exit {code}"),
+            ])
         };
         assert!(pkexec(126).unwrap_err().contains("cancelled"));
         assert!(
