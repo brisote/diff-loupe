@@ -4,11 +4,28 @@ import { toJsxRuntime } from "hast-util-to-jsx-runtime";
 import type { ReactNode } from "react";
 import { Fragment, jsx, jsxs } from "react/jsx-runtime";
 
+const changed = ["dl-md-row-ins", "dl-md-row-del"];
+
+type Attribute = NonNullable<Schema["attributes"]>[string][number];
+
+function withChanged(tagName: string): Attribute[] {
+  return (defaultSchema.attributes?.[tagName] ?? []).map(
+    (attribute): Attribute =>
+      Array.isArray(attribute) && attribute[0] === "className"
+        ? [attribute[0], ...attribute.slice(1), ...changed]
+        : attribute,
+  );
+}
+
 const schema: Schema = {
   ...defaultSchema,
   tagNames: [...(defaultSchema.tagNames ?? []), "span"],
   attributes: {
     ...defaultSchema.attributes,
+    "*": [...(defaultSchema.attributes?.["*"] ?? []), ["className", ...changed]],
+    li: withChanged("li"),
+    ol: withChanged("ol"),
+    ul: withChanged("ul"),
     span: ["className", "title"],
     del: ["className"],
     ins: ["className"],
