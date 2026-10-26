@@ -958,6 +958,11 @@ button {
   text-decoration: line-through;
 }
 
+.dl-md .dl-md-row-ins code,
+.dl-md .dl-md-row-del code {
+  background: none;
+}
+
 .dl-md-image-off {
   color: var(--text-muted);
 }
