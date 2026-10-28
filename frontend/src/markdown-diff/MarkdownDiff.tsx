@@ -1,5 +1,5 @@
 import type { Root } from "hast";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { DiffSide, FileDiff } from "../api";
 import { LeftHead, RightHead } from "../diff/FileHead";
 import { foldContext, type Range } from "../diff/geometry";
@@ -132,7 +132,9 @@ type Props = {
 };
 
 export function MarkdownDiff({ diff, rows, inline, collapse, current, onCurrent }: Props) {
-  const scroller = useRef<HTMLDivElement>(null);
+  const scroller = useRef<HTMLElement>(null);
+  const left = useRef<HTMLElement>(null);
+  const strips = useRef<HTMLDivElement>(null);
   const [expanded, setExpanded] = useState<ReadonlySet<number>>(new Set());
   const [folding, setFolding] = useState(collapse);
   if (folding !== collapse) {
@@ -145,7 +147,7 @@ export function MarkdownDiff({ diff, rows, inline, collapse, current, onCurrent 
   );
   const foldAt = (index: number): Range | undefined =>
     hidden.find(([from, to]) => index >= from && index < to);
-  const fold = (index: number) => {
+  const fold = (index: number, twin = false) => {
     const range = foldAt(index);
     if (!range) return undefined;
     if (range[0] !== index) return null;
@@ -157,6 +159,8 @@ export function MarkdownDiff({ diff, rows, inline, collapse, current, onCurrent 
         className="dl-fold app-fold app-md-fold"
         title={label}
         aria-label={label}
+        aria-hidden={twin || undefined}
+        tabIndex={twin ? -1 : undefined}
         onClick={() => setExpanded((set) => new Set(set).add(range[0]))}
       />
     );
@@ -186,16 +190,63 @@ export function MarkdownDiff({ diff, rows, inline, collapse, current, onCurrent 
   }, [rows.changed.length, current, onCurrent]);
 
   useEffect(() => {
-    const element = scroller.current;
-    if (!element) return;
+    const panes = [scroller.current, left.current].filter((pane) => pane !== null);
     const block = (event: Event) => event.preventDefault();
-    element.addEventListener("contextmenu", block);
-    element.addEventListener("auxclick", block);
+    for (const pane of panes) {
+      pane.addEventListener("contextmenu", block);
+      pane.addEventListener("auxclick", block);
+    }
     return () => {
-      element.removeEventListener("contextmenu", block);
-      element.removeEventListener("auxclick", block);
+      for (const pane of panes) {
+        pane.removeEventListener("contextmenu", block);
+        pane.removeEventListener("auxclick", block);
+      }
     };
   }, []);
+
+  useLayoutEffect(() => {
+    if (inline) return;
+    const columns = [left.current, strips.current, scroller.current];
+    const cells = columns.map((column) =>
+      Array.from(column?.firstElementChild?.children ?? []).filter(
+        (child): child is HTMLElement => child instanceof HTMLElement,
+      ),
+    );
+    const align = () => {
+      const [before = [], , after = []] = cells;
+      for (const cell of cells.flat()) cell.style.minHeight = "";
+      const heights = before.map((cell, index) =>
+        Math.max(cell.offsetHeight, after[index]?.offsetHeight ?? 0),
+      );
+      heights.forEach((height, index) => {
+        for (const column of cells) {
+          const cell = column[index];
+          if (cell) cell.style.minHeight = `${height}px`;
+        }
+      });
+    };
+    align();
+    let frame = 0;
+    const resized = new ResizeObserver(() => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(align);
+    });
+    for (const column of [left.current, scroller.current]) {
+      if (column?.firstElementChild) resized.observe(column.firstElementChild);
+    }
+    return () => {
+      cancelAnimationFrame(frame);
+      resized.disconnect();
+    };
+  });
+
+  const follow = (from: HTMLElement | null) => {
+    if (!from) return;
+    for (const pane of [left.current, strips.current, scroller.current]) {
+      if (pane && pane !== from && pane.scrollTop !== from.scrollTop)
+        pane.scrollTop = from.scrollTop;
+    }
+  };
 
   const changedRef = useRef(rows.changed);
   changedRef.current = rows.changed;
@@ -240,8 +291,8 @@ export function MarkdownDiff({ diff, rows, inline, collapse, current, onCurrent 
           </div>
         </div>
       )}
-      <div ref={scroller} className="app-md-scroll">
-        {inline ? (
+      {inline ? (
+        <section ref={scroller} className="app-md-scroll">
           <div className="app-md-inline">
             {rows.rows.map((row, index) => {
               const folded = fold(index);
@@ -269,33 +320,83 @@ export function MarkdownDiff({ diff, rows, inline, collapse, current, onCurrent 
               );
             })}
           </div>
-        ) : (
-          <div className="app-md-grid">
-            {rows.rows.map((row, index) => {
-              const folded = fold(index);
-              if (folded !== undefined) return folded;
-              const marked = rows.marked[index];
-              if (!marked) return null;
-              const key = `${index}-${row.kind}`;
-              return (
-                <div key={key} className="app-md-row" data-row={index}>
-                  <div className="dl-md">
+        </section>
+      ) : (
+        <div className="app-md-panes">
+          <section
+            ref={left}
+            className="app-md-scroll"
+            aria-label="Before"
+            onScroll={() => follow(left.current)}
+          >
+            <div className="app-md-grid">
+              {rows.rows.map((row, index) => {
+                const folded = fold(index, true);
+                const key = `${index}-${row.kind}`;
+                if (folded !== undefined)
+                  return (
+                    folded && (
+                      <div key={key} className="app-md-cell">
+                        {folded}
+                      </div>
+                    )
+                  );
+                const marked = rows.marked[index];
+                if (!marked) return null;
+                return (
+                  <div key={key} className="dl-md app-md-cell">
                     {row.kind === "inserted"
                       ? startsRun(rows.rows, index) && <div className="app-md-gap is-inserted" />
                       : cell(marked.left, blockClass(row, marked, "left"), "left", row.left)}
                   </div>
-                  <div className={`app-md-strip is-${row.kind}`} aria-hidden="true" />
-                  <div className="dl-md">
+                );
+              })}
+            </div>
+          </section>
+          <div ref={strips} className="app-md-strips" aria-hidden="true">
+            <div className="app-md-grid">
+              {rows.rows.map((row, index) => {
+                const folded = fold(index);
+                const key = `${index}-${row.kind}`;
+                if (folded !== undefined)
+                  return folded && <div key={key} className="app-md-strip" />;
+                if (!rows.marked[index]) return null;
+                return <div key={key} className={`app-md-strip is-${row.kind}`} />;
+              })}
+            </div>
+          </div>
+          <section
+            ref={scroller}
+            className="app-md-scroll"
+            aria-label="After"
+            onScroll={() => follow(scroller.current)}
+          >
+            <div className="app-md-grid">
+              {rows.rows.map((row, index) => {
+                const folded = fold(index);
+                const key = `${index}-${row.kind}`;
+                if (folded !== undefined)
+                  return (
+                    folded && (
+                      <div key={key} className="app-md-cell" data-row={index}>
+                        {folded}
+                      </div>
+                    )
+                  );
+                const marked = rows.marked[index];
+                if (!marked) return null;
+                return (
+                  <div key={key} className="dl-md app-md-cell" data-row={index}>
                     {row.kind === "deleted"
                       ? startsRun(rows.rows, index) && <div className="app-md-gap is-deleted" />
                       : cell(marked.right, blockClass(row, marked, "right"), "right", row.right)}
                   </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
+                );
+              })}
+            </div>
+          </section>
+        </div>
+      )}
     </section>
   );
 }
