@@ -90,11 +90,21 @@ test("main window screens", async ({ page, workspace, startApp }) => {
   await shoot(page, "NoChanges");
 });
 
+test("local changes screen", async ({ page, workspace, startApp }) => {
+  const billing = designRepo(workspace);
+  await startApp({ open: [billing] });
+  await page.getByRole("tab", { name: "Local changes" }).click();
+  await page.getByRole("treeitem", { name: /InvoiceExporter.kt/ }).click();
+  await page.getByRole("region", { name: "Side-by-side diff" }).waitFor();
+  await page.waitForTimeout(300);
+  await shoot(page, "LocalChanges");
+});
+
 test("branch log screens", async ({ page, workspace, startApp }) => {
   const billing = logRepo(workspace);
   await page.clock.setFixedTime(logNow);
   await startApp({ open: [billing] });
-  await page.getByRole("tab", { name: "Branch log" }).click();
+  await page.getByRole("tab", { name: "Commit history" }).click();
   await page.getByRole("option", { name: /Round totals/ }).click();
   await page.getByRole("button", { name: "Compare Next File" }).click();
   await page.getByRole("region", { name: "Side-by-side diff" }).waitFor();
@@ -290,7 +300,7 @@ test("error report screen", async ({ page, workspace, startApp }) => {
     code: "store",
     message: "storage failed: database is locked",
   });
-  await page.getByRole("tab", { name: "Branch log" }).click();
+  await page.getByRole("tab", { name: "Commit history" }).click();
   await page.getByRole("dialog", { name: "Diffloupe ran into a problem" }).waitFor();
   await page.waitForTimeout(300);
   await shoot(page, "ErrorReport");

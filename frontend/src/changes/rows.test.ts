@@ -5,6 +5,7 @@ import {
   areaFor,
   buildRows,
   fileCount,
+  type ListRow,
   nextFile,
   parseKey,
   rowKey,
@@ -59,6 +60,15 @@ describe("buildRows", () => {
     expect(rows.filter((row) => row.type === "file").map((row) => row.id)).toEqual([
       "web/src/exportButton.tsx",
     ]);
+  });
+
+  it("labels the changes group Branch changes when isReview is true", () => {
+    const rows = buildRows(changes, { collapsed: new Set(), isReview: true });
+    const group = rows.find(
+      (row): row is Extract<ListRow, { type: "group" }> =>
+        row.type === "group" && row.id === "changes",
+    );
+    expect(group?.label).toBe("Branch changes");
   });
 });
 

@@ -72,7 +72,7 @@ describe("ChangesView", () => {
       cmd: "set_repo_view",
       args: {
         path: "/Users/ada/Workspace/acme-billing",
-        tab: "changes",
+        tab: "review",
         selection: "web/src/exportButton.tsx",
       },
     });
@@ -116,8 +116,41 @@ describe("ChangesView", () => {
     await view([]);
     expect(screen.getByText("No changes")).toBeInTheDocument();
     expect(
-      screen.getByText("The working tree matches main. Committed work is in the Branch log."),
+      screen.getByText("The working tree is clean. Committed work is in Commit history or Review."),
     ).toBeInTheDocument();
+  });
+
+  it("says when the branch has no changes against target", async () => {
+    const core = fakeCore({
+      current_repo: () => repoInfo("acme-billing", "gs/invoice-export"),
+      status: () => [],
+    });
+    await renderWithStore(<ChangesView isReview={true} />, core);
+    expect(await screen.findByText("No changes")).toBeInTheDocument();
+    expect(screen.getByText("The branch matches main.")).toBeInTheDocument();
+  });
+
+  it("prompts to select a target when no target branch is configured in Review", async () => {
+    const core = fakeCore({
+      current_repo: () => ({ ...repoInfo("acme-billing", "gs/invoice-export"), target: null }),
+      status: () => [],
+    });
+    await renderWithStore(<ChangesView isReview={true} />, core);
+    expect(await screen.findByText("No target branch")).toBeInTheDocument();
+    expect(
+      screen.getByText("Pick a target branch above to review changes on this branch."),
+    ).toBeInTheDocument();
+  });
+
+  it("labels the changes group as Branch changes when in Review", async () => {
+    const core = fakeCore({
+      current_repo: () => repoInfo("acme-billing", "gs/invoice-export"),
+      status: () => changes,
+    });
+    await renderWithStore(<ChangesView isReview={true} />, core);
+    const tree = await screen.findByRole("tree", { name: "Changed files" });
+    const group = within(tree).getByRole("treeitem", { name: /Branch changes/ });
+    expect(group).toHaveTextContent("3 files");
   });
 
   it("refreshes on request and shows a status error", async () => {

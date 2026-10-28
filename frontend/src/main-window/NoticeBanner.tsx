@@ -83,7 +83,7 @@ export function NoticeBanner() {
                 dismissNotice();
               }}
             >
-              Show in Branch log
+              Show in Commit history
             </button>
           )}
           <button

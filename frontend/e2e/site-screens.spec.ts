@@ -246,7 +246,7 @@ test("branch log", async ({ page, workspace, startApp }) => {
   const repo = logRepo(workspace);
   await page.clock.setFixedTime(logNow);
   await startApp({ open: [repo] });
-  await page.getByRole("tab", { name: "Branch log" }).click();
+  await page.getByRole("tab", { name: "Commit history" }).click();
   await page.getByRole("option", { name: /Round totals/ }).click();
   await page.getByRole("button", { name: "Compare Next File" }).click();
   await page.getByRole("region", { name: "Side-by-side diff" }).waitFor();
