@@ -123,10 +123,10 @@ test("speed targets on the reference repository", async ({ page, startApp }) => 
   await timed(page, "select a 5,000-line file to diff", 100, diffShown, fiveK, () =>
     tree.getByRole("treeitem", { name: fiveK }).click(),
   );
-  await timed(page, "Branch log with 500 commits", 150, logShown, "", () =>
-    page.getByRole("tab", { name: "Branch log" }).click(),
+  await timed(page, "Commit history with 500 commits", 150, logShown, "", () =>
+    page.getByRole("tab", { name: "Commit history" }).click(),
   );
-  await page.getByRole("tab", { name: "Changes" }).click();
+  await page.getByRole("tab", { name: "Review" }).click();
 
   await timed(page, "select the 21,000-line file", 250, diffShown, twentyK, () =>
     tree.getByRole("treeitem", { name: twentyK }).click(),

@@ -174,10 +174,10 @@ test("no screen offers AI", async ({ page, workspace, startApp }) => {
   await page.getByRole("treeitem", { name: /Totals\.kt/ }).click();
   await page.getByRole("region", { name: "Side-by-side diff" }).waitFor();
   await noAi();
-  await page.getByRole("tab", { name: "Branch log" }).click();
+  await page.getByRole("tab", { name: "Commit history" }).click();
   await page.getByRole("option", { name: /Ours/ }).click();
   await noAi();
-  await page.getByRole("tab", { name: "Changes" }).click();
+  await page.getByRole("tab", { name: "Review" }).click();
 
   await page.keyboard.press("Meta+Comma");
   const settings = page.getByRole("dialog", { name: "Settings" });

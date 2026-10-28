@@ -48,7 +48,10 @@ function useChangesSource(): Source {
       }
     : changes && changes.length > 0
       ? { title: "Select a file to see its changes", text: "Pick a file in the list on the left." }
-      : { title: "Nothing to compare", text: "Edit a file, or pick a commit in the Branch log." };
+      : {
+          title: "Nothing to compare",
+          text: "Edit a file, or switch to Commit history or Review.",
+        };
   return {
     key: "changes",
     selection,

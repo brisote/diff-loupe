@@ -30,7 +30,7 @@ export function repoInfo(name: string, branch = "main"): RepoInfo {
     defaultBranch: "main",
     watchError: null,
     watchPolling: false,
-    lastTab: "changes",
+    lastTab: "review",
     lastSelection: null,
   };
 }

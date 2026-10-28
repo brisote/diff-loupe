@@ -27,30 +27,30 @@ test("each repository remembers its tab", async ({ page, workspace, startApp }) 
   const first = workspace.repo("first");
   const second = workspace.repo("second");
   const app = await startApp({ open: [second, first] });
-  await page.getByRole("tab", { name: "Branch log" }).click();
-  await expect(page.getByRole("tab", { name: "Branch log" })).toHaveAttribute(
+  await page.getByRole("tab", { name: "Commit history" }).click();
+  await expect(page.getByRole("tab", { name: "Commit history" })).toHaveAttribute(
     "aria-selected",
     "true",
   );
-  await expect(page.getByRole("button", { name: "Branch log" })).toHaveAttribute(
+  await expect(page.getByRole("button", { name: "Commit history" })).toHaveAttribute(
     "aria-pressed",
     "true",
   );
 
   await page.getByRole("button", { name: "Recent projects" }).click();
   await page.getByRole("option", { name: "second" }).click();
-  await expect(page.getByRole("tab", { name: "Changes" })).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByRole("tab", { name: "Review" })).toHaveAttribute("aria-selected", "true");
 
   await page.getByRole("button", { name: "Recent projects" }).click();
   await page.getByRole("option", { name: "first" }).click();
-  await expect(page.getByRole("tab", { name: "Branch log" })).toHaveAttribute(
+  await expect(page.getByRole("tab", { name: "Commit history" })).toHaveAttribute(
     "aria-selected",
     "true",
   );
 
   await app.restart();
   await expect(page.getByRole("button", { name: "Recent projects" })).toContainText("first");
-  await expect(page.getByRole("tab", { name: "Branch log" })).toHaveAttribute(
+  await expect(page.getByRole("tab", { name: "Commit history" })).toHaveAttribute(
     "aria-selected",
     "true",
   );

@@ -7,8 +7,9 @@ import { useApp } from "../state/context";
 import { TargetPicker } from "./TargetPicker";
 
 const tabs: { tab: ToolTab; label: string }[] = [
-  { tab: "changes", label: "Changes" },
-  { tab: "log", label: "Branch log" },
+  { tab: "review", label: "Review" },
+  { tab: "log", label: "Commit history" },
+  { tab: "changes", label: "Local changes" },
 ];
 
 export function ToolWindow({ width }: { width: number }) {
@@ -19,9 +20,26 @@ export function ToolWindow({ width }: { width: number }) {
   const close = useCallback(() => setPicking(false), []);
   if (!repo) return null;
   const targetIsBranch = repo.target !== null && repo.target === repo.branch;
+  const isReview = repo.lastTab === "review";
   return (
     <section className="dl-island app-tool" style={{ width }} aria-label="Tool window">
-      {repo.lastTab === "changes" && (
+      <header className="dl-island-header">
+        <div className="dl-tabs" role="tablist" aria-label="Tool window tabs">
+          {tabs.map((item) => (
+            <button
+              key={item.tab}
+              className={`dl-tab ${repo.lastTab === item.tab ? "is-selected" : ""}`}
+              type="button"
+              role="tab"
+              aria-selected={repo.lastTab === item.tab}
+              onClick={() => setTab(item.tab)}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+      </header>
+      {isReview && (
         <div className="dl-targetbar">
           <button
             ref={anchor}
@@ -46,28 +64,14 @@ export function ToolWindow({ width }: { width: number }) {
           {picking && <TargetPicker anchor={anchor} onClose={close} />}
         </div>
       )}
-      <header className="dl-island-header">
-        <div className="dl-tabs" role="tablist" aria-label="Tool window tabs">
-          {tabs.map((item) => (
-            <button
-              key={item.tab}
-              className={`dl-tab ${repo.lastTab === item.tab ? "is-selected" : ""}`}
-              type="button"
-              role="tab"
-              aria-selected={repo.lastTab === item.tab}
-              onClick={() => setTab(item.tab)}
-            >
-              {item.label}
-            </button>
-          ))}
-        </div>
-      </header>
       <div
         className="dl-island-body app-tool-body"
         role="tabpanel"
-        aria-label={repo.lastTab === "log" ? "Branch log" : "Changes"}
+        aria-label={
+          repo.lastTab === "log" ? "Commit history" : isReview ? "Review" : "Local changes"
+        }
       >
-        {repo.lastTab === "changes" ? <ChangesView /> : <BranchLogView />}
+        {repo.lastTab === "log" ? <BranchLogView /> : <ChangesView isReview={isReview} />}
       </div>
     </section>
   );

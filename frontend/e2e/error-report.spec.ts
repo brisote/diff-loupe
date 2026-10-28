@@ -15,7 +15,7 @@ test("an unhandled error offers a report for a GitHub issue", async ({
     code: "store",
     message: `storage failed: ${repo}/.git/index.lock is locked`,
   });
-  await page.getByRole("tab", { name: "Branch log" }).click();
+  await page.getByRole("tab", { name: "Commit history" }).click();
   const dialog = page.getByRole("dialog", { name: "Diffloupe ran into a problem" });
   await expect(dialog).toBeVisible();
   const report = dialog.getByRole("textbox", { name: "Error report" });

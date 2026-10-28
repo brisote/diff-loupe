@@ -7,8 +7,9 @@ use ts_rs::TS;
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub enum ToolTab {
-    Changes,
+    Review,
     Log,
+    Changes,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
@@ -73,6 +74,9 @@ pub struct StatusArgs {
     #[serde(default)]
     #[ts(optional)]
     pub untracked: Option<crate::status::Untracked>,
+    #[serde(default)]
+    #[ts(optional)]
+    pub target: Option<bool>,
 }
 
 #[derive(Debug, Clone, Deserialize, TS)]
@@ -104,6 +108,9 @@ pub struct DiffArgs {
     #[serde(default)]
     #[ts(optional)]
     pub area: Option<crate::filediff::Area>,
+    #[serde(default)]
+    #[ts(optional)]
+    pub local: Option<bool>,
 }
 
 #[derive(Debug, Clone, Deserialize, TS)]

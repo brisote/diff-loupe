@@ -87,7 +87,7 @@ test("the Rendered and Raw buttons switch one file, and commits render too", asy
   await page.getByRole("treeitem", { name: "CHANGELOG.md" }).click();
   await expect(page.getByRole("region", { name: "Rendered side-by-side diff" })).toBeVisible();
 
-  await page.getByRole("tab", { name: "Branch log" }).click();
+  await page.getByRole("tab", { name: "Commit history" }).click();
   await page.getByRole("option", { name: /Round half-even and add a changelog/ }).click();
   await page
     .getByRole("listbox", { name: "Changed files" })

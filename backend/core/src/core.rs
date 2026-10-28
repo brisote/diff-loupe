@@ -255,7 +255,11 @@ impl Core {
             }
             "status" => {
                 let a: StatusArgs = parse(args)?;
-                reply(self.status(&a.path, a.untracked.unwrap_or_default())?)
+                reply(self.status(
+                    &a.path,
+                    a.untracked.unwrap_or_default(),
+                    a.target.unwrap_or(true),
+                )?)
             }
             "diff" => {
                 let a: DiffArgs = parse(args)?;
@@ -537,7 +541,12 @@ impl Core {
         }
     }
 
-    fn status(&self, path: &str, untracked: Untracked) -> Result<Vec<FileChange>> {
+    fn status(
+        &self,
+        path: &str,
+        untracked: Untracked,
+        with_target: bool,
+    ) -> Result<Vec<FileChange>> {
         let wanted = canonical(path)?;
         let (repo, root, name, first) = {
             let slot = self.repo_slot()?;
@@ -559,7 +568,12 @@ impl Core {
         };
         let id = format!("status:{}", root.display());
         let _task = Task::start(self.events.as_ref(), &id, label);
-        let changes = match self.diff_base(&repo.to_thread_local(), &root)? {
+        let base = if with_target {
+            self.diff_base(&repo.to_thread_local(), &root)?
+        } else {
+            None
+        };
+        let changes = match base {
             Some(base) => status::against(&self.env, &root, &base.to_string(), untracked)?,
             None => status::read(&self.env, &root, untracked)?,
         };
@@ -600,7 +614,11 @@ impl Core {
             return context.diff(&repo.to_thread_local(), &id, &target, self.diff_options()?);
         }
         let repo = repo.to_thread_local();
-        let base = self.diff_base(&repo, &root)?;
+        let base = if args.local.unwrap_or(false) {
+            None
+        } else {
+            self.diff_base(&repo, &root)?
+        };
         self.diffs
             .get(&repo, &root, base, args.area, &target, self.diff_options()?)
     }
@@ -869,7 +887,8 @@ impl Core {
         let state = self.store()?.repo_state(&path)?;
         let last_tab = match state.last_tab.as_deref() {
             Some("log") => ToolTab::Log,
-            _ => ToolTab::Changes,
+            Some("changes") => ToolTab::Changes,
+            _ => ToolTab::Review,
         };
         let default_branch = repo.default_branch();
         Ok(RepoInfo {
@@ -890,8 +909,9 @@ impl Core {
         let store = self.store()?;
         let previous = store.repo_state(&path)?;
         let tab = match args.tab {
-            ToolTab::Changes => "changes",
+            ToolTab::Review => "review",
             ToolTab::Log => "log",
+            ToolTab::Changes => "changes",
         };
         store.set_repo_state(
             &path,
