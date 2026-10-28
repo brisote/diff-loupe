@@ -10,6 +10,7 @@ function toolbar(props: Partial<Parameters<typeof DiffToolbar>[0]> = {}) {
   const onSettings = vi.fn();
   render(
     <DiffToolbar
+      platform="macos"
       differences={3}
       separatorsOnly={false}
       current={1}

@@ -1,5 +1,6 @@
 import type { ToolTab } from "../api";
 import { Icon } from "../lib/icon";
+import { shortcut, usePlatform } from "../lib/platform";
 import { useApp } from "../state/context";
 
 const buttons: { tab: ToolTab; label: string; icon: string }[] = [
@@ -9,6 +10,7 @@ const buttons: { tab: ToolTab; label: string; icon: string }[] = [
 ];
 
 export function Stripe() {
+  const platform = usePlatform();
   const tab = useApp((state) => state.repo?.lastTab);
   const setTab = useApp((state) => state.setTab);
   const terminalOpen = useApp((state) => state.terminalOpen);
@@ -31,8 +33,8 @@ export function Stripe() {
       <button
         className={`dl-tbtn app-stripe-button ${terminalOpen ? "is-toggled" : ""}`}
         type="button"
-        aria-label="Terminal ⌥F12"
-        title="Terminal ⌥F12"
+        aria-label={`Terminal ${shortcut(platform, "Alt+F12")}`}
+        title={`Terminal ${shortcut(platform, "Alt+F12")}`}
         aria-pressed={terminalOpen}
         onClick={toggleTerminal}
       >

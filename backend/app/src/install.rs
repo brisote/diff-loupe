@@ -4,6 +4,8 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
+pub type Target = PathBuf;
+
 const STEP_TIME: Duration = Duration::from_secs(120);
 const REQUIREMENT: &str = "=identifier \"com.diffloupe.app\"";
 

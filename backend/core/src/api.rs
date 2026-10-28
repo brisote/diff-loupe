@@ -1,3 +1,4 @@
+use crate::platform::Platform;
 use crate::settings::Settings;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
@@ -18,6 +19,7 @@ pub struct AppInfo {
     pub version: String,
     pub settings_notice: Option<String>,
     pub home: Option<String>,
+    pub platform: Platform,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
@@ -25,7 +27,7 @@ pub struct AppInfo {
 #[ts(export)]
 pub struct ReportEnv {
     pub version: String,
-    pub macos: Option<String>,
+    pub os: Option<String>,
     pub arch: String,
     pub git: Option<String>,
 }
@@ -40,6 +42,7 @@ pub struct RepoInfo {
     pub target: Option<String>,
     pub default_branch: Option<String>,
     pub watch_error: Option<String>,
+    pub watch_polling: bool,
     pub last_tab: ToolTab,
     pub last_selection: Option<String>,
 }

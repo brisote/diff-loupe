@@ -1,0 +1,20 @@
+FROM ubuntu:22.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends \
+      build-essential pkg-config curl ca-certificates git file python3 xz-utils \
+      libwebkit2gtk-4.1-dev libgtk-3-dev libxdo-dev libssl-dev librsvg2-dev libayatana-appindicator3-dev \
+      rpm xvfb xauth dbus dbus-x11 at-spi2-core libgl1-mesa-dri \
+ && rm -rf /var/lib/apt/lists/*
+
+ARG NODE=22.14.0
+RUN arch="$(dpkg --print-architecture)"; case "$arch" in amd64) node=x64;; arm64) node=arm64;; esac \
+ && curl -fsSL "https://nodejs.org/dist/v${NODE}/node-v${NODE}-linux-${node}.tar.xz" | tar -xJ -C /usr/local --strip-components=1 \
+ && npm install -g pnpm@11.21.0
+
+ENV RUSTUP_HOME=/usr/local/rustup CARGO_HOME=/usr/local/cargo PATH=/usr/local/cargo/bin:$PATH
+RUN curl -fsSL https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain stable
+
+ENV CARGO_PROFILE_DEV_DEBUG=0 CI=true
+WORKDIR /work

@@ -1,6 +1,6 @@
 import { render } from "@testing-library/react";
 import type { ReactElement } from "react";
-import { Backend, type RecentRepo, type RepoInfo, type Settings } from "../api";
+import { Backend, type Platform, type RecentRepo, type RepoInfo, type Settings } from "../api";
 import { FakeTransport, type Handler } from "../api/fake";
 import { StoreProvider } from "../state/context";
 import { createAppStore } from "../state/store";
@@ -29,14 +29,20 @@ export function repoInfo(name: string, branch = "main"): RepoInfo {
     target: "main",
     defaultBranch: "main",
     watchError: null,
+    watchPolling: false,
     lastTab: "review",
     lastSelection: null,
   };
 }
 
-export function fakeCore(handlers: Record<string, Handler> = {}) {
+export function fakeCore(handlers: Record<string, Handler> = {}, platform: Platform = "macos") {
   return new FakeTransport({
-    app_info: () => ({ version: "0.1.0", settingsNotice: null, home: "/Users/ada" }),
+    app_info: () => ({
+      version: "0.1.0",
+      settingsNotice: null,
+      home: "/Users/ada",
+      platform,
+    }),
     get_settings: () => settings,
     recent_repos: () => [],
     current_repo: () => null,
@@ -48,7 +54,7 @@ export function fakeCore(handlers: Record<string, Handler> = {}) {
     set_ui_value: () => null,
     set_settings: (args) => (args as { settings: Settings }).settings,
     update_state: () => ({ ready: null, failure: null, page: null }),
-    report_env: () => ({ version: "0.2.0", macos: "26.1", arch: "aarch64", git: "2.50.1" }),
+    report_env: () => ({ version: "0.2.0", os: "macOS 26.1", arch: "aarch64", git: "2.50.1" }),
     ...handlers,
   });
 }

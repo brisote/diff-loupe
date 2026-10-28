@@ -1,6 +1,7 @@
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { type KeyboardEvent, type MouseEvent, useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "../lib/icon";
+import { shortcut, usePlatform } from "../lib/platform";
 import { useApp } from "../state/context";
 import { changesMeasure, openMark } from "../state/store";
 import { fileIcon } from "./fileIcons";
@@ -18,6 +19,7 @@ import {
 const rowHeight = 24;
 
 export function ChangesView({ isReview }: { isReview?: boolean } = {}) {
+  const platform = usePlatform();
   const changes = useApp((state) => state.changes);
   const uncommitted = useApp((state) => state.uncommitted);
   const target = useApp((state) => state.repo?.target ?? null);
@@ -67,8 +69,8 @@ export function ChangesView({ isReview }: { isReview?: boolean } = {}) {
         <button
           className="dl-tbtn"
           type="button"
-          aria-label="Commit… ⌘K"
-          title="Commit… ⌘K"
+          aria-label={`Commit… ${shortcut(platform, "Mod+K")}`}
+          title={`Commit… ${shortcut(platform, "Mod+K")}`}
           disabled={!uncommitted || uncommitted.length === 0}
           onClick={() => showDialog("commit")}
         >

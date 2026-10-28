@@ -1,0 +1,20 @@
+{
+  "bundle": {
+    "targets": ["deb", "rpm"],
+    "shortDescription": "Review git changes",
+    "longDescription": "Diffloupe is an app for reading git changes: side-by-side diffs, the branch log, rendered Markdown and a 3-pane merge window. Your code stays on your computer.",
+    "linux": {
+      "deb": {
+        "section": "devel",
+        "priority": "optional",
+        "depends": ["curl"],
+        "recommends": ["git"]
+      },
+      "rpm": {
+        "depends": ["curl"]
+      }
+    },
+    "publisher": "Diffloupe",
+    "license": "PolyForm-Internal-Use-1.0.0"
+  }
+}

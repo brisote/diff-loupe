@@ -76,6 +76,7 @@ fn a_missing_folder_is_reported() {
     assert_eq!(serde_json::to_value(err.code).unwrap(), "notFound");
 }
 
+#[cfg(unix)]
 #[test]
 fn an_unreadable_folder_is_not_called_a_plain_folder() {
     let dir = tempfile::tempdir().unwrap();

@@ -1,7 +1,7 @@
 {
   "name": "diffloupe",
   "private": true,
-  "version": "0.2.1",
+  "version": "0.2.2",
   "type": "module",
   "packageManager": "pnpm@11.21.0",
   "scripts": {
@@ -14,7 +14,7 @@
     "e2e": "cargo build --manifest-path backend/Cargo.toml -p diffloupe-devbridge && pnpm --dir frontend e2e",
     "lint": "cargo fmt --manifest-path backend/Cargo.toml --all --check && cargo clippy --manifest-path backend/Cargo.toml --workspace --all-targets -- -D warnings && biome check . && pnpm --dir frontend typecheck",
     "format": "cargo fmt --manifest-path backend/Cargo.toml --all && biome check --write .",
-    "types": "python3 backend/scripts/types.py"
+    "types": "python3 backend/scripts/export_types.py"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.15",

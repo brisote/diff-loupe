@@ -3,6 +3,8 @@ import type { CoreEvent } from "./generated/CoreEvent";
 
 export type Listener<T> = (value: T) => void;
 
+export type WindowAction = "minimize" | "toggleMaximize" | "close";
+
 export interface Transport {
   readonly kind: "tauri" | "bridge";
   send(cmd: string, args: unknown): Promise<unknown>;
@@ -10,6 +12,9 @@ export interface Transport {
   uninstall(): Promise<void>;
   openLink(url: string): Promise<void>;
   installUpdate(): Promise<void>;
+  windowControl(action: WindowAction): Promise<void>;
+  windowMaximized(): Promise<boolean>;
+  onWindowMaximized(listener: Listener<boolean>): () => void;
   onEvent(listener: Listener<CoreEvent>): () => void;
   onFolderDrop(listener: Listener<string>): () => void;
 }

@@ -20,7 +20,9 @@ test("an unhandled error offers a report for a GitHub issue", async ({
   await expect(dialog).toBeVisible();
   const report = dialog.getByRole("textbox", { name: "Error report" });
   await expect(report).toHaveValue(/`store` in `set_repo_view`/);
-  await expect(report).toHaveValue(/- Diffloupe \d+\.\d+\.\d+ on macOS .+ git /);
+  await expect(report).toHaveValue(
+    /- Diffloupe \d+\.\d+\.\d+ on (macOS|Windows|\S).+ \(\w+\), git \d/,
+  );
   await expect(report).toHaveValue(/\| set_repo_view \| store \|/);
   expect(await report.inputValue()).not.toContain(repo);
   await expect(report).toHaveValue(/storage failed: <repository>\/\.git\/index\.lock is locked/);

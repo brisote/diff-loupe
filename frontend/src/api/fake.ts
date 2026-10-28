@@ -1,5 +1,5 @@
 import type { CoreEvent } from "./generated/CoreEvent";
-import type { Listener, Transport } from "./transport";
+import type { Listener, Transport, WindowAction } from "./transport";
 
 export type Handler = (args: unknown) => unknown;
 
@@ -13,6 +13,9 @@ export class FakeTransport implements Transport {
   installs = 0;
   installError: unknown = null;
   readonly opened: string[] = [];
+  readonly windowActions: string[] = [];
+  maximized = false;
+  private readonly maximizedListeners = new Set<Listener<boolean>>();
   private readonly events = new Set<Listener<CoreEvent>>();
   private readonly drops = new Set<Listener<string>>();
 
@@ -37,6 +40,23 @@ export class FakeTransport implements Transport {
     this.installs++;
     if (this.installError) throw this.installError;
     this.installed = true;
+  }
+
+  async windowControl(action: WindowAction) {
+    this.windowActions.push(action);
+    if (action === "toggleMaximize") {
+      this.maximized = !this.maximized;
+      for (const listener of this.maximizedListeners) listener(this.maximized);
+    }
+  }
+
+  async windowMaximized() {
+    return this.maximized;
+  }
+
+  onWindowMaximized(listener: Listener<boolean>) {
+    this.maximizedListeners.add(listener);
+    return () => this.maximizedListeners.delete(listener);
   }
 
   async uninstall() {

@@ -1,6 +1,15 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+#[cfg(target_os = "macos")]
 mod install;
+#[cfg(target_os = "linux")]
+#[path = "install_linux.rs"]
+mod install;
+#[cfg(windows)]
+#[path = "install_unsupported.rs"]
+mod install;
+#[cfg(target_os = "linux")]
+mod package;
 #[cfg(debug_assertions)]
 mod smoke;
 
@@ -10,6 +19,7 @@ use diffloupe_core::footprint;
 use diffloupe_core::shellenv::ShellEnv;
 use serde_json::{Value, json};
 use std::path::PathBuf;
+#[cfg(unix)]
 use std::process::{Command, Stdio};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -24,6 +34,7 @@ struct StartupError(String);
 struct DataDir(PathBuf);
 
 static LEAVING: AtomicBool = AtomicBool::new(false);
+static INSTALL_REFUSED: AtomicBool = AtomicBool::new(false);
 
 impl EventSink for WindowEvents {
     fn emit(&self, event: CoreEvent) {
@@ -52,14 +63,51 @@ async fn pick_folder(app: AppHandle) -> Option<String> {
 }
 
 #[tauri::command]
+fn window_control(window: tauri::WebviewWindow, action: String) -> Result<(), String> {
+    match action.as_str() {
+        "minimize" => window.minimize(),
+        "toggleMaximize" => {
+            if window.is_maximized().map_err(|e| e.to_string())? {
+                window.unmaximize()
+            } else {
+                window.maximize()
+            }
+        }
+        "close" => window.close(),
+        other => return Err(format!("{other} is not a window action")),
+    }
+    .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn window_maximized(window: tauri::WebviewWindow) -> Result<bool, String> {
+    window.is_maximized().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 fn open_link(url: String) -> Result<(), String> {
     let url = diffloupe_core::update::link(&url).map_err(|e| e.to_string())?;
-    let mut child = std::process::Command::new("open")
+    let mut child = std::process::Command::new(opener())
         .arg(url)
         .spawn()
         .map_err(|e| e.to_string())?;
     std::thread::spawn(move || child.wait());
     Ok(())
+}
+
+#[cfg(target_os = "macos")]
+fn opener() -> &'static str {
+    "open"
+}
+
+#[cfg(target_os = "linux")]
+fn opener() -> &'static str {
+    "xdg-open"
+}
+
+#[cfg(windows)]
+fn opener() -> &'static str {
+    "explorer.exe"
 }
 
 #[tauri::command]
@@ -71,36 +119,38 @@ async fn uninstall(app: AppHandle, data: State<'_, DataDir>) -> Result<(), Strin
     let trashed = tauri::async_runtime::spawn_blocking(move || {
         let mut locations = footprint::locations(&home, &data_dir, &user_dirs());
         if touches_system() {
-            locations.extend(
-                app_bundle()
-                    .iter()
-                    .flat_map(|bundle| install::leftovers(bundle)),
-            );
+            locations.extend(install_leftovers());
         }
         let system = touches_system();
-        clean_up_after_exit(&locations, system.then_some(footprint::BUNDLE_ID))?;
+        if removes_app()
+            && remove_before_files()
+            && let Err(reason) = remove_app()
+        {
+            LEAVING.store(false, Ordering::SeqCst);
+            return Err(removal_failure(&reason));
+        }
+        if let Err(reason) = clean_up_after_exit(&locations, system.then_some(footprint::BUNDLE_ID))
+        {
+            LEAVING.store(false, Ordering::SeqCst);
+            return Err(reason);
+        }
         if let Some(core) = worker.try_state::<Arc<Core>>() {
             core.shutdown();
         }
         let _ = footprint::remove(&locations);
-        Ok::<_, String>(if system { move_app_to_trash() } else { Ok(()) })
+        Ok::<_, String>(if removes_app() && !remove_before_files() {
+            remove_app()
+        } else {
+            Ok(())
+        })
     })
     .await
     .map_err(|e| e.to_string())??;
     match trashed {
         Ok(()) => app.exit(0),
         Err(reason) => {
-            let handle = app.clone();
-            app.run_on_main_thread(move || {
-                show_alert(
-                    "Diffloupe could not move itself to the Trash",
-                    &format!(
-                        "Its own files are deleted. Drag Diffloupe to the Trash to finish removing it. ({reason})"
-                    ),
-                );
-                handle.exit(0);
-            })
-            .map_err(|e| e.to_string())?;
+            let (title, message) = removal_problem(&reason);
+            alert_then_exit(&app, title, &message, 0)?;
         }
     }
     Ok(())
@@ -113,7 +163,7 @@ async fn install_update(app: AppHandle, core: State<'_, Arc<Core>>) -> Result<()
     let image = core
         .update_ready()
         .ok_or_else(|| failed("No downloaded update is ready to install.".to_string()))?;
-    let bundle = app_bundle().ok_or_else(|| {
+    let target = install_target().ok_or_else(|| {
         failed(install::not_installed(
             &image,
             "only an installed Diffloupe can update itself",
@@ -125,7 +175,7 @@ async fn install_update(app: AppHandle, core: State<'_, Arc<Core>>) -> Result<()
         ));
     }
     let installed = tauri::async_runtime::spawn_blocking(move || {
-        install::install(&image, &bundle, true)?;
+        install::install(&image, &target, true)?;
         core.shutdown();
         Ok::<_, String>(())
     })
@@ -139,6 +189,7 @@ async fn install_update(app: AppHandle, core: State<'_, Arc<Core>>) -> Result<()
         }
         Err(message) => {
             LEAVING.store(false, Ordering::SeqCst);
+            INSTALL_REFUSED.store(true, Ordering::SeqCst);
             Err(failed(message))
         }
     }
@@ -148,8 +199,12 @@ fn install_on_quit(core: &Core) {
     if LEAVING.swap(true, Ordering::SeqCst) {
         return;
     }
-    if let (Some(image), Some(bundle)) = (core.update_ready(), app_bundle())
-        && let Err(message) = install::install(&image, &bundle, false)
+    if INSTALL_REFUSED.load(Ordering::SeqCst) {
+        return;
+    }
+    if let Some(image) = core.update_ready().filter(|image| image.exists())
+        && let Some(target) = install_target()
+        && let Err(message) = install::install(&image, &target, false)
     {
         let downloads = core.updates_dir();
         let _ = std::fs::create_dir_all(&downloads);
@@ -165,6 +220,14 @@ fn user_dirs() -> Vec<PathBuf> {
     }
 }
 
+fn removes_app() -> bool {
+    #[cfg(debug_assertions)]
+    if smoke::removes_package() {
+        return true;
+    }
+    touches_system()
+}
+
 fn touches_system() -> bool {
     #[cfg(debug_assertions)]
     if smoke::active() {
@@ -173,6 +236,12 @@ fn touches_system() -> bool {
     true
 }
 
+#[cfg(not(unix))]
+fn clean_up_after_exit(_locations: &[PathBuf], _defaults: Option<&str>) -> Result<(), String> {
+    Err("Uninstall is not available on this system yet.".to_string())
+}
+
+#[cfg(unix)]
 fn clean_up_after_exit(locations: &[PathBuf], defaults: Option<&str>) -> Result<(), String> {
     use std::os::unix::process::CommandExt;
     Command::new("/bin/sh")
@@ -201,6 +270,44 @@ done"#,
 }
 
 #[cfg(target_os = "macos")]
+fn install_target() -> Option<install::Target> {
+    app_bundle()
+}
+
+#[cfg(target_os = "linux")]
+fn install_target() -> Option<install::Target> {
+    package::installed()
+}
+
+#[cfg(windows)]
+fn install_target() -> Option<install::Target> {
+    None
+}
+
+#[cfg(target_os = "macos")]
+fn install_leftovers() -> Vec<PathBuf> {
+    app_bundle()
+        .iter()
+        .flat_map(|bundle| install::leftovers(bundle))
+        .collect()
+}
+
+#[cfg(not(target_os = "macos"))]
+fn install_leftovers() -> Vec<PathBuf> {
+    Vec::new()
+}
+
+#[cfg(target_os = "macos")]
+fn clear_install_leftovers() {
+    if let Some(bundle) = app_bundle() {
+        install::clear_leftovers(&bundle);
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn clear_install_leftovers() {}
+
+#[cfg(target_os = "macos")]
 fn app_bundle() -> Option<PathBuf> {
     let exe = std::env::current_exe().ok()?;
     let macos = exe.parent()?;
@@ -210,11 +317,6 @@ fn app_bundle() -> Option<PathBuf> {
         && contents.file_name()? == "Contents"
         && bundle.extension()? == "app")
         .then(|| bundle.to_path_buf())
-}
-
-#[cfg(not(target_os = "macos"))]
-fn app_bundle() -> Option<PathBuf> {
-    None
 }
 
 #[cfg(target_os = "macos")]
@@ -229,10 +331,85 @@ fn move_app_to_trash() -> Result<(), String> {
         .map_err(|e| e.localizedDescription().to_string())
 }
 
-#[cfg(not(target_os = "macos"))]
-fn move_app_to_trash() -> Result<(), String> {
+#[cfg(target_os = "macos")]
+fn remove_app() -> Result<(), String> {
+    move_app_to_trash()
+}
+
+#[cfg(target_os = "linux")]
+fn remove_app() -> Result<(), String> {
+    package::remove()
+}
+
+#[cfg(windows)]
+fn remove_app() -> Result<(), String> {
     Ok(())
 }
+
+#[cfg(target_os = "linux")]
+fn remove_before_files() -> bool {
+    true
+}
+
+#[cfg(not(target_os = "linux"))]
+fn remove_before_files() -> bool {
+    false
+}
+
+#[cfg(target_os = "linux")]
+fn removal_failure(reason: &str) -> String {
+    package::failure(reason)
+}
+
+#[cfg(not(target_os = "linux"))]
+fn removal_failure(reason: &str) -> String {
+    removal_problem(reason).1
+}
+
+#[cfg(target_os = "macos")]
+fn removal_problem(reason: &str) -> (&'static str, String) {
+    (
+        "Diffloupe could not move itself to the Trash",
+        format!(
+            "Its own files are deleted. Drag Diffloupe to the Trash to finish removing it. ({reason})"
+        ),
+    )
+}
+
+#[cfg(target_os = "linux")]
+fn removal_problem(reason: &str) -> (&'static str, String) {
+    (
+        "Diffloupe could not remove itself",
+        package::failure(reason),
+    )
+}
+
+#[cfg(windows)]
+fn removal_problem(reason: &str) -> (&'static str, String) {
+    (
+        "Diffloupe could not remove itself",
+        format!(
+            "Its own files are deleted. Remove Diffloupe in Windows' Installed apps list. ({reason})"
+        ),
+    )
+}
+
+#[cfg(windows)]
+fn watch_maximized(window: &tauri::WebviewWindow) {
+    let watched = window.clone();
+    let last = AtomicBool::new(false);
+    window.on_window_event(move |event| {
+        if let tauri::WindowEvent::Resized(_) = event {
+            let now = watched.is_maximized().unwrap_or(false);
+            if last.swap(now, Ordering::SeqCst) != now {
+                let _ = watched.emit("window-maximized", now);
+            }
+        }
+    });
+}
+
+#[cfg(not(windows))]
+fn watch_maximized(_window: &tauri::WebviewWindow) {}
 
 #[cfg(target_os = "macos")]
 fn keep_out_of_window_restoration(window: &tauri::WebviewWindow) {
@@ -268,10 +445,9 @@ fn main() {
             let events = Arc::new(WindowEvents(app.handle().clone()));
             if let Some(window) = app.get_webview_window("main") {
                 keep_out_of_window_restoration(&window);
+                watch_maximized(&window);
             }
-            if let Some(bundle) = app_bundle() {
-                install::clear_leftovers(&bundle);
-            }
+            clear_install_leftovers();
             let data_dir = footprint::app_data_dir(&home);
             #[cfg(debug_assertions)]
             let data_dir = smoke::data_dir().unwrap_or(data_dir);
@@ -310,8 +486,30 @@ fn main() {
 
 fn cannot_start(app: &AppHandle, message: &str) {
     eprintln!("Diffloupe cannot start: {message}");
-    show_alert("Diffloupe cannot start", message);
-    app.exit(1);
+    let _ = alert_then_exit(app, "Diffloupe cannot start", message, 1);
+}
+
+#[cfg(target_os = "macos")]
+fn alert_then_exit(app: &AppHandle, title: &str, message: &str, code: i32) -> Result<(), String> {
+    let handle = app.clone();
+    let (title, message) = (title.to_string(), message.to_string());
+    app.run_on_main_thread(move || {
+        show_alert(&title, &message);
+        handle.exit(code);
+    })
+    .map_err(|e| e.to_string())
+}
+
+#[cfg(not(target_os = "macos"))]
+fn alert_then_exit(app: &AppHandle, title: &str, message: &str, code: i32) -> Result<(), String> {
+    use tauri_plugin_dialog::MessageDialogKind;
+    let handle = app.clone();
+    app.dialog()
+        .message(message)
+        .title(title)
+        .kind(MessageDialogKind::Error)
+        .show(move |_| handle.exit(code));
+    Ok(())
 }
 
 #[cfg(target_os = "macos")]
@@ -327,9 +525,6 @@ fn show_alert(title: &str, message: &str) {
     alert.setInformativeText(&NSString::from_str(message));
     alert.runModal();
 }
-
-#[cfg(not(target_os = "macos"))]
-fn show_alert(_title: &str, _message: &str) {}
 
 fn page_loaded(webview: &tauri::Webview, payload: &PageLoadPayload<'_>) {
     if payload.event() == PageLoadEvent::Finished {
@@ -363,6 +558,8 @@ impl RegisterCommands for tauri::Builder<tauri::Wry> {
             dispatch,
             pick_folder,
             open_link,
+            window_control,
+            window_maximized,
             uninstall,
             install_update,
             smoke::smoke_report,
@@ -376,6 +573,8 @@ impl RegisterCommands for tauri::Builder<tauri::Wry> {
             dispatch,
             pick_folder,
             open_link,
+            window_control,
+            window_maximized,
             uninstall,
             install_update
         ])

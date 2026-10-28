@@ -54,6 +54,15 @@ export function StatusBar() {
           )}
         </span>
       ))}
+      {repo.watchPolling && !repo.watchError && (
+        <span
+          className="dl-statusbar-item"
+          title="This system limits how many folders Diffloupe can watch, so it looks for changes every few seconds."
+        >
+          <Icon name="status-warning" />
+          Checking for changes every few seconds
+        </span>
+      )}
       {repo.watchError && (
         <span
           className="dl-statusbar-item"

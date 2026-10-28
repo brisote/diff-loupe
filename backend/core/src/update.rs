@@ -1,6 +1,5 @@
 use std::fs;
 use std::io::Read;
-use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::time::Duration;
@@ -11,7 +10,8 @@ use ts_rs::TS;
 
 use crate::error::{Error, Result};
 use crate::events::Task;
-use crate::gitops::{self, Watch};
+use crate::gitops::Watch;
+use crate::platform::{self, Platform};
 use crate::shellenv::ShellEnv;
 
 #[cfg(target_os = "macos")]
@@ -64,6 +64,77 @@ pub struct UpdateState {
     pub page: Option<String>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PackageKind {
+    Dmg,
+    Deb,
+    Rpm,
+    Setup,
+}
+
+impl PackageKind {
+    pub fn suffix(self) -> &'static str {
+        match self {
+            PackageKind::Dmg => ".dmg",
+            PackageKind::Deb => "-linux-amd64.deb",
+            PackageKind::Rpm => "-linux-x86_64.rpm",
+            PackageKind::Setup => "-windows-x64-setup.exe",
+        }
+    }
+
+    pub fn of(platform: Platform, arch: &str, linux: Option<PackageKind>) -> Option<PackageKind> {
+        match platform {
+            Platform::Macos => Some(PackageKind::Dmg),
+            Platform::Windows => (arch == "x86_64").then_some(PackageKind::Setup),
+            Platform::Linux => linux.filter(|_| arch == "x86_64"),
+        }
+    }
+
+    pub fn current() -> Option<PackageKind> {
+        let linux = (Platform::CURRENT == Platform::Linux)
+            .then(|| distro_package(|path| Path::new(path).exists()))
+            .flatten();
+        let arch = arch_from(chosen_arch(), std::env::consts::ARCH);
+        PackageKind::of(Platform::CURRENT, &arch, linux)
+    }
+}
+
+#[cfg(debug_assertions)]
+fn chosen_arch() -> Option<String> {
+    std::env::var("DIFFLOUPE_UPDATE_ARCH").ok()
+}
+
+#[cfg(not(debug_assertions))]
+fn chosen_arch() -> Option<String> {
+    None
+}
+
+pub fn arch_from(chosen: Option<String>, actual: &str) -> String {
+    chosen
+        .filter(|arch| arch == "x86_64")
+        .unwrap_or_else(|| actual.to_string())
+}
+
+pub fn package_name(version: &str, kind: PackageKind) -> String {
+    format!("Diffloupe-{version}{}", kind.suffix())
+}
+
+pub fn package_version(name: &str, kind: PackageKind) -> Option<&str> {
+    name.strip_prefix("Diffloupe-")?.strip_suffix(kind.suffix())
+}
+
+pub fn distro_package(exists: impl Fn(&str) -> bool) -> Option<PackageKind> {
+    if exists("/usr/bin/dpkg") {
+        Some(PackageKind::Deb)
+    } else if exists("/usr/bin/rpm") {
+        Some(PackageKind::Rpm)
+    } else {
+        None
+    }
+}
+
+const NO_PACKAGE: &str = "Diffloupe has no update package for this system.";
+
 pub fn repository_page(url: &str) -> bool {
     url.strip_prefix(REPOSITORY).is_some_and(|rest| {
         (rest.is_empty() || rest.starts_with('/') || rest.starts_with('#'))
@@ -114,7 +185,21 @@ pub struct Pending {
 
 pub const FAILED: &str = "failed";
 
-pub fn pending(dir: &Path, current: &str) -> Pending {
+fn marker(package: &Path) -> PathBuf {
+    let name = package
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or_default();
+    package.with_file_name(format!("{name}.verified"))
+}
+
+pub fn verified(package: &Path) -> bool {
+    fs::read_to_string(marker(package))
+        .ok()
+        .is_some_and(|text| digest(package).is_ok_and(|actual| actual == text.trim()))
+}
+
+pub fn pending(dir: &Path, current: &str, kind: Option<PackageKind>) -> Pending {
     let failure = fs::read_to_string(dir.join(FAILED))
         .ok()
         .map(|text| text.trim().to_string())
@@ -122,8 +207,9 @@ pub fn pending(dir: &Path, current: &str) -> Pending {
     let ready = failure.is_none().then(|| {
         fs::read_dir(dir).ok()?.flatten().find_map(|entry| {
             let name = entry.file_name().into_string().ok()?;
-            let version = name.strip_prefix("Diffloupe-")?.strip_suffix(".dmg")?;
-            newer(version, current).then(|| (version.to_string(), entry.path()))
+            let version = package_version(&name, kind?)?;
+            (newer(version, current) && verified(&entry.path()))
+                .then(|| (version.to_string(), entry.path()))
         })
     });
     let ready = ready.flatten();
@@ -142,7 +228,14 @@ pub fn pending(dir: &Path, current: &str) -> Pending {
     Pending { ready, failure }
 }
 
-pub fn check(env: &ShellEnv, url: &str, max_time: u64, current: &str) -> Result<Release> {
+pub fn check(
+    env: &ShellEnv,
+    url: &str,
+    max_time: u64,
+    current: &str,
+    kind: Option<PackageKind>,
+) -> Result<Release> {
+    let kind = kind.ok_or_else(|| Error::Update(NO_PACKAGE.to_string()))?;
     let max_time = max_time.to_string();
     let output = env
         .curl()
@@ -167,7 +260,7 @@ pub fn check(env: &ShellEnv, url: &str, max_time: u64, current: &str) -> Result<
         Some(CURL_TOO_LARGE) => return Err(Error::Update(UNREADABLE.to_string())),
         _ => return Err(Error::Update(UNREACHABLE.to_string())),
     }
-    parse(&output.stdout, current, &downloads(url))
+    parse(&output.stdout, current, &downloads(url), kind)
 }
 
 pub fn downloads(source: &str) -> String {
@@ -180,13 +273,13 @@ pub fn downloads(source: &str) -> String {
     format!("{scheme}://{host}/download/")
 }
 
-pub fn parse(body: &[u8], current: &str, downloads: &str) -> Result<Release> {
+pub fn parse(body: &[u8], current: &str, downloads: &str, kind: PackageKind) -> Result<Release> {
     let latest = std::str::from_utf8(body)
         .map(str::trim)
         .ok()
         .filter(|version| parts(version).is_some())
         .ok_or_else(|| Error::Update(UNREADABLE.to_string()))?;
-    let image = format!("{downloads}v{latest}/Diffloupe-{latest}.dmg");
+    let image = format!("{downloads}v{latest}/{}", package_name(latest, kind));
     Ok(Release {
         check: UpdateCheck {
             current: current.to_string(),
@@ -214,17 +307,18 @@ pub fn download(
             "Diffloupe {latest} was not installed because {why}, and {current} is unchanged."
         ))
     };
-    let headers =
-        head(env, &release.image).ok_or_else(|| not_installed("its release has no disk image"))?;
+    let headers = head(env, &release.image)
+        .ok_or_else(|| not_installed("its release has no package for this system"))?;
     let size = content_length(&headers);
     if size.is_some_and(|size| size > MAX_IMAGE) {
         return Err(not_installed(
-            "its disk image is larger than Diffloupe accepts",
+            "its package is larger than Diffloupe accepts",
         ));
     }
     let _ = fs::remove_dir_all(dir);
-    let target = dir.join(format!("Diffloupe-{latest}.dmg"));
-    let part = dir.join(format!("Diffloupe-{latest}.dmg.part"));
+    let file = release.image.rsplit('/').next().unwrap_or_default();
+    let target = dir.join(file);
+    let part = dir.join(format!("{file}.part"));
     let verified = fs::create_dir_all(dir)
         .map_err(Error::from)
         .and_then(|()| fetch(env, &release.image, &part, size, watch, task, latest))
@@ -235,7 +329,8 @@ pub fn download(
             if digest(&part)? != expected {
                 return Err(not_installed("its download does not match the checksum"));
             }
-            Ok(fs::rename(&part, &target)?)
+            fs::rename(&part, &target)?;
+            Ok(fs::write(marker(&target), format!("{expected}\n"))?)
         });
     match verified {
         Ok(()) => Ok(target),
@@ -258,8 +353,8 @@ fn fetch(
     task: &mut Task<'_>,
     latest: &str,
 ) -> Result<()> {
-    let mut child = env
-        .curl()
+    let mut curl = env.curl();
+    let mut child = platform::isolate(&mut curl)
         .args(["-q", "--fail", "--silent", "--location"])
         .args(protocols(url))
         .arg("--max-time")
@@ -271,7 +366,6 @@ fn fetch(
         .arg(url)
         .stdout(Stdio::null())
         .stderr(Stdio::null())
-        .process_group(0)
         .spawn()?;
     let label = format!("Downloading Diffloupe {latest}");
     let mut shown = None;
@@ -280,7 +374,7 @@ fn fetch(
             break status;
         }
         if watch.cancelled() {
-            gitops::stop(&mut child);
+            platform::stop_tree(&mut child);
             return Err(Error::Cancelled);
         }
         let received = fs::metadata(part).map_or(0, |meta| meta.len());
@@ -429,7 +523,7 @@ mod tests {
 
     #[test]
     fn reads_the_latest_version_and_points_to_its_release() {
-        let release = parse(b"0.3.0\n", "0.2.0", GITHUB).unwrap();
+        let release = parse(b"0.3.0\n", "0.2.0", GITHUB, PackageKind::Dmg).unwrap();
         assert_eq!(
             release.check,
             UpdateCheck {
@@ -459,7 +553,10 @@ mod tests {
             b"+0.3.0",
             b"0.-3.0",
         ] {
-            assert!(parse(body, "0.2.0", GITHUB).is_err(), "{body:?}");
+            assert!(
+                parse(body, "0.2.0", GITHUB, PackageKind::Dmg).is_err(),
+                "{body:?}"
+            );
         }
     }
 
@@ -503,19 +600,163 @@ mod tests {
         }
     }
 
+    fn verified_package(dir: &Path, name: &str, content: &[u8]) -> PathBuf {
+        let path = dir.join(name);
+        fs::write(&path, content).unwrap();
+        fs::write(marker(&path), format!("{}\n", digest(&path).unwrap())).unwrap();
+        path
+    }
+
+    #[test]
+    fn a_package_that_nobody_verified_or_that_changed_since_is_not_ready() {
+        let dir = tempfile::tempdir().unwrap();
+        let updates = dir.path().join("updates");
+        fs::create_dir_all(&updates).unwrap();
+        let planted = updates.join("Diffloupe-0.3.0.dmg");
+        fs::write(&planted, b"planted").unwrap();
+        assert!(!verified(&planted));
+        assert_eq!(
+            pending(&updates, "0.2.0", Some(PackageKind::Dmg)),
+            Pending::default()
+        );
+        let fresh = tempfile::tempdir().unwrap();
+        let updates = fresh.path().join("updates");
+        fs::create_dir_all(&updates).unwrap();
+        let real = verified_package(&updates, "Diffloupe-0.3.0.dmg", b"image");
+        assert!(verified(&real));
+        fs::write(&real, b"swapped").unwrap();
+        assert!(!verified(&real));
+        assert_eq!(
+            pending(&updates, "0.2.0", Some(PackageKind::Dmg)),
+            Pending::default()
+        );
+    }
+
     #[test]
     fn a_verified_download_waits_and_older_ones_are_cleared() {
         let dir = tempfile::tempdir().unwrap();
         let updates = dir.path().join("updates");
         fs::create_dir_all(&updates).unwrap();
-        fs::write(updates.join("Diffloupe-0.3.0.dmg"), b"image").unwrap();
-        let found = pending(&updates, "0.2.0");
+        verified_package(&updates, "Diffloupe-0.3.0.dmg", b"image");
+        let found = pending(&updates, "0.2.0", Some(PackageKind::Dmg));
         assert_eq!(
             found.ready,
             Some(("0.3.0".to_string(), updates.join("Diffloupe-0.3.0.dmg")))
         );
-        assert_eq!(pending(&updates, "0.3.0"), Pending::default());
+        assert_eq!(
+            pending(&updates, "0.3.0", Some(PackageKind::Dmg)),
+            Pending::default()
+        );
         assert!(!updates.exists());
+    }
+
+    #[test]
+    fn every_platform_names_its_package_and_macos_keeps_the_old_name() {
+        assert_eq!(
+            package_name("0.3.0", PackageKind::Dmg),
+            "Diffloupe-0.3.0.dmg"
+        );
+        assert_eq!(
+            package_name("0.3.0", PackageKind::Deb),
+            "Diffloupe-0.3.0-linux-amd64.deb"
+        );
+        assert_eq!(
+            package_name("0.3.0", PackageKind::Rpm),
+            "Diffloupe-0.3.0-linux-x86_64.rpm"
+        );
+        assert_eq!(
+            package_name("0.3.0", PackageKind::Setup),
+            "Diffloupe-0.3.0-windows-x64-setup.exe"
+        );
+    }
+
+    #[test]
+    fn a_package_name_gives_back_its_version_only_for_its_own_kind() {
+        for kind in [
+            PackageKind::Dmg,
+            PackageKind::Deb,
+            PackageKind::Rpm,
+            PackageKind::Setup,
+        ] {
+            let name = package_name("1.2.3", kind);
+            assert_eq!(package_version(&name, kind), Some("1.2.3"));
+            for other in [PackageKind::Dmg, PackageKind::Deb, PackageKind::Rpm] {
+                if other != kind {
+                    assert_eq!(package_version(&name, other), None, "{name}");
+                }
+            }
+        }
+        assert_eq!(
+            package_version("Diffloupe-1.2.3.dmg.part", PackageKind::Dmg),
+            None
+        );
+        assert_eq!(package_version("Other-1.2.3.dmg", PackageKind::Dmg), None);
+    }
+
+    #[test]
+    fn the_package_of_a_system_follows_its_platform_and_architecture() {
+        let of = PackageKind::of;
+        assert_eq!(of(Platform::Macos, "aarch64", None), Some(PackageKind::Dmg));
+        assert_eq!(
+            of(Platform::Windows, "x86_64", None),
+            Some(PackageKind::Setup)
+        );
+        assert_eq!(of(Platform::Windows, "aarch64", None), None);
+        assert_eq!(
+            of(Platform::Linux, "x86_64", Some(PackageKind::Deb)),
+            Some(PackageKind::Deb)
+        );
+        assert_eq!(
+            of(Platform::Linux, "x86_64", Some(PackageKind::Rpm)),
+            Some(PackageKind::Rpm)
+        );
+        assert_eq!(of(Platform::Linux, "x86_64", None), None);
+        assert_eq!(of(Platform::Linux, "aarch64", Some(PackageKind::Deb)), None);
+    }
+
+    #[test]
+    fn a_test_may_say_x86_64_but_nothing_else_changes_the_architecture() {
+        assert_eq!(arch_from(Some("x86_64".into()), "aarch64"), "x86_64");
+        assert_eq!(arch_from(Some("riscv64".into()), "aarch64"), "aarch64");
+        assert_eq!(arch_from(None, "aarch64"), "aarch64");
+    }
+
+    #[test]
+    fn a_linux_system_gets_the_package_of_its_package_manager() {
+        let has = |tools: &'static [&'static str]| move |path: &str| tools.contains(&path);
+        assert_eq!(
+            distro_package(has(&["/usr/bin/dpkg"])),
+            Some(PackageKind::Deb)
+        );
+        assert_eq!(
+            distro_package(has(&["/usr/bin/dpkg", "/usr/bin/rpm"])),
+            Some(PackageKind::Deb)
+        );
+        assert_eq!(
+            distro_package(has(&["/usr/bin/rpm"])),
+            Some(PackageKind::Rpm)
+        );
+        assert_eq!(distro_package(has(&[])), None);
+    }
+
+    #[test]
+    fn a_system_without_a_package_cannot_check_for_updates() {
+        let env = ShellEnv::from_path("/usr/bin");
+        let error = check(&env, "http://127.0.0.1:9/version", 1, "0.2.0", None).unwrap_err();
+        assert_eq!(error.to_string(), NO_PACKAGE);
+    }
+
+    #[test]
+    fn a_package_of_another_kind_is_not_a_ready_update() {
+        let dir = tempfile::tempdir().unwrap();
+        let updates = dir.path().join("updates");
+        fs::create_dir_all(&updates).unwrap();
+        verified_package(&updates, "Diffloupe-0.3.0.dmg", b"image");
+        assert_eq!(
+            pending(&updates, "0.2.0", Some(PackageKind::Deb)),
+            Pending::default()
+        );
+        assert_eq!(pending(&updates, "0.2.0", None), Pending::default());
     }
 
     #[test]
@@ -523,9 +764,9 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let updates = dir.path().join("updates");
         fs::create_dir_all(&updates).unwrap();
-        fs::write(updates.join("Diffloupe-0.3.0.dmg"), b"image").unwrap();
+        verified_package(&updates, "Diffloupe-0.3.0.dmg", b"image");
         fs::write(updates.join(FAILED), "Diffloupe 0.3.0 was not installed.\n").unwrap();
-        let found = pending(&updates, "0.2.0");
+        let found = pending(&updates, "0.2.0", Some(PackageKind::Dmg));
         assert_eq!(found.ready, None);
         assert_eq!(
             found.failure.as_deref(),

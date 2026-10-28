@@ -4,6 +4,10 @@ Tauri has no WebDriver on macOS, so a debug build reports its page text when
 DIFFLOUPE_SMOKE_REPORT is set, then quits. Each run uses a temporary home folder. The
 runs started like Finder use your real home, so that your shell profile applies, with the
 app's data in a temporary folder.
+
+On Linux (`--platform linux`, which platform_check.py runs in the Ubuntu container) it runs
+the same checks under a virtual display with a session bus: the app starts without a window
+manager and without Finder, so the checks that need those are left out.
 """
 
 import argparse
@@ -20,16 +24,46 @@ import demo_repos
 
 ROOT = Path(__file__).resolve().parents[2]
 BACKEND = ROOT / "backend"
-APP = BACKEND / "target/debug/bundle/macos/Diffloupe.app/Contents/MacOS/diffloupe"
 BRIDGE = BACKEND / "target/debug/diffloupe-devbridge"
 BUNDLE_ID = "com.diffloupe.app"
-NO_UPDATES = "http://127.0.0.1:9/download/latest/macos/version"
+PLATFORM = "linux" if sys.platform.startswith("linux") else "macos"
+APP = (
+    BACKEND / "target/debug/diffloupe"
+    if PLATFORM == "linux"
+    else BACKEND / "target/debug/bundle/macos/Diffloupe.app/Contents/MacOS/diffloupe"
+)
+NO_UPDATES = f"http://127.0.0.1:9/download/latest/{PLATFORM}/version"
+
+
+def data_dir(home: Path) -> Path:
+    if PLATFORM == "linux":
+        return home / ".local/share" / BUNDLE_ID
+    return home / "Library/Application Support" / BUNDLE_ID
+
+
+def cache_dir(home: Path) -> Path:
+    return home / (".cache" if PLATFORM == "linux" else "Library/Caches") / BUNDLE_ID
+
+
+def environment(home: Path, **extra: str) -> dict:
+    env = {**os.environ, "HOME": str(home), **extra}
+    if PLATFORM == "linux":
+        env.update(
+            XDG_DATA_HOME=str(home / ".local/share"),
+            XDG_CACHE_HOME=str(home / ".cache"),
+            XDG_CONFIG_HOME=str(home / ".config"),
+            GDK_BACKEND="x11",
+            WEBKIT_DISABLE_COMPOSITING_MODE="1",
+            WEBKIT_DISABLE_DMABUF_RENDERER="1",
+            LIBGL_ALWAYS_SOFTWARE="1",
+        )
+    return env
 
 
 def report(home: Path, while_running=None) -> dict:
     out = home / "smoke.json"
     out.unlink(missing_ok=True)
-    env = {**os.environ, "HOME": str(home), "DIFFLOUPE_SMOKE_REPORT": str(out)}
+    env = environment(home, DIFFLOUPE_SMOKE_REPORT=str(out))
     process = subprocess.Popen([str(APP)], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     if while_running:
         time.sleep(1.2)
@@ -43,7 +77,7 @@ def report(home: Path, while_running=None) -> dict:
 
 
 def seed(home: Path, repo: Path) -> None:
-    seed_data(home / "Library/Application Support" / BUNDLE_ID, repo)
+    seed_data(data_dir(home), repo)
 
 
 def seed_data(data_dir: Path, repo: Path) -> None:
@@ -81,34 +115,38 @@ def page_checks(result: dict) -> list[bool]:
         check("styles load under the CSP", result["background"] not in ("", "rgba(0, 0, 0, 0)"), result["background"]),
         check("Inter loads", result["interLoaded"]),
         check("icons load", result["iconLoads"]),
-        check("a double click on the toolbar zooms the window", result.get("zoomed", False)),
+        *(
+            [check("a double click on the toolbar zooms the window", result.get("zoomed", False))]
+            if PLATFORM == "macos"
+            else []
+        ),
     ]
 
 
 def newer_data(home: Path) -> list[bool]:
-    data_dir = home / "Library/Application Support" / BUNDLE_ID
-    data_dir.mkdir(parents=True)
-    with sqlite3.connect(data_dir / "state.db") as db:
+    data = data_dir(home)
+    data.mkdir(parents=True)
+    with sqlite3.connect(data / "state.db") as db:
         db.execute("PRAGMA user_version = 99")
     log = home / "stderr.log"
     with log.open("w") as err:
-        env = {**os.environ, "HOME": str(home), "DIFFLOUPE_SMOKE_REPORT": str(home / "report.json")}
+        env = environment(home, DIFFLOUPE_SMOKE_REPORT=str(home / "report.json"))
         process = subprocess.Popen([str(APP)], env=env, stdout=subprocess.DEVNULL, stderr=err)
         time.sleep(6)
         waiting = process.poll() is None
         process.kill()
         process.wait()
-    with sqlite3.connect(data_dir / "state.db") as db:
+    with sqlite3.connect(data / "state.db") as db:
         version = db.execute("PRAGMA user_version").fetchone()[0]
     said = log.read_text()
     return [
-        check("data from a newer version stops the start with a message", waiting and "saved by a newer version" in said, said[-300:]),
-        check("data from a newer version is left unchanged", version == 99 and not (data_dir / "backups").exists(), str(version)),
+        check("data from a newer version stops the start with a message", waiting and "saved by a newer version" in said, f"still running: {waiting}; {said[-300:]}"),
+        check("data from a newer version is left unchanged", version == 99 and not (data / "backups").exists(), str(version)),
     ]
 
 
 def single_instance(home: Path) -> bool:
-    env = {**os.environ, "HOME": str(home)}
+    env = environment(home)
     first = subprocess.Popen([str(APP)], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     try:
         time.sleep(4)
@@ -130,23 +168,28 @@ def single_instance(home: Path) -> bool:
 
 def uninstall(home: Path) -> list[bool]:
     library = home / "Library"
-    owned = [library / "Caches" / BUNDLE_ID / "cache.db", library / "Logs" / BUNDLE_ID / "diffloupe.log"]
-    kept = [
-        home / ".claude/projects/acme-billing/session.jsonl",
-        library / "Caches/com.other.app/cache.db",
-        library / "Application Support/com.other.app/state.json",
-    ]
+    if PLATFORM == "linux":
+        owned = [cache_dir(home) / "cache.db"]
+        kept = [
+            home / ".claude/projects/acme-billing/session.jsonl",
+            home / ".cache/com.other.app/cache.db",
+            home / ".local/share/com.other.app/state.json",
+        ]
+        footprint = [data_dir(home), cache_dir(home)]
+    else:
+        owned = [cache_dir(home) / "cache.db", library / "Logs" / BUNDLE_ID / "diffloupe.log"]
+        kept = [
+            home / ".claude/projects/acme-billing/session.jsonl",
+            library / "Caches/com.other.app/cache.db",
+            library / "Application Support/com.other.app/state.json",
+        ]
+        footprint = [data_dir(home), cache_dir(home), library / "Logs" / BUNDLE_ID]
     for path in owned + kept:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text("x\n")
     stuck = home / "smoke.json"
     stuck.unlink(missing_ok=True)
-    env = {
-        **os.environ,
-        "HOME": str(home),
-        "DIFFLOUPE_SMOKE_REPORT": str(stuck),
-        "DIFFLOUPE_SMOKE_UNINSTALL": "1",
-    }
+    env = environment(home, DIFFLOUPE_SMOKE_REPORT=str(stuck), DIFFLOUPE_SMOKE_UNINSTALL="1")
     process = subprocess.Popen([str(APP)], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     try:
         code = process.wait(timeout=60)
@@ -156,7 +199,6 @@ def uninstall(home: Path) -> list[bool]:
     if stuck.exists():
         return [check("Uninstall quits the app", False, json.loads(stuck.read_text())["text"][-400:])]
     time.sleep(4)
-    footprint = [library / "Application Support" / BUNDLE_ID, library / "Caches" / BUNDLE_ID, library / "Logs" / BUNDLE_ID]
     left = [str(path) for path in footprint if path.exists()]
     return [
         check("Uninstall quits the app", code == 0, str(code)),
@@ -169,14 +211,21 @@ def uninstall(home: Path) -> list[bool]:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--no-build", action="store_true", help="use the existing debug build")
+    parser.add_argument("--platform", choices=["macos", "linux"], help="the system the check runs on; this one by default")
     args = parser.parse_args()
+    if args.platform and args.platform != PLATFORM:
+        raise SystemExit(f"this system is {PLATFORM}; run --platform {args.platform} on a {args.platform} machine")
     os.environ["DIFFLOUPE_UPDATE_URL"] = NO_UPDATES
     if not args.no_build:
-        subprocess.run(["pnpm", "tauri", "build", "--debug", "--bundles", "app"], cwd=ROOT, check=True)
+        bundle = ["--no-bundle"] if PLATFORM == "linux" else ["--bundles", "app"]
+        subprocess.run(["pnpm", "tauri", "build", "--debug", *bundle], cwd=ROOT, check=True)
         subprocess.run(["cargo", "build", "-q", "-p", "diffloupe-devbridge"], cwd=BACKEND, check=True)
 
-    running = subprocess.run(["pgrep", "-f", "Diffloupe.app/Contents/MacOS/diffloupe"], capture_output=True, text=True)
-    installed_open = bool(running.stdout.strip())
+    if PLATFORM == "macos":
+        running = subprocess.run(["pgrep", "-f", "Diffloupe.app/Contents/MacOS/diffloupe"], capture_output=True, text=True)
+        installed_open = bool(running.stdout.strip())
+    else:
+        installed_open = False
 
     results: list[bool] = []
     with tempfile.TemporaryDirectory(prefix="diffloupe-smoke-") as tmp:
@@ -207,13 +256,18 @@ def main() -> int:
         results.append(check("the branch and target show", "gs/invoice-export" in text and "Target" in text, text[:200]))
         terminal = main_window.get("terminal", "")
         results.append(check("the terminal shows the shell's output", terminal.strip() != "", terminal[:200]))
-        results.append(check("the store lives in the app data folder", (home / "Library/Application Support" / BUNDLE_ID / "state.db").exists()))
-        data = Path(tmp) / "finder-data"
-        seed_data(data, repo)
-        finder = finder_report(Path(tmp) / "finder.json", f"DIFFLOUPE_SMOKE_DATA_DIR={data}")
-        results.append(check("started like Finder, git runs", "Billing.kt" in finder["text"], finder["text"][:300]))
+        results.append(check("the store lives in the app data folder", (data_dir(home) / "state.db").exists()))
+        if PLATFORM == "macos":
+            data = Path(tmp) / "finder-data"
+            seed_data(data, repo)
+            finder = finder_report(Path(tmp) / "finder.json", f"DIFFLOUPE_SMOKE_DATA_DIR={data}")
+            results.append(check("started like Finder, git runs", "Billing.kt" in finder["text"], finder["text"][:300]))
+        else:
+            print("skip  started like Finder: there is no Finder on Linux")
         if installed_open:
             print("skip  a second start hands over and exits: quit the running Diffloupe to run this check")
+        elif PLATFORM == "linux" and "DBUS_SESSION_BUS_ADDRESS" not in os.environ:
+            print("skip  a second start hands over and exits: start the check with dbus-run-session")
         else:
             results.append(single_instance(home))
         results += newer_data(Path(tmp) / "newer-home")

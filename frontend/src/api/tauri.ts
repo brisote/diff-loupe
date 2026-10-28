@@ -25,6 +25,10 @@ export function tauriTransport(): Transport {
     uninstall: () => invoke<void>("uninstall"),
     openLink: (url) => invoke<void>("open_link", { url }),
     installUpdate: () => invoke<void>("install_update"),
+    windowControl: (action) => invoke<void>("window_control", { action }),
+    windowMaximized: () => invoke<boolean>("window_maximized"),
+    onWindowMaximized: (listener) =>
+      later(listen<boolean>("window-maximized", (event) => listener(event.payload))),
     onEvent: (listener) =>
       later(listen<CoreEvent>("core-event", (event) => listener(event.payload))),
     onFolderDrop: (listener) =>
