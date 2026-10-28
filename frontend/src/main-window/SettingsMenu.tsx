@@ -1,5 +1,6 @@
 import type { RefObject } from "react";
 import { MenuRow } from "../lib/list";
+import { shortcut, usePlatform } from "../lib/platform";
 import { Popup } from "../lib/popup";
 import { useApp } from "../state/context";
 import type { Dialog } from "../state/store";
@@ -7,6 +8,7 @@ import type { Dialog } from "../state/store";
 type Props = { anchor: RefObject<HTMLElement | null>; onClose: () => void };
 
 export function SettingsMenu({ anchor, onClose }: Props) {
+  const platform = usePlatform();
   const showDialog = useApp((state) => state.showDialog);
   const openUpdates = useApp((state) => state.openUpdates);
   const starOnGitHub = useApp((state) => state.starOnGitHub);
@@ -25,7 +27,7 @@ export function SettingsMenu({ anchor, onClose }: Props) {
       <MenuRow onActivate={() => choose("settings")}>
         <span className="dl-row-name">Settings…</span>
         <span className="dl-row-path" />
-        <span className="dl-row-key">⌘,</span>
+        <span className="dl-row-key">{shortcut(platform, "Mod+,")}</span>
       </MenuRow>
       <div className="dl-popup-sep" />
       <MenuRow

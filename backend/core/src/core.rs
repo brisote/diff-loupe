@@ -12,6 +12,7 @@ use crate::gitops::{self, Cancels, CommitResult, Destination, PushResult};
 use crate::history::{self, BranchLog, CommitDetails, CommitDiff, HistoryCache};
 use crate::merge::{self, MergeOutcome};
 use crate::merge3;
+use crate::platform::{self, Platform};
 use crate::repo::Repo;
 use crate::shellenv::ShellEnv;
 use crate::status::{self, FileChange, Untracked};
@@ -23,7 +24,7 @@ use serde::Serialize;
 use serde::de::DeserializeOwned;
 use serde_json::Value;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -56,6 +57,9 @@ pub struct Core {
     release: Mutex<Option<update::Release>>,
     update_ready: Mutex<Option<(String, PathBuf)>>,
     update_failure: Mutex<Option<String>>,
+    package: Option<update::PackageKind>,
+    platform: Platform,
+    watch_polling: AtomicBool,
 }
 
 struct OpenRepo {
@@ -66,8 +70,34 @@ struct OpenRepo {
 
 impl Core {
     pub fn new(data_dir: &Path, env: ShellEnv, events: Arc<dyn EventSink>) -> Result<Core> {
+        Core::build(
+            data_dir,
+            env,
+            events,
+            Platform::CURRENT,
+            update::PackageKind::current(),
+        )
+    }
+
+    pub fn for_platform(
+        data_dir: &Path,
+        env: ShellEnv,
+        events: Arc<dyn EventSink>,
+        platform: Platform,
+    ) -> Result<Core> {
+        let package = update::PackageKind::of(platform, "x86_64", Some(update::PackageKind::Deb));
+        Core::build(data_dir, env, events, platform, package)
+    }
+
+    fn build(
+        data_dir: &Path,
+        env: ShellEnv,
+        events: Arc<dyn EventSink>,
+        platform: Platform,
+        package: Option<update::PackageKind>,
+    ) -> Result<Core> {
         let store = Store::open(data_dir)?;
-        let pending = update::pending(&data_dir.join(UPDATES), env!("CARGO_PKG_VERSION"));
+        let pending = update::pending(&data_dir.join(UPDATES), env!("CARGO_PKG_VERSION"), package);
         Ok(Core {
             store: Mutex::new(store),
             repo: Mutex::new(None),
@@ -86,6 +116,9 @@ impl Core {
             release: Mutex::new(None),
             update_ready: Mutex::new(pending.ready),
             update_failure: Mutex::new(pending.failure),
+            package,
+            platform,
+            watch_polling: AtomicBool::new(false),
         })
     }
 
@@ -100,6 +133,10 @@ impl Core {
         if let Ok(mut current) = self.update_url.lock() {
             *current = url.to_string();
         }
+    }
+
+    pub fn set_watch_polling(&self, polling: bool) {
+        self.watch_polling.store(polling, Ordering::SeqCst);
     }
 
     pub fn set_update_max_time(&self, seconds: u64) {
@@ -189,6 +226,7 @@ impl Core {
                     &url,
                     self.update_max_time.load(Ordering::SeqCst),
                     env!("CARGO_PKG_VERSION"),
+                    self.package,
                 )?;
                 let check = release.check.clone();
                 if let Ok(mut stored) = self.release.lock() {
@@ -217,7 +255,11 @@ impl Core {
             }
             "status" => {
                 let a: StatusArgs = parse(args)?;
-                reply(self.status(&a.path, a.untracked.unwrap_or_default(), a.target.unwrap_or(true))?)
+                reply(self.status(
+                    &a.path,
+                    a.untracked.unwrap_or_default(),
+                    a.target.unwrap_or(true),
+                )?)
             }
             "diff" => {
                 let a: DiffArgs = parse(args)?;
@@ -420,16 +462,14 @@ impl Core {
                 .ok()
                 .filter(|output| output.status.success())
                 .and_then(|output| String::from_utf8(output.stdout).ok())
-                .and_then(|text| text.lines().next().map(|line| line.trim().to_string()))
-                .filter(|line| !line.is_empty())
+                .and_then(|text| platform::first_line(&text))
         };
         ReportEnv {
             version: env!("CARGO_PKG_VERSION").to_string(),
-            macos: first_line(
-                std::process::Command::new("/usr/bin/sw_vers")
-                    .arg("-productVersion")
-                    .output(),
-            ),
+            os: platform::os_name(Platform::CURRENT, &|program, args| {
+                let mut command = std::process::Command::new(program);
+                first_line(platform::hidden(&mut command).args(args).output())
+            }),
             arch: std::env::consts::ARCH.to_string(),
             git: first_line(self.env.git(Path::new("/")).arg("--version").output())
                 .map(|line| line.trim_start_matches("git version ").to_string()),
@@ -440,7 +480,13 @@ impl Core {
         Ok(AppInfo {
             version: env!("CARGO_PKG_VERSION").to_string(),
             settings_notice: self.store()?.notice().map(str::to_string),
-            home: std::env::var("HOME").ok(),
+            home: std::env::var(if Platform::CURRENT == Platform::Windows {
+                "USERPROFILE"
+            } else {
+                "HOME"
+            })
+            .ok(),
+            platform: self.platform,
         })
     }
 
@@ -467,8 +513,13 @@ impl Core {
             &id,
             format!("Opening {}", repo.name()),
         );
-        let watcher = RepoWatcher::start(&repo, self.env.clone(), self.events.clone())
-            .map_err(|error| error.to_string());
+        let watcher = RepoWatcher::start(
+            &repo,
+            self.env.clone(),
+            self.events.clone(),
+            self.watch_polling.load(Ordering::SeqCst),
+        )
+        .map_err(|error| error.to_string());
         let open = OpenRepo {
             repo,
             watcher,
@@ -490,7 +541,12 @@ impl Core {
         }
     }
 
-    fn status(&self, path: &str, untracked: Untracked, with_target: bool) -> Result<Vec<FileChange>> {
+    fn status(
+        &self,
+        path: &str,
+        untracked: Untracked,
+        with_target: bool,
+    ) -> Result<Vec<FileChange>> {
         let wanted = canonical(path)?;
         let (repo, root, name, first) = {
             let slot = self.repo_slot()?;
@@ -841,6 +897,7 @@ impl Core {
             target: state.target_branch.or_else(|| default_branch.clone()),
             default_branch,
             watch_error: open.watcher.as_ref().err().cloned(),
+            watch_polling: open.watcher.as_ref().is_ok_and(RepoWatcher::polling),
             last_tab,
             last_selection: state.last_selection,
             path,

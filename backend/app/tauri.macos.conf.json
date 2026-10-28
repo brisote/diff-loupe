@@ -1,0 +1,25 @@
+{
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Diffloupe",
+        "width": 1440,
+        "height": 900,
+        "minWidth": 960,
+        "minHeight": 600,
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true,
+        "trafficLightPosition": {
+          "x": 14,
+          "y": 20
+        },
+        "incognito": true,
+        "dragDropEnabled": true
+      }
+    ]
+  },
+  "bundle": {
+    "targets": ["app", "dmg"]
+  }
+}

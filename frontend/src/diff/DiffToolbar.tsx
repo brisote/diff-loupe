@@ -2,9 +2,11 @@ import { useRef, useState } from "react";
 import type { DiffSettings } from "../api/generated/DiffSettings";
 import type { MarkdownView } from "../api/generated/MarkdownView";
 import { Icon } from "../lib/icon";
+import { type Platform, shortcut } from "../lib/platform";
 import { DiffSettingsMenu } from "./DiffSettingsMenu";
 
 type Props = {
+  platform: Platform;
   differences: number;
   separatorsOnly: boolean;
   current: number;
@@ -18,6 +20,7 @@ type Props = {
 };
 
 export function DiffToolbar({
+  platform,
   differences,
   separatorsOnly,
   current,
@@ -45,8 +48,8 @@ export function DiffToolbar({
       <button
         className="dl-tbtn"
         type="button"
-        aria-label="Previous Difference ⇧F7"
-        title="Previous Difference ⇧F7"
+        aria-label={`Previous Difference ${shortcut(platform, "Shift+F7")}`}
+        title={`Previous Difference ${shortcut(platform, "Shift+F7")}`}
         disabled={differences === 0 || current <= 0}
         onClick={() => onDifference(current - 1)}
       >

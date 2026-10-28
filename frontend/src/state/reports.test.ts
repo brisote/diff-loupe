@@ -11,7 +11,7 @@ import {
   unhandled,
 } from "./reports";
 
-const env = { version: "0.2.0", macos: "26.1", arch: "aarch64", git: "2.50.1" };
+const env = { version: "0.2.0", os: "macOS 26.1", arch: "aarch64", git: "2.50.1" };
 const at = new Date(2026, 9, 24, 14, 12, 5, 42).getTime();
 const failure = (message: string) => ({
   at,
@@ -92,5 +92,19 @@ describe("error reports", () => {
     );
     expect(text).toContain("TypeError: x");
     expect(text).toContain("| 14:12:05.042 | set_ui_value | store | 5002 |");
+  });
+});
+
+describe("hidePaths on Windows", () => {
+  it("hides repositories and the home folder whatever the separators and case", () => {
+    const text =
+      "failed in C:\\Users\\Ada\\work\\acme: C:/Users/ada/work/acme/src/a.kt and \\\\?\\C:\\Users\\ada\\notes";
+    expect(hidePaths(text, "C:\\Users\\ada", ["C:\\Users\\ada\\work\\acme"])).toBe(
+      "failed in <repository>: <repository>/src/a.kt and ~\\notes",
+    );
+  });
+
+  it("does not hide a folder that only shares a prefix", () => {
+    expect(hidePaths("C:\\Users\\adam\\x", "C:\\Users\\ada", [])).toBe("C:\\Users\\adam\\x");
   });
 });

@@ -4,7 +4,7 @@ use crate::repo::Repo;
 use crate::shellenv::ShellEnv;
 use gix::bstr::{BStr, ByteSlice};
 use notify::event::{AccessKind, AccessMode};
-use notify::{Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
+use notify::{Event, EventKind, PollWatcher, RecommendedWatcher, RecursiveMode, Watcher};
 use std::collections::{HashMap, HashSet};
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -28,12 +28,42 @@ const OWN_GIT_FILES: [&str; 10] = [
 ];
 const SHARED_GIT_FILES: [&str; 2] = ["packed-refs", "refs"];
 
+const POLL_INTERVAL: Duration = Duration::from_secs(5);
+
 pub struct RepoWatcher {
-    _watcher: RecommendedWatcher,
+    _native: Option<RecommendedWatcher>,
+    _polling: Option<PollWatcher>,
+}
+
+const EMFILE: i32 = 24;
+
+pub fn needs_polling(error: &notify::Error) -> bool {
+    match &error.kind {
+        notify::ErrorKind::MaxFilesWatch => true,
+        notify::ErrorKind::Io(io) => io.raw_os_error() == Some(EMFILE),
+        _ => false,
+    }
+}
+
+fn polling_or_error<T>(attached: notify::Result<T>) -> Result<Option<T>> {
+    match attached {
+        Ok(watcher) => Ok(Some(watcher)),
+        Err(error) if needs_polling(&error) => Ok(None),
+        Err(error) => Err(watch_error(error)),
+    }
 }
 
 impl RepoWatcher {
-    pub fn start(repo: &Repo, env: ShellEnv, events: Arc<dyn EventSink>) -> Result<RepoWatcher> {
+    pub fn polling(&self) -> bool {
+        self._polling.is_some()
+    }
+
+    pub fn start(
+        repo: &Repo,
+        env: ShellEnv,
+        events: Arc<dyn EventSink>,
+        force_polling: bool,
+    ) -> Result<RepoWatcher> {
         let watch = Watch {
             root: repo.root().to_path_buf(),
             git_dir: repo.git_dir().to_path_buf(),
@@ -42,29 +72,20 @@ impl RepoWatcher {
             env,
         };
         let (sender, receiver) = mpsc::channel::<PathBuf>();
-        let mut watcher = notify::recommended_watcher(move |result: notify::Result<Event>| {
-            if let Ok(event) = result
-                && writes(&event.kind)
-            {
-                for path in event.paths {
-                    let _ = sender.send(path);
-                }
-            }
-        })
-        .map_err(watch_error)?;
-        watcher
-            .watch(repo.root(), RecursiveMode::Recursive)
-            .map_err(watch_error)?;
-        for dir in [Some(repo.git_dir()), repo.shared_git_dir()]
+        let dirs: Vec<&Path> = [Some(repo.git_dir()), repo.shared_git_dir()]
             .into_iter()
             .flatten()
-        {
-            if !dir.starts_with(repo.root()) {
-                watcher
-                    .watch(dir, RecursiveMode::Recursive)
-                    .map_err(watch_error)?;
-            }
-        }
+            .filter(|dir| !dir.starts_with(repo.root()))
+            .collect();
+        let native = if force_polling {
+            None
+        } else {
+            polling_or_error(attach_native(repo.root(), &dirs, sender.clone()))?
+        };
+        let polling = match native {
+            Some(_) => None,
+            None => Some(attach_polling(repo.root(), &dirs, sender).map_err(watch_error)?),
+        };
         std::thread::spawn(move || {
             while let Some(batch) = next_batch(&receiver) {
                 if watch.matters(&batch) {
@@ -74,8 +95,52 @@ impl RepoWatcher {
                 }
             }
         });
-        Ok(RepoWatcher { _watcher: watcher })
+        Ok(RepoWatcher {
+            _native: native,
+            _polling: polling,
+        })
     }
+}
+
+fn forward(sender: mpsc::Sender<PathBuf>) -> impl FnMut(notify::Result<Event>) + Send + 'static {
+    move |result| {
+        if let Ok(event) = result
+            && writes(&event.kind)
+        {
+            for path in event.paths {
+                let _ = sender.send(path);
+            }
+        }
+    }
+}
+
+fn attach_native(
+    root: &Path,
+    dirs: &[&Path],
+    sender: mpsc::Sender<PathBuf>,
+) -> notify::Result<RecommendedWatcher> {
+    let mut watcher = notify::recommended_watcher(forward(sender))?;
+    watcher.watch(root, RecursiveMode::Recursive)?;
+    for dir in dirs {
+        watcher.watch(dir, RecursiveMode::Recursive)?;
+    }
+    Ok(watcher)
+}
+
+fn attach_polling(
+    root: &Path,
+    dirs: &[&Path],
+    sender: mpsc::Sender<PathBuf>,
+) -> notify::Result<PollWatcher> {
+    let config = notify::Config::default()
+        .with_poll_interval(POLL_INTERVAL)
+        .with_compare_contents(false);
+    let mut watcher = PollWatcher::new(forward(sender), config)?;
+    watcher.watch(root, RecursiveMode::Recursive)?;
+    for dir in dirs {
+        watcher.watch(dir, RecursiveMode::Recursive)?;
+    }
+    Ok(watcher)
 }
 
 fn writes(kind: &EventKind) -> bool {
@@ -255,6 +320,32 @@ mod tests {
         assert!(!first_is(Path::new("logs/HEAD"), &OWN_GIT_FILES));
         assert!(!first_is(Path::new("index"), &SHARED_GIT_FILES));
         assert!(first_is(Path::new("refs/heads/x"), &SHARED_GIT_FILES));
+    }
+
+    #[test]
+    fn a_full_instance_limit_also_falls_back_to_polling() {
+        let full = notify::Error::io(std::io::Error::from_raw_os_error(EMFILE));
+        assert!(needs_polling(&full));
+        let denied = notify::Error::io(std::io::Error::from_raw_os_error(13));
+        assert!(!needs_polling(&denied));
+    }
+
+    #[test]
+    fn a_watch_that_fails_for_another_reason_is_an_error_not_polling() {
+        let full = notify::Error::new(notify::ErrorKind::MaxFilesWatch);
+        assert!(matches!(polling_or_error::<u8>(Err(full)), Ok(None)));
+        assert!(matches!(polling_or_error(Ok(7u8)), Ok(Some(7))));
+        let broken = notify::Error::generic("broken");
+        assert!(polling_or_error::<u8>(Err(broken)).is_err());
+    }
+
+    #[test]
+    fn only_a_full_watch_limit_falls_back_to_polling() {
+        assert!(needs_polling(&notify::Error::new(
+            notify::ErrorKind::MaxFilesWatch
+        )));
+        assert!(!needs_polling(&notify::Error::path_not_found()));
+        assert!(!needs_polling(&notify::Error::generic("broken")));
     }
 
     #[test]

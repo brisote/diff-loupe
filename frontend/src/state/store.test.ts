@@ -297,7 +297,12 @@ describe("actions", () => {
   it("stores the settings the core returns and refreshes the notice", async () => {
     let notice: string | null = "settings.json could not be read";
     const core = fakeCore({
-      app_info: () => ({ version: "0.1.0", settingsNotice: notice, home: "/Users/ada" }),
+      app_info: () => ({
+        version: "0.1.0",
+        settingsNotice: notice,
+        home: "/Users/ada",
+        platform: "macos",
+      }),
       set_settings: (args) => {
         notice = null;
         return (args as { settings: unknown }).settings;

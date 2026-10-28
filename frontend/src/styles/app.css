@@ -65,6 +65,14 @@ button {
   -webkit-user-select: none;
 }
 
+.app-toolbar.has-window-controls {
+  padding-right: 0;
+}
+
+.app-toolbar .dl-winctl {
+  margin-left: auto;
+}
+
 .app-lights {
   display: flex;
   flex: none;
@@ -869,9 +877,20 @@ button {
 }
 
 .app-md-heads,
-.app-md-row {
+.app-md-panes {
   display: grid;
   grid-template-columns: minmax(0, 1fr) var(--space-24) minmax(0, 1fr);
+}
+
+.app-md-panes {
+  flex: 1;
+  min-height: 0;
+}
+
+.app-md-strips {
+  overflow: hidden;
+  border-top: 1px solid var(--border);
+  background: var(--editor-bg);
 }
 
 .app-md-head {
@@ -899,7 +918,8 @@ button {
   background: none;
 }
 
-.app-md-row > .dl-md {
+.app-md-cell {
+  display: flow-root;
   min-width: 0;
   padding: 0 var(--space-24);
 }
@@ -948,6 +968,11 @@ button {
 .dl-md .dl-md-row-del {
   background: var(--diff-deleted);
   text-decoration: line-through;
+}
+
+.dl-md .dl-md-row-ins code,
+.dl-md .dl-md-row-del code {
+  background: none;
 }
 
 .dl-md-image-off {

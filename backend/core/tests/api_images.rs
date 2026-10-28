@@ -22,6 +22,7 @@ fn images_load_from_the_revision_or_the_working_tree() {
     repo.write("docs/img/shot.png", "new");
     let outside = tempfile::tempdir().unwrap();
     std::fs::write(outside.path().join("secret.png"), "secret").unwrap();
+    #[cfg(unix)]
     std::os::unix::fs::symlink(
         outside.path().join("secret.png"),
         repo.path().join("docs/link.png"),
@@ -46,6 +47,7 @@ fn images_load_from_the_revision_or_the_working_tree() {
         image(&core, &path, "../../../etc/hosts.png", None),
         Value::Null
     );
+    #[cfg(unix)]
     assert_eq!(image(&core, &path, "link.png", None), Value::Null);
     assert_eq!(
         image(&core, &path, "https://example.com/a.png", None),

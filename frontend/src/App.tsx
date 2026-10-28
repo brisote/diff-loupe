@@ -8,6 +8,7 @@ import { SettingsDialog } from "./dialogs/SettingsDialog";
 import { UninstallDialog } from "./dialogs/UninstallDialog";
 import { Boundary } from "./lib/boundary";
 import { Icon } from "./lib/icon";
+import { hasModifier, usePlatform } from "./lib/platform";
 import { AbortMergeDialog, ConflictsDialog } from "./merge/ConflictsDialog";
 import { MergeDialog } from "./merge/MergeHost";
 import { MainWindow } from "./screens/MainWindow";
@@ -20,6 +21,7 @@ function inTerminal(target: EventTarget | null): boolean {
 }
 
 export function App() {
+  const platform = usePlatform();
   const started = useApp((state) => state.started);
   const startError = useApp((state) => state.startError);
   const hasRepo = useApp((state) => state.repo !== null);
@@ -68,7 +70,8 @@ export function App() {
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (event.metaKey && event.key === ",") {
+      const mod = hasModifier(platform, event);
+      if (mod && event.key === ",") {
         event.preventDefault();
         showDialog("settings");
       } else if (event.altKey && event.key === "F12" && hasRepo && !dialog) {
@@ -76,16 +79,21 @@ export function App() {
         event.stopPropagation();
         if (terminalOpen && !inTerminal(event.target)) focusTerminal();
         else toggleTerminal();
-      } else if (event.metaKey && event.key.toLowerCase() === "k" && inTerminal(event.target)) {
-        event.preventDefault();
-        event.stopPropagation();
-        if (activeTerminal && !event.shiftKey) clearScreen(activeTerminal);
-        else if (event.shiftKey) void push();
+      } else if (mod && event.key.toLowerCase() === "k" && inTerminal(event.target)) {
+        if (event.shiftKey) {
+          event.preventDefault();
+          event.stopPropagation();
+          void push();
+        } else if (platform === "macos") {
+          event.preventDefault();
+          event.stopPropagation();
+          if (activeTerminal) clearScreen(activeTerminal);
+        }
       } else if (event.shiftKey && event.key === "Escape" && terminalOpen && !dialog) {
         event.preventDefault();
         event.stopPropagation();
         hideTerminal();
-      } else if (event.metaKey && event.key.toLowerCase() === "k" && hasRepo && !dialog) {
+      } else if (mod && event.key.toLowerCase() === "k" && hasRepo && !dialog) {
         event.preventDefault();
         if (event.shiftKey) void push();
         else showDialog("commit");
@@ -94,6 +102,7 @@ export function App() {
     document.addEventListener("keydown", onKey, true);
     return () => document.removeEventListener("keydown", onKey, true);
   }, [
+    platform,
     showDialog,
     push,
     hasRepo,

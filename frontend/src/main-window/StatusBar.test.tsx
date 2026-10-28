@@ -48,3 +48,22 @@ it("shows running tasks with their progress and hides finished ones", async () =
   );
   expect(screen.queryByRole("progressbar", { name: /Opening/ })).toBeNull();
 });
+
+it("says when files are only checked every few seconds, and when watching has failed", async () => {
+  const polling = { ...repoInfo("acme-billing"), watchPolling: true };
+  await renderWithStore(<StatusBar />, fakeCore({ current_repo: () => polling }));
+  expect(screen.getByRole("contentinfo")).toHaveTextContent(
+    "Checking for changes every few seconds",
+  );
+  expect(screen.getByRole("contentinfo")).not.toHaveTextContent("Refresh by hand");
+});
+
+it("asks for a manual refresh when watching fails, and says nothing when it works", async () => {
+  const broken = { ...repoInfo("acme-billing"), watchError: "boom" };
+  const view = await renderWithStore(<StatusBar />, fakeCore({ current_repo: () => broken }));
+  expect(screen.getByRole("contentinfo")).toHaveTextContent("Refresh by hand");
+  view.unmount();
+  await renderWithStore(<StatusBar />, fakeCore({ current_repo: () => repoInfo("acme-billing") }));
+  expect(screen.getByRole("contentinfo")).not.toHaveTextContent("Refresh by hand");
+  expect(screen.getByRole("contentinfo")).not.toHaveTextContent("every few seconds");
+});

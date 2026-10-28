@@ -12,7 +12,7 @@ import type {
   TableRow,
 } from "mdast";
 import { toHast } from "mdast-util-to-hast";
-import { type Block, plain } from "./blocks";
+import { type Block, plain, withoutPositions } from "./blocks";
 import type { Row } from "./match";
 
 export type Marked = {
@@ -315,10 +315,15 @@ function cells(a: TableRow, b: TableRow): { left: TableRow; right: TableRow; mer
   return { left, right, merged };
 }
 
-function tableDiff(a: Table, b: Table, left: Block, right: Block): Marked {
-  const key = (node: TableRow) => node.children.map(plain).join("\u0000");
-  const changes = diffArrays(a.children.map(key), b.children.map(key));
-  const out = { left: [] as TableRow[], right: [] as TableRow[], merged: [] as TableRow[] };
+type Visit<T> = {
+  same: (before: T, after: T) => void;
+  changed: (before: T, after: T) => void;
+  removed: (node: T) => void;
+  added: (node: T) => void;
+};
+
+function walk<T>(from: T[], to: T[], key: (node: T) => string, visit: Visit<T>): void {
+  const changes = diffArrays(from.map(key), to.map(key));
   let l = 0;
   let r = 0;
   for (let index = 0; index < changes.length; index += 1) {
@@ -326,41 +331,57 @@ function tableDiff(a: Table, b: Table, left: Block, right: Block): Marked {
     if (!change) continue;
     const count = change.count ?? change.value.length;
     if (!change.added && !change.removed) {
-      out.left.push(...a.children.slice(l, l + count));
-      out.right.push(...b.children.slice(r, r + count));
-      out.merged.push(...b.children.slice(r, r + count));
+      for (let i = 0; i < count; i += 1) {
+        const before = from[l + i];
+        const after = to[r + i];
+        if (before && after) visit.same(before, after);
+      }
       l += count;
       r += count;
       continue;
     }
     const next = changes[index + 1];
-    const removed = change.removed ? a.children.slice(l, l + count) : [];
+    const removed = change.removed ? from.slice(l, l + count) : [];
     const nextCount = change.removed && next?.added ? (next.count ?? next.value.length) : 0;
-    const added = change.added
-      ? b.children.slice(r, r + count)
-      : b.children.slice(r, r + nextCount);
+    const added = change.added ? to.slice(r, r + count) : to.slice(r, r + nextCount);
     const paired = Math.min(removed.length, added.length);
     for (let i = 0; i < paired; i += 1) {
       const before = removed[i];
       const after = added[i];
-      if (!before || !after) continue;
-      const marked = cells(before, after);
-      out.left.push(marked.left);
-      out.right.push(marked.right);
-      out.merged.push(marked.merged);
+      if (before && after) visit.changed(before, after);
     }
-    for (const gone of removed.slice(paired)) {
-      out.left.push(row(gone, "dl-md-row-del"));
-      out.merged.push(row(gone, "dl-md-row-del"));
-    }
-    for (const fresh of added.slice(paired)) {
-      out.right.push(row(fresh, "dl-md-row-ins"));
-      out.merged.push(row(fresh, "dl-md-row-ins"));
-    }
+    for (const gone of removed.slice(paired)) visit.removed(gone);
+    for (const fresh of added.slice(paired)) visit.added(fresh);
     l += removed.length;
     r += added.length;
     if (change.removed && next?.added) index += 1;
   }
+}
+
+function tableDiff(a: Table, b: Table, left: Block, right: Block): Marked {
+  const key = (node: TableRow) => node.children.map(plain).join("\u0000");
+  const out = { left: [] as TableRow[], right: [] as TableRow[], merged: [] as TableRow[] };
+  walk(a.children, b.children, key, {
+    same: (before, after) => {
+      out.left.push(before);
+      out.right.push(after);
+      out.merged.push(after);
+    },
+    changed: (before, after) => {
+      const marked = cells(before, after);
+      out.left.push(marked.left);
+      out.right.push(marked.right);
+      out.merged.push(marked.merged);
+    },
+    removed: (gone) => {
+      out.left.push(row(gone, "dl-md-row-del"));
+      out.merged.push(row(gone, "dl-md-row-del"));
+    },
+    added: (fresh) => {
+      out.right.push(row(fresh, "dl-md-row-ins"));
+      out.merged.push(row(fresh, "dl-md-row-ins"));
+    },
+  });
   return {
     left: hast({ ...a, children: out.left }, left),
     right: hast({ ...b, children: out.right }, right),
@@ -373,6 +394,75 @@ function tableDiff(a: Table, b: Table, left: Block, right: Block): Marked {
       right,
     ),
     whole: false,
+  };
+}
+
+type Sides = { left: RootContent; right: RootContent; merged: RootContent };
+
+function tagged<T extends RootContent>(node: T, className: string): T {
+  return { ...node, data: { ...node.data, hProperties: { className: [className] } } } as T;
+}
+
+function contentKey(node: RootContent): string {
+  return JSON.stringify(withoutPositions(node));
+}
+
+function nested(a: RootContent, b: RootContent): Sides | null {
+  if (a.type !== b.type) return null;
+  const before = phrasing(a);
+  const after = phrasing(b);
+  if (before && after) {
+    const marks = inline(before, after);
+    return {
+      left: withInline(a, marks.left),
+      right: withInline(b, marks.right),
+      merged: withInline(b, marks.merged),
+    };
+  }
+  const containers = ["list", "listItem", "blockquote"];
+  if (!containers.includes(a.type) || !containers.includes(b.type)) return null;
+  if (a.type === "list" && b.type === "list" && a.ordered !== b.ordered) return null;
+  const out = {
+    left: [] as RootContent[],
+    right: [] as RootContent[],
+    merged: [] as RootContent[],
+  };
+  walk(
+    (a as Parents).children as RootContent[],
+    (b as Parents).children as RootContent[],
+    contentKey,
+    {
+      same: (before, after) => {
+        out.left.push(before);
+        out.right.push(after);
+        out.merged.push(after);
+      },
+      changed: (before, after) => {
+        const inner = nested(before, after);
+        if (inner) {
+          out.left.push(inner.left);
+          out.right.push(inner.right);
+          out.merged.push(inner.merged);
+        } else {
+          out.left.push(tagged(before, "dl-md-row-del"));
+          out.right.push(tagged(after, "dl-md-row-ins"));
+          out.merged.push(tagged(before, "dl-md-row-del"), tagged(after, "dl-md-row-ins"));
+        }
+      },
+      removed: (gone) => {
+        out.left.push(tagged(gone, "dl-md-row-del"));
+        out.merged.push(tagged(gone, "dl-md-row-del"));
+      },
+      added: (fresh) => {
+        out.right.push(tagged(fresh, "dl-md-row-ins"));
+        out.merged.push(tagged(fresh, "dl-md-row-ins"));
+      },
+    },
+  );
+  return {
+    left: { ...a, children: out.left } as RootContent,
+    right: { ...b, children: out.right } as RootContent,
+    merged: { ...b, children: out.merged } as RootContent,
   };
 }
 
@@ -404,6 +494,15 @@ export function markRow(entry: Row): Marked {
       left: hast(withInline(leftCode, marks.left), left),
       right: hast(withInline(rightCode, marks.right), right),
       merged: hast(withInline(rightCode as ListItem, marks.merged), right),
+      whole: false,
+    };
+  }
+  const inner = nested(leftCode, rightCode);
+  if (inner) {
+    return {
+      left: hast(inner.left, left),
+      right: hast(inner.right, right),
+      merged: hast(inner.merged, right),
       whole: false,
     };
   }
