@@ -23,6 +23,7 @@ A branch log drawn as a commit graph, folded Markdown, and Markdown changes mark
 ### Fixed
 
 - In the rendered Markdown view, a change inside a nested list or a quote marks only the item that changed, not the whole section.
+- In the rendered side-by-side view, each version scrolls in its own pane, so a wide table no longer runs into the other side.
 
 ### Install
 

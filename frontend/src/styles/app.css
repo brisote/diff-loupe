@@ -877,9 +877,20 @@ button {
 }
 
 .app-md-heads,
-.app-md-row {
+.app-md-panes {
   display: grid;
   grid-template-columns: minmax(0, 1fr) var(--space-24) minmax(0, 1fr);
+}
+
+.app-md-panes {
+  flex: 1;
+  min-height: 0;
+}
+
+.app-md-strips {
+  overflow: hidden;
+  border-top: 1px solid var(--border);
+  background: var(--editor-bg);
 }
 
 .app-md-head {
@@ -907,7 +918,8 @@ button {
   background: none;
 }
 
-.app-md-row > .dl-md {
+.app-md-cell {
+  display: flow-root;
   min-width: 0;
   padding: 0 var(--space-24);
 }
