@@ -990,7 +990,7 @@ dependencies = [
 
 [[package]]
 name = "diffloupe"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "diffloupe-core",
  "objc2-app-kit",
@@ -1004,7 +1004,7 @@ dependencies = [
 
 [[package]]
 name = "diffloupe-core"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "diffloupe-core",
  "gix",
@@ -1023,7 +1023,7 @@ dependencies = [
 
 [[package]]
 name = "diffloupe-devbridge"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "clap",
  "diffloupe-core",
