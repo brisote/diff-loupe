@@ -2,6 +2,32 @@
 
 Each release lists what changed for the person who uses Diffloupe, and every change to stored data with its migration.
 
+## 0.2.2
+
+A branch log drawn as a commit graph, folded Markdown, and Markdown changes marked where they happen.
+
+### Review
+
+- The branch log draws the branch's commits as a graph.
+- A target branch that is the same as the current branch is marked as an error.
+- With Collapse Unchanged Fragments on, the rendered Markdown view folds the blocks that did not change.
+
+### Git
+
+- A commit's menu copies its message and its author.
+
+### Look
+
+- Every colour is slightly adjusted.
+
+### Fixed
+
+- In the rendered Markdown view, a change inside a nested list or a quote marks only the item that changed, not the whole section.
+
+### Install
+
+- Nothing in your stored data changes.
+
 ## 0.2.1
 
 A simpler branch log, a working Rollback and an update check on diffloupe.com.
