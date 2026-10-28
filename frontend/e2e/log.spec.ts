@@ -3,7 +3,7 @@ import { expect, git, test } from "./fixtures";
 import { logNow, logRepo } from "./logRepo";
 
 async function openLog(page: Page) {
-  await page.getByRole("tab", { name: "Branch log" }).click();
+  await page.getByRole("tab", { name: "Commit history" }).click();
   await expect(page.getByRole("listbox", { name: "Branch commits" })).toBeVisible();
 }
 

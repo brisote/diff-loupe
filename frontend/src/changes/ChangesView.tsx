@@ -17,7 +17,7 @@ import {
 
 const rowHeight = 24;
 
-export function ChangesView() {
+export function ChangesView({ isReview }: { isReview?: boolean } = {}) {
   const changes = useApp((state) => state.changes);
   const uncommitted = useApp((state) => state.uncommitted);
   const target = useApp((state) => state.repo?.target ?? null);
@@ -40,7 +40,10 @@ export function ChangesView() {
     }
   }, [loaded]);
 
-  const rows = useMemo(() => buildRows(changes ?? [], { collapsed }), [changes, collapsed]);
+  const rows = useMemo(
+    () => buildRows(changes ?? [], { collapsed, isReview }),
+    [changes, collapsed, isReview],
+  );
   const toggle = (id: GroupId) =>
     setCollapsed((current) => {
       const next = new Set(current);
@@ -89,11 +92,24 @@ export function ChangesView() {
         </div>
       ) : changes === null ? null : rows.length === 0 ? (
         <div className="dl-empty app-fill">
-          <span className="dl-empty-title">No changes</span>
-          <span>
-            The working tree matches {target && target !== branch ? target : (branch ?? "HEAD")}.
-            Committed work is in the Branch log.
-          </span>
+          {isReview && !target ? (
+            <>
+              <span className="dl-empty-title">No target branch</span>
+              <span>Pick a target branch above to review changes on this branch.</span>
+            </>
+          ) : isReview ? (
+            <>
+              <span className="dl-empty-title">No changes</span>
+              <span>
+                The branch matches {target && target !== branch ? target : (branch ?? "HEAD")}.
+              </span>
+            </>
+          ) : (
+            <>
+              <span className="dl-empty-title">No changes</span>
+              <span>The working tree is clean. Committed work is in Commit history or Review.</span>
+            </>
+          )}
         </div>
       ) : (
         <ChangesList rows={rows} selection={selection} onSelect={select} onToggle={toggle} />

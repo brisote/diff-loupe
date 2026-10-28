@@ -670,6 +670,7 @@ export function createAppStore(backend: Backend) {
         if (!repo || repo.lastTab === tab) return;
         set({ repo: { ...repo, lastTab: tab } });
         if (tab === "log") void get().loadLog();
+        else void get().loadStatus();
         void backend
           .call("set_repo_view", { path: repo.path, tab, selection: repo.lastSelection })
           .catch(() => undefined);
@@ -700,8 +701,13 @@ export function createAppStore(backend: Backend) {
             readAgain ||= quick;
             quick = false;
             try {
+              const target = get().repo?.lastTab === "review";
               const [listed, merge] = await Promise.all([
-                backend.call("status", { path, untracked: first ? "skip" : "all" }),
+                backend.call("status", {
+                  path,
+                  untracked: first ? "skip" : "all",
+                  ...(target ? {} : { target: false }),
+                }),
                 backend.call("merge_state", { path }).catch(() => null),
               ]);
               if (get().repo?.path === path && !(first && listed.length === 0)) {
@@ -738,11 +744,13 @@ export function createAppStore(backend: Backend) {
         }
         try {
           const area = areaFor(change, get().selectedStaged);
+          const isLocal = repo.lastTab === "changes";
           const diff = await backend.call("diff", {
             path: repo.path,
             file: change.path,
             oldPath: change.oldPath,
             ...(area ? { area } : {}),
+            ...(isLocal ? { local: true } : {}),
           });
           if (request === diffRequest) set({ diff, diffError: null });
         } catch (error) {
@@ -1098,7 +1106,13 @@ export function createAppStore(backend: Backend) {
         if (closedReports.has(keyOf(failure))) return;
         const open = state.errorReport;
         const screen = [
-          state.repo ? (state.repo.lastTab === "log" ? "Branch log" : "Changes") : "Welcome",
+          state.repo
+            ? state.repo.lastTab === "log"
+              ? "Commit history"
+              : state.repo.lastTab === "review"
+                ? "Review"
+                : "Local changes"
+            : "Welcome",
           state.dialog ? `${state.dialog} dialog` : null,
           state.terminalOpen ? "terminal open" : null,
         ]

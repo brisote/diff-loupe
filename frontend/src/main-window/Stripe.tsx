@@ -3,8 +3,9 @@ import { Icon } from "../lib/icon";
 import { useApp } from "../state/context";
 
 const buttons: { tab: ToolTab; label: string; icon: string }[] = [
-  { tab: "changes", label: "Changes", icon: "toolwindows-changes" },
-  { tab: "log", label: "Branch log", icon: "toolwindows-vcs" },
+  { tab: "review", label: "Review", icon: "toolwindows-commit" },
+  { tab: "log", label: "Commit history", icon: "toolwindows-vcs" },
+  { tab: "changes", label: "Local changes", icon: "toolwindows-changes" },
 ];
 
 export function Stripe() {

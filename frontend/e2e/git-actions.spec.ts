@@ -51,7 +51,7 @@ test("the Branch picker lists branches and switching updates Changes and the Bra
   await expect(picker.getByRole("option")).toHaveText(["gs/csv-writer"]);
   await page.keyboard.press("Escape");
 
-  await page.getByRole("tab", { name: "Branch log" }).click();
+  await page.getByRole("tab", { name: "Commit history" }).click();
   await expect(page.getByRole("option", { name: "Add invoices" })).toBeVisible();
   workspace.write(repo, "invoice.txt", "invoice\n");
   await (await openBranches(page)).getByRole("option", { name: "main", exact: true }).click();
@@ -59,7 +59,7 @@ test("the Branch picker lists branches and switching updates Changes and the Bra
   await expect(page.getByRole("button", { name: "Target branch" })).toHaveCount(0);
   await expect(page.getByRole("option", { name: /Initial commit/ })).toBeVisible();
   await expect(page.getByRole("option", { name: /Add invoices/ })).toHaveCount(0);
-  await page.getByRole("tab", { name: "Changes" }).click();
+  await page.getByRole("tab", { name: "Review" }).click();
   await expect(page.getByText("No changes", { exact: true }).first()).toBeVisible();
   expect(git(repo, "branch", "--show-current")).toBe("main");
 
@@ -106,17 +106,17 @@ test("the Target picker leaves the Branch log and the files alone", async ({
   const head = git(repo, "rev-parse", "HEAD");
   await startApp({ open: [repo] });
   const history = [/Feature work/, /Develop work/, /Initial commit/];
-  await page.getByRole("tab", { name: "Branch log" }).click();
+  await page.getByRole("tab", { name: "Commit history" }).click();
   await expect(
     page.getByRole("listbox", { name: "Branch commits" }).getByRole("option"),
   ).toHaveText(history);
-  await page.getByRole("tab", { name: "Changes" }).click();
+  await page.getByRole("tab", { name: "Review" }).click();
   await page.getByRole("button", { name: "Target branch" }).click();
   const picker = page.getByRole("dialog", { name: "Target branch" });
   await expect(picker.getByRole("option")).toHaveText([/main\s*default/, "develop"]);
   await picker.getByRole("option", { name: "develop" }).click();
   await expect(page.getByRole("button", { name: "Target branch" })).toContainText("develop");
-  await page.getByRole("tab", { name: "Branch log" }).click();
+  await page.getByRole("tab", { name: "Commit history" }).click();
   await expect(
     page.getByRole("listbox", { name: "Branch commits" }).getByRole("option"),
   ).toHaveText(history);
@@ -163,10 +163,10 @@ test("the commit dialog commits the ticked files and pushes", async ({
   for (const name of ["a.txt", "b.txt", "notes.md"])
     await expect(changesTree(page).getByRole("treeitem", { name })).toBeVisible();
 
-  await page.getByRole("button", { name: "Show in Branch log" }).click();
+  await page.getByRole("button", { name: "Show in Commit history" }).click();
   await expect(page.getByRole("option", { name: "Change a and add notes" })).toBeVisible();
 
-  await page.getByRole("tab", { name: "Changes" }).click();
+  await page.getByRole("tab", { name: "Review" }).click();
   await page.getByRole("button", { name: "Commit… ⌘K" }).click();
   await dialog.getByRole("button", { name: "Recent messages" }).click();
   await page.getByRole("menuitem", { name: "Change a and add notes" }).click();
@@ -326,11 +326,11 @@ test("on the default branch the target is marked as an error and the picker offe
     "title",
     "The target is the current branch. Pick another target.",
   );
-  await page.getByRole("tab", { name: "Branch log" }).click();
+  await page.getByRole("tab", { name: "Commit history" }).click();
   await expect(
     page.getByRole("listbox", { name: "Branch commits" }).getByRole("option"),
   ).toHaveText([/Add a/, /Initial commit/]);
-  await page.getByRole("tab", { name: "Changes" }).click();
+  await page.getByRole("tab", { name: "Review" }).click();
   await page.getByRole("button", { name: "Target branch" }).click();
   const picker = page.getByRole("dialog", { name: "Target branch" });
   await expect(picker.getByRole("option")).toHaveText(["develop"]);

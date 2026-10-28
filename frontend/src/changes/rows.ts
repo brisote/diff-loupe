@@ -9,7 +9,7 @@ export type ListRow =
   | { type: "group"; id: GroupId; label: string; count: number; expanded: boolean }
   | { type: "file"; id: string; group: GroupId; change: FileChange; name: string; folder: string };
 
-export type RowOptions = { collapsed: ReadonlySet<GroupId> };
+export type RowOptions = { collapsed: ReadonlySet<GroupId>; isReview?: boolean };
 
 const groupLabels: Record<GroupId, string> = {
   conflicts: "Merge Conflicts",
@@ -93,7 +93,8 @@ export function buildRows(changes: FileChange[], options: RowOptions): ListRow[]
   for (const [id, files] of groups) {
     if (files.length === 0) continue;
     const expanded = !options.collapsed.has(id);
-    rows.push({ type: "group", id, label: groupLabels[id], count: files.length, expanded });
+    const label = id === "changes" && options.isReview ? "Branch changes" : groupLabels[id];
+    rows.push({ type: "group", id, label, count: files.length, expanded });
     if (!expanded) continue;
     for (const change of files)
       rows.push({
