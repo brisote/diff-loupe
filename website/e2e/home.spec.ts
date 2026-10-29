@@ -5,7 +5,7 @@ test("every Download link on the home page leads to the Download page", async ({
   await page.goto("/");
   const links = {
     header: page.locator("header.header").getByRole("link", { name: "Download" }),
-    hero: page.locator(".hero").getByRole("link", { name: "Download for Mac" }),
+    hero: page.locator(".hero").getByRole("link", { name: "Download" }),
     pricing: page.locator(".plan").getByRole("link", { name: "Download free" }),
     closing: page.locator(".closing").getByRole("link", { name: "Download" }),
     footer: page.locator("footer.footer").getByRole("link", { name: "Download" }),
@@ -92,5 +92,5 @@ test("the GitHub button and the Open source chip lead to the repository", async 
     repository,
   );
   await expect(page.locator(".hero .chip-link")).toHaveAttribute("href", repository);
-  await expect(page.locator(".hero-actions").getByRole("link")).toHaveText(["Download for Mac"]);
+  await expect(page.locator(".hero-actions").getByRole("link")).toHaveText(["Download"]);
 });

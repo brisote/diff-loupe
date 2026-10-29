@@ -1,5 +1,7 @@
 """Captures the app screenshots that the site and its design use, from the real UI through the dev bridge."""
 
+from __future__ import annotations
+
 import json
 import os
 import shutil

@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-install_diffloupe() {
+install_macos() {
   version="@VERSION@"
   url="@URL@"
   checksum="@SHA256@"
@@ -33,7 +33,6 @@ install_diffloupe() {
   running() { pgrep -f "$target/$app/Contents/MacOS/" >/dev/null 2>&1; }
   trap cleanup EXIT
 
-  [ "$(uname -s)" = "Darwin" ] || fail "Diffloupe runs only on macOS."
   [ "$(sysctl -n hw.optional.arm64 2>/dev/null || true)" = "1" ] || fail "Diffloupe needs a Mac with Apple silicon."
   macos="$(sw_vers -productVersion)"
   [ "${macos%%.*}" -ge 13 ] || fail "Diffloupe needs macOS 13 or later, and this Mac has macOS ${macos}."
@@ -97,6 +96,74 @@ install_diffloupe() {
   done
 
   say "Diffloupe ${version} is installed. Open it with: open \"$target/$app\""
+}
+
+install_linux() {
+  version="@LINUX_VERSION@"
+  deb_url="@DEB_URL@"
+  deb_checksum="@DEB_SHA256@"
+  rpm_url="@RPM_URL@"
+  rpm_checksum="@RPM_SHA256@"
+  work=""
+
+  say() { printf '%s\n' "$*"; }
+  fail() {
+    printf 'Diffloupe was not installed: %s\n' "$*" >&2
+    exit 1
+  }
+  cleanup() {
+    local status=$?
+    set +e
+    if [ -n "$work" ]; then rm -rf "$work"; fi
+    return "$status"
+  }
+  trap cleanup EXIT
+
+  [ -n "$version" ] || fail "no Linux release is available yet."
+  arch="$(uname -m)"
+  [ "$arch" = "x86_64" ] || fail "Diffloupe for Linux needs a 64-bit x86_64 machine, and this machine is ${arch}."
+
+  if command -v apt-get >/dev/null 2>&1; then
+    manager="apt-get"
+    url="$deb_url"
+    checksum="$deb_checksum"
+    package="Diffloupe-${version}-linux-amd64.deb"
+  elif command -v dnf >/dev/null 2>&1; then
+    manager="dnf"
+    url="$rpm_url"
+    checksum="$rpm_checksum"
+    package="Diffloupe-${version}-linux-x86_64.rpm"
+  else
+    fail "Diffloupe needs apt-get (Ubuntu or Debian) or dnf (Fedora) to install."
+  fi
+
+  work="$(mktemp -d "${TMPDIR:-/tmp}/diffloupe.XXXXXX")"
+  chmod 755 "$work"
+  say "Downloading Diffloupe ${version}…"
+  curl -fsSL --retry 2 -o "$work/$package" "$url" || fail "the download stopped. Check the connection and run the command again."
+  chmod 644 "$work/$package"
+  actual="$(sha256sum "$work/$package" | cut -d ' ' -f 1)"
+  [ "$actual" = "$checksum" ] || fail "the download does not match its SHA-256 checksum. Nothing was changed. Try again later."
+
+  say "Installing ${package}…"
+  if [ "$(id -u)" -eq 0 ] && ! command -v sudo >/dev/null 2>&1; then
+    "$manager" install -y "$work/$package" || fail "the package could not be installed."
+  else
+    sudo "$manager" install -y "$work/$package" || fail "the package could not be installed."
+  fi
+
+  say "Diffloupe ${version} is installed. Open it with: diffloupe"
+}
+
+install_diffloupe() {
+  case "$(uname -s)" in
+    Darwin) install_macos ;;
+    Linux) install_linux ;;
+    *)
+      printf 'Diffloupe was not installed: %s\n' "Diffloupe runs only on macOS and Linux." >&2
+      exit 1
+      ;;
+  esac
 }
 
 install_diffloupe

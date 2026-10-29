@@ -2,6 +2,9 @@ import fixture from "../data/release.fixture.json" with { type: "json" };
 
 export const repository = "brisote/diff-loupe";
 
+export const platforms = ["macos", "windows", "linux"] as const;
+export type Platform = (typeof platforms)[number];
+
 export interface Asset {
   name: string;
   size: number;
@@ -14,11 +17,39 @@ export interface PublishedRelease {
   assets: Asset[];
 }
 
-export interface Release {
+export interface PackageFile {
+  name: string;
+  url: string;
+  size: number;
+  sha256: string;
+}
+
+export interface MacosRelease {
   version: string;
   date: string;
-  dmg: { name: string; url: string; size: number; sha256: string };
+  dmg: PackageFile;
 }
+
+export interface LinuxRelease {
+  version: string;
+  date: string;
+  deb: PackageFile;
+  rpm: PackageFile;
+}
+
+export interface WindowsRelease {
+  version: string;
+  date: string;
+  setup: PackageFile;
+}
+
+export interface PlatformReleaseMap {
+  macos: MacosRelease;
+  linux: LinuxRelease;
+  windows: WindowsRelease;
+}
+
+export type Release = MacosRelease;
 
 interface GitHubRelease {
   tag_name?: string;
@@ -44,6 +75,38 @@ export function compareVersions(a: string, b: string): number {
 
 export function dmgName(version: string): string {
   return `Diffloupe-${version}.dmg`;
+}
+
+export function debName(version: string): string {
+  return `Diffloupe-${version}-linux-amd64.deb`;
+}
+
+export function rpmName(version: string): string {
+  return `Diffloupe-${version}-linux-x86_64.rpm`;
+}
+
+export function setupName(version: string): string {
+  return `Diffloupe-${version}-windows-x64-setup.exe`;
+}
+
+export function platformFiles(platform: Platform, version: string): string[] {
+  if (platform === "macos") return [dmgName(version)];
+  if (platform === "linux") return [debName(version), rpmName(version)];
+  return [setupName(version)];
+}
+
+export function hasPlatform(release: PublishedRelease, platform: Platform): boolean {
+  const names = new Set(release.assets.map((asset) => asset.name));
+  return platformFiles(platform, release.version).every(
+    (file) => names.has(file) && names.has(`${file}.sha256`),
+  );
+}
+
+export function newestFor(
+  list: PublishedRelease[],
+  platform: Platform,
+): PublishedRelease | undefined {
+  return list.find((release) => hasPlatform(release, platform));
 }
 
 export function releaseAsset(release: PublishedRelease, name: string): Asset {
@@ -73,18 +136,46 @@ export function newestRelease(list: PublishedRelease[]): PublishedRelease {
   return newest;
 }
 
-export function parseRelease(release: PublishedRelease, checksum: string): Release {
-  const dmg = releaseAsset(release, dmgName(release.version));
-  if (!(dmg.size > 0)) throw new Error(`The ${dmg.name} of the latest release has no size.`);
+export function parsePackage(
+  release: PublishedRelease,
+  name: string,
+  checksum: string,
+): PackageFile {
+  const asset = releaseAsset(release, name);
+  if (!(asset.size > 0)) throw new Error(`The ${asset.name} of the latest release has no size.`);
   const [sha256 = "", file] = checksum.trim().split(/\s+/);
-  if (!/^[0-9a-f]{64}$/.test(sha256) || file !== dmg.name)
+  if (!/^[0-9a-f]{64}$/.test(sha256) || file !== asset.name)
     throw new Error(
-      `The .sha256 file of the latest release holds no SHA-256 checksum of ${dmg.name}.`,
+      `The .sha256 file of the latest release holds no SHA-256 checksum of ${asset.name}.`,
     );
+  return { name: asset.name, url: asset.browser_download_url, size: asset.size, sha256 };
+}
+
+export function parseRelease(release: PublishedRelease, checksum: string): Release {
   return {
     version: release.version,
     date: release.date,
-    dmg: { name: dmg.name, url: dmg.browser_download_url, size: dmg.size, sha256 },
+    dmg: parsePackage(release, dmgName(release.version), checksum),
+  };
+}
+
+export function parseLinuxRelease(
+  release: PublishedRelease,
+  checksums: { deb: string; rpm: string },
+): LinuxRelease {
+  return {
+    version: release.version,
+    date: release.date,
+    deb: parsePackage(release, debName(release.version), checksums.deb),
+    rpm: parsePackage(release, rpmName(release.version), checksums.rpm),
+  };
+}
+
+export function parseWindowsRelease(release: PublishedRelease, checksum: string): WindowsRelease {
+  return {
+    version: release.version,
+    date: release.date,
+    setup: parsePackage(release, setupName(release.version), checksum),
   };
 }
 
@@ -124,37 +215,96 @@ export async function fetchReleaseList(): Promise<unknown[]> {
   return list;
 }
 
-interface Releases {
+export interface Releases {
   list: PublishedRelease[];
   latest: Release;
+  platforms: {
+    macos: MacosRelease;
+    linux?: LinuxRelease;
+    windows?: WindowsRelease;
+  };
+}
+
+async function fetchChecksum(release: PublishedRelease, file: string): Promise<string> {
+  const asset = releaseAsset(release, `${file}.sha256`);
+  return (await fetchFrom(asset.browser_download_url)).text();
 }
 
 export async function fetchReleases(): Promise<Releases> {
   const list = parseReleaseList(await fetchReleaseList());
-  const newest = newestRelease(list);
-  const checksum = releaseAsset(newest, `${dmgName(newest.version)}.sha256`);
-  const text = await (await fetchFrom(checksum.browser_download_url)).text();
-  return { list, latest: parseRelease(newest, text) };
+  const macosRelease = newestFor(list, "macos") ?? newestRelease(list);
+  const macos = parseRelease(
+    macosRelease,
+    await fetchChecksum(macosRelease, dmgName(macosRelease.version)),
+  );
+  const linuxRelease = newestFor(list, "linux");
+  const linux = linuxRelease
+    ? parseLinuxRelease(linuxRelease, {
+        deb: await fetchChecksum(linuxRelease, debName(linuxRelease.version)),
+        rpm: await fetchChecksum(linuxRelease, rpmName(linuxRelease.version)),
+      })
+    : undefined;
+  const windowsRelease = newestFor(list, "windows");
+  const windows = windowsRelease
+    ? parseWindowsRelease(
+        windowsRelease,
+        await fetchChecksum(windowsRelease, setupName(windowsRelease.version)),
+      )
+    : undefined;
+  return { list, latest: macos, platforms: { macos, linux, windows } };
 }
 
 export function live(): boolean {
   return process.env.DIFFLOUPE_RELEASE === "live";
 }
 
-function fixtureReleases(): Releases {
-  const list = parseReleaseList(fixture.releases);
-  return { list, latest: parseRelease(newestRelease(list), fixture.checksum) };
+function fixtureChecksum(file: string): string {
+  const sums = (fixture as { checksums?: Record<string, string> }).checksums ?? {};
+  const found = sums[file] ?? (file === "Diffloupe-0.2.0.dmg" ? fixture.checksum : undefined);
+  if (!found) throw new Error(`The fixture has no checksum for ${file}.`);
+  return found;
+}
+
+export function resolveFixtureReleases(raw: unknown = fixture.releases): Releases {
+  const list = parseReleaseList(raw);
+  const macosRelease = newestFor(list, "macos") ?? newestRelease(list);
+  const macos = parseRelease(macosRelease, fixtureChecksum(dmgName(macosRelease.version)));
+  const linuxRelease = newestFor(list, "linux");
+  const linux = linuxRelease
+    ? parseLinuxRelease(linuxRelease, {
+        deb: fixtureChecksum(debName(linuxRelease.version)),
+        rpm: fixtureChecksum(rpmName(linuxRelease.version)),
+      })
+    : undefined;
+  const windowsRelease = newestFor(list, "windows");
+  const windows = windowsRelease
+    ? parseWindowsRelease(windowsRelease, fixtureChecksum(setupName(windowsRelease.version)))
+    : undefined;
+  return { list, latest: macos, platforms: { macos, linux, windows } };
 }
 
 let loaded: Promise<Releases> | undefined;
 
 function load(): Promise<Releases> {
-  loaded ??= live() ? fetchReleases() : Promise.resolve(fixtureReleases());
+  loaded ??= live() ? fetchReleases() : Promise.resolve(resolveFixtureReleases());
   return loaded;
 }
 
 export async function latestRelease(): Promise<Release> {
   return (await load()).latest;
+}
+
+export async function latestFor<P extends Platform>(
+  platform: P,
+  source?: Releases,
+): Promise<PlatformReleaseMap[P] | undefined> {
+  const resolved = source ?? (await load());
+  return resolved.platforms[platform] as PlatformReleaseMap[P] | undefined;
+}
+
+export async function releasedPlatforms(source?: Releases): Promise<Platform[]> {
+  const resolved = source ?? (await load());
+  return platforms.filter((platform) => Boolean(resolved.platforms[platform]));
 }
 
 export async function releases(): Promise<PublishedRelease[]> {

@@ -49,7 +49,7 @@ test("an unknown address shows the 404 page with a way back", async ({ page }) =
   const response = await page.goto(missing.path);
   expect(response?.status()).toBe(404);
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("This page is not here.");
-  await expect(page.getByRole("link", { name: "Download for Mac" })).toHaveAttribute(
+  await expect(page.locator("main").getByRole("link", { name: "Download" })).toHaveAttribute(
     "href",
     "/download/",
   );

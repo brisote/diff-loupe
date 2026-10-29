@@ -2,20 +2,39 @@
 import Icon from "../components/Icon.astro";
 import StarPanel from "../components/StarPanel.astro";
 import Base from "../layouts/Base.astro";
-import { formatDate, formatSize, latestRelease } from "../lib/release";
+import { formatDate, formatSize, latestFor, latestRelease, type Platform } from "../lib/release";
 import "../styles/download.css";
 
-const release = await latestRelease();
-const size = formatSize(release.dmg.size);
+const macos = await latestRelease();
+const linux = await latestFor("linux");
+
+const macosSize = formatSize(macos.dmg.size);
+const debSize = linux ? formatSize(linux.deb.size) : "";
+const rpmSize = linux ? formatSize(linux.rpm.size) : "";
+
 const curl = "curl -fsSL ";
 const pipe = "https://diffloupe.com/install.sh | bash";
 const command = curl + pipe;
 const xattr = "xattr -dr com.apple.quarantine /Applications/Diffloupe.app";
+const aptCmd = linux ? `sudo apt install ./${linux.deb.name}` : "";
+const dnfCmd = linux ? `sudo dnf install ./${linux.rpm.name}` : "";
+
+const allChoices: {
+  id: Platform;
+  label: string;
+  icon: "laptop" | "linux";
+  active: boolean;
+}[] = [
+  { id: "macos", label: "macOS", icon: "laptop", active: true },
+  { id: "linux", label: "Linux", icon: "linux", active: Boolean(linux) },
+];
+const choices = allChoices.filter((choice) => choice.active);
+
 const benefits = [
   {
     icon: "shield-outline",
-    title: "Stays on your Mac",
-    text: "No account and no trackers. The code is open source, and everything stays on your Mac.",
+    title: "Stays on your computer",
+    text: "No account and no trackers. The code is open source, and everything stays on your computer.",
   },
   {
     icon: "check",
@@ -29,13 +48,27 @@ const benefits = [
   },
 ] as const;
 ---
-<Base title="Download · Diffloupe" description="Install Diffloupe with one Terminal command, or download the disk image. For Macs with Apple silicon and macOS 13 or later." current="download">
+<Base title="Download · Diffloupe" description="Install Diffloupe with one command, or download the package for your system. Free and open source." current="download">
   <div class="wrap">
-    <section class="dl-hero" aria-labelledby="download-title">
+    <section class="dl-hero" id="macos" data-platform-section="macos" aria-labelledby="download-title-macos">
       <span class="dl-glow" aria-hidden="true"></span>
       <div>
-        <p class="eyebrow">Get Diffloupe for Mac</p>
-        <h1 class="h1-page" id="download-title">One command.<br />Every change.</h1>
+        <div class="platform">
+          <span class="eyebrow">Get Diffloupe for</span>
+          <details class="platform-menu">
+            <summary class="btn btn-outline platform-btn"><Icon name="laptop" />macOS<Icon name="chevron-down" size="sm" /></summary>
+            <ul class="platform-list">
+              {choices.map((choice) => (
+                <li>
+                  <a href={`#${choice.id}`} aria-current={choice.id === "macos" ? "true" : undefined}>
+                    <Icon name={choice.icon} />{choice.label}
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </details>
+        </div>
+        <h1 class="h1-page" id="download-title-macos">One command.<br />Every change.</h1>
         <p class="sub">Paste the command into Terminal. It downloads the latest release, checks it, and puts Diffloupe in your Applications folder.</p>
         <ul class="chips" aria-label="Requirements">
           <li class="chip"><Icon name="laptop" />macOS 13 or later</li>
@@ -45,11 +78,11 @@ const benefits = [
         <dl class="stats">
           <div class="stat">
             <dt class="eyebrow-mono">Version</dt>
-            <dd><p class="stat-value">{release.version}</p><p class="stat-sub">{formatDate(release.date)}</p></dd>
+            <dd><p class="stat-value">{macos.version}</p><p class="stat-sub">{formatDate(macos.date)}</p></dd>
           </div>
           <div class="stat">
             <dt class="eyebrow-mono">Download</dt>
-            <dd><p class="stat-value">{size}</p><p class="stat-sub">Disk image, checked by SHA-256</p></dd>
+            <dd><p class="stat-value">{macosSize}</p><p class="stat-sub">Disk image, checked by SHA-256</p></dd>
           </div>
         </dl>
       </div>
@@ -77,20 +110,83 @@ const benefits = [
         <StarPanel />
       </div>
     </section>
+
+    {linux && (
+      <section class="dl-hero" id="linux" data-platform-section="linux" aria-labelledby="download-title-linux">
+        <span class="dl-glow" aria-hidden="true"></span>
+        <div>
+          <div class="platform">
+            <span class="eyebrow">Get Diffloupe for</span>
+            <details class="platform-menu">
+              <summary class="btn btn-outline platform-btn"><Icon name="linux" />Linux<Icon name="chevron-down" size="sm" /></summary>
+              <ul class="platform-list">
+                {choices.map((choice) => (
+                  <li>
+                    <a href={`#${choice.id}`} aria-current={choice.id === "linux" ? "true" : undefined}>
+                      <Icon name={choice.icon} />{choice.label}
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            </details>
+          </div>
+          <h1 class="h1-page" id="download-title-linux">One command.<br />Every change.</h1>
+          <p class="sub">Paste the command into a terminal. It downloads the latest release, checks it, and installs it with your package manager.</p>
+          <ul class="chips" aria-label="Requirements">
+            <li class="chip"><Icon name="linux" />Ubuntu, Debian, Fedora</li>
+            <li class="chip"><Icon name="chip" />64-bit</li>
+            <li class="chip"><Icon name="no-account" />No account</li>
+          </ul>
+          <dl class="stats">
+            <div class="stat">
+              <dt class="eyebrow-mono">Version</dt>
+              <dd><p class="stat-value">{linux.version}</p><p class="stat-sub">{formatDate(linux.date)}</p></dd>
+            </div>
+            <div class="stat">
+              <dt class="eyebrow-mono">Download</dt>
+              <dd><p class="stat-value">{debSize}</p><p class="stat-sub">Package, checked by SHA-256</p></dd>
+            </div>
+          </dl>
+        </div>
+        <div class="install">
+          <div class="install-card">
+            <div class="install-in">
+              <div class="install-top">
+                <div>
+                  <p class="eyebrow-mono">One-line install</p>
+                  <h2 class="install-title">Paste this in a terminal.</h2>
+                </div>
+                <span class="install-icon" aria-hidden="true"><Icon name="terminal" /></span>
+              </div>
+              <div class="cmd cmd-dark">
+                <code><span class="prompt">$ </span>{curl}<span class="cmd-url">{pipe}</span></code>
+                <button class="icon-btn" type="button" aria-label="Copy the install command" data-copy={command}><Icon name="copy" size="sm" /></button>
+              </div>
+              <p class="install-note">The script checks the download's SHA-256 checksum, installs the .deb or .rpm with sudo and keeps your settings. Read it first at <a href="/install.sh">diffloupe.com/install.sh</a>.</p>
+              <button class="btn btn-light" type="button" data-copy={command}><Icon name="copy" size="sm" /><span data-label aria-live="polite">Copy command</span></button>
+              <p class="or">OR</p>
+              <a class="install-alt" href="#manual-linux">Download the package instead</a>
+            </div>
+          </div>
+          <p class="install-caption">For 64-bit Ubuntu 22.04, Debian 12 and Fedora 40 or later.</p>
+          <StarPanel />
+        </div>
+      </section>
+    )}
   </div>
 
-  <section class="manual" id="manual" aria-labelledby="manual-title">
-    <div class="wrap wrap-rows manual-in">
+  <section class="manual" id="manual" aria-label="Manual install">
+    <div class="wrap wrap-rows manual-in" data-platform-section="macos">
       <div>
         <p class="eyebrow">Manual install</p>
         <h2 class="h2-steps" id="manual-title">Prefer the disk image?</h2>
         <p class="small">Download the .dmg and install it by hand. Diffloupe is free, and Apple's developer account costs about €100 a year, so the app is not notarised yet. macOS asks you once before the first start.</p>
-        <a class="btn btn-outline btn-lg" href={release.dmg.url} data-download><Icon name="download" size="sm" />Download {release.dmg.name}</a>
-        <p class="manual-meta">{size} · Apple silicon · macOS 13 or later</p>
+        <a class="btn btn-outline btn-lg" href={macos.dmg.url} data-download><Icon name="download" size="sm" />Download {macos.dmg.name}</a>
+        <p class="manual-meta">{macosSize} · Apple silicon · macOS 13 or later</p>
         <StarPanel />
       </div>
       <ol class="dl-steps">
-        <li class="dl-step"><span class="dl-step-num">01</span><div><h3>Open the disk image</h3><p>Double-click {release.dmg.name} in your Downloads folder.</p></div></li>
+        <li class="dl-step"><span class="dl-step-num">01</span><div><h3>Open the disk image</h3><p>Double-click {macos.dmg.name} in your Downloads folder.</p></div></li>
         <li class="dl-step"><span class="dl-step-num">02</span><div><h3>Drag Diffloupe to Applications</h3><p>Move the icon into Applications, then eject the disk image.</p></div></li>
         <li class="dl-step"><span class="dl-step-num">03</span><div><h3>Allow the first start</h3><p>macOS says it cannot check the app. Allow it in one of two ways:</p>
           <div class="cmd cmd-light"><code>System Settings → Privacy &amp; Security → Open Anyway</code><span class="icon-btn" aria-hidden="true"><Icon name="settings" size="sm" /></span></div>
@@ -99,6 +195,29 @@ const benefits = [
         </div></li>
       </ol>
     </div>
+
+    {linux && (
+      <div class="wrap wrap-rows manual-in" id="manual-linux" data-platform-section="linux">
+        <div>
+          <p class="eyebrow">Manual install</p>
+          <h2 class="h2-steps" id="manual-title-linux">Prefer the package?</h2>
+          <p class="small">Download the .deb or the .rpm and install it with your package manager. Diffloupe is free and open source, so it is not in an app store.</p>
+          <a class="btn btn-outline btn-lg" href={linux.deb.url} data-download><Icon name="download" size="sm" />Download {linux.deb.name}</a>
+          <p class="manual-meta">{debSize} · 64-bit · Ubuntu 22.04, Debian 12 or later</p>
+          <p class="manual-meta">On Fedora or Red Hat? <a class="text-link" href={linux.rpm.url} data-download>Download the .rpm</a> instead ({rpmSize}).</p>
+          <StarPanel />
+        </div>
+        <ol class="dl-steps">
+          <li class="dl-step"><span class="dl-step-num">01</span><div><h3>Download the package</h3><p>Get the .deb for Ubuntu and Debian, or the .rpm for Fedora.</p></div></li>
+          <li class="dl-step"><span class="dl-step-num">02</span><div><h3>Install it</h3><p>Run one of these in the folder you downloaded it to:</p>
+            <div class="cmd cmd-light"><code>{aptCmd}</code><button class="icon-btn" type="button" aria-label="Copy the apt command" data-copy={aptCmd}><Icon name="copy" size="sm" /></button></div>
+            <p class="or or-light">OR</p>
+            <div class="cmd cmd-light"><code>{dnfCmd}</code><button class="icon-btn" type="button" aria-label="Copy the dnf command" data-copy={dnfCmd}><Icon name="copy" size="sm" /></button></div>
+          </div></li>
+          <li class="dl-step"><span class="dl-step-num">03</span><div><h3>Start Diffloupe</h3><p>Open it from your application menu, or run diffloupe in a terminal.</p></div></li>
+        </ol>
+      </div>
+    )}
   </section>
 
   <div class="wrap">
@@ -108,7 +227,9 @@ const benefits = [
   </div>
   <script>
     import { copyButtons } from "../scripts/copy";
+    import { choosePlatform } from "../scripts/platform";
     import { starPanels } from "../scripts/star";
+    choosePlatform();
     copyButtons();
     starPanels();
   </script>

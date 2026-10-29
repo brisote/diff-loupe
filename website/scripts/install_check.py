@@ -46,6 +46,11 @@ def script(dmg: Path, folder: Path) -> Path:
         "@VERSION@": version,
         "@URL@": dmg.as_uri(),
         "@SHA256@": hashlib.sha256(dmg.read_bytes()).hexdigest(),
+        "@LINUX_VERSION@": "",
+        "@DEB_URL@": "",
+        "@DEB_SHA256@": "",
+        "@RPM_URL@": "",
+        "@RPM_SHA256@": "",
     }.items():
         text = text.replace(placeholder, value)
     path = folder / "install.sh"

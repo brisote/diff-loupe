@@ -7,6 +7,24 @@
 .or-light + .cmd {
   margin-top: 0;
 }
+[data-platform-section]:not([data-platform-section="macos"]) {
+  display: none;
+}
+main[data-platform] [data-platform-section] {
+  display: none;
+}
+main[data-platform="macos"] [data-platform-section="macos"],
+main[data-platform="linux"] [data-platform-section="linux"] {
+  display: grid;
+}
+main:not([data-platform]):has([id="linux"]:target, [id="manual-linux"]:target)
+  [data-platform-section="macos"] {
+  display: none;
+}
+main:not([data-platform]):has([id="linux"]:target, [id="manual-linux"]:target)
+  [data-platform-section="linux"] {
+  display: grid;
+}
 @media (prefers-color-scheme: dark) {
   .site .install-in > .or {
     color: oklch(1 0 0 / 0.6);

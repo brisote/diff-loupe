@@ -33,7 +33,7 @@ test("the privacy page says there are no trackers and that the code is open sour
   await page.goto("/privacy/");
   const main = page.locator("main");
   await expect(page.getByRole("heading", { level: 1 })).toHaveText(
-    "No trackers. Your code stays on your Mac.",
+    "No trackers. Your code stays on your computer.",
   );
   await expect(main).toContainText(
     "Diffloupe is open source, so you can read every line of what it does.",

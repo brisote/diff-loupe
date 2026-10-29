@@ -10,21 +10,35 @@ from pathlib import Path
 
 TEMPLATE = Path(__file__).resolve().parents[2] / "src/install/install.sh"
 PAYLOAD = b"Diffloupe 0.2.0 disk image\n"
+DEB_PAYLOAD = b"Diffloupe 0.2.0 deb package\n"
+RPM_PAYLOAD = b"Diffloupe 0.2.0 rpm package\n"
 
 STUBS = {
-    "uname": 'echo "${FAKE_KERNEL:-Darwin}"',
+    "uname": """
+if [ "${1:-}" = "-m" ]; then
+  echo "${FAKE_ARCH:-x86_64}"
+else
+  echo "${FAKE_KERNEL:-Darwin}"
+fi
+""",
     "sysctl": 'echo "${FAKE_ARM64:-1}"',
     "sw_vers": 'echo "${FAKE_MACOS:-14.5}"',
     "curl": """
 log curl "$@"
+url=""
 while [ $# -gt 0 ]; do
-  if [ "$1" = "-o" ]; then out="$2"; shift; fi
+  if [ "$1" = "-o" ]; then out="$2"; shift; else url="$1"; fi
   shift
 done
 if [ -n "${FAKE_CURL_FAIL:-}" ]; then printf 'partial' > "$out"; exit 18; fi
-cp "$FAKE_DMG" "$out"
+case "$url" in
+  *.deb) cp "$FAKE_DEB" "$out" ;;
+  *.rpm) cp "$FAKE_RPM" "$out" ;;
+  *) cp "$FAKE_DMG" "$out" ;;
+esac
 """,
     "shasum": """python3 -c 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1], "rb").read()).hexdigest() + "  " + sys.argv[1])' "$3\"""",
+    "sha256sum": """python3 -c 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1], "rb").read()).hexdigest() + "  " + sys.argv[1])' "$1\"""",
     "hdiutil": """
 log hdiutil "$@"
 if [ "$1" = "attach" ]; then
@@ -49,7 +63,27 @@ exec /bin/mv "$@"
 """,
     "xattr": 'log xattr "$@"',
     "mdimport": 'log mdimport "$@"; [ -z "${FAKE_MDIMPORT_HANG:-}" ] || sleep 8; [ -d "$1" ] && [ -z "${FAKE_MDIMPORT_FAIL:-}" ]',
+    "sudo": 'log sudo "$@"; "$@"',
 }
+
+SYSTEM_TOOLS = [
+    "bash",
+    "sh",
+    "python3",
+    "mktemp",
+    "cut",
+    "id",
+    "rm",
+    "cp",
+    "mv",
+    "mkdir",
+    "rmdir",
+    "grep",
+    "sleep",
+    "dirname",
+    "cat",
+    "chmod",
+]
 
 
 class InstallTest(unittest.TestCase):
@@ -58,23 +92,53 @@ class InstallTest(unittest.TestCase):
         self.addCleanup(self.cleanup)
         self.bin = self.tmp / "bin"
         self.bin.mkdir()
+        self.sysbin = self.tmp / "sysbin"
+        self.sysbin.mkdir()
+        for tool in SYSTEM_TOOLS:
+            found = shutil.which(tool)
+            if found:
+                (self.sysbin / tool).symlink_to(found)
         self.log = self.tmp / "calls.log"
         for name, body in STUBS.items():
-            stub = self.bin / name
-            stub.write_text(f'#!/bin/bash\nlog() {{ echo "$*" >> "{self.log}"; }}\n{body}\n')
-            stub.chmod(0o755)
+            self.write_stub(name, body)
         self.dmg = self.tmp / "release.dmg"
         self.dmg.write_bytes(PAYLOAD)
+        self.deb = self.tmp / "release.deb"
+        self.deb.write_bytes(DEB_PAYLOAD)
+        self.rpm = self.tmp / "release.rpm"
+        self.rpm.write_bytes(RPM_PAYLOAD)
         self.running = self.tmp / "running"
         self.running.write_text("false\n")
         self.apps = self.tmp / "Applications"
         self.apps.mkdir()
+        self.linux_root = self.tmp / "linux-root"
+        self.linux_root.mkdir()
         self.temp = self.tmp / "temp"
         self.temp.mkdir()
         self.home = self.tmp / "home"
         self.data = self.home / "Library/Application Support/com.diffloupe.app"
         self.data.mkdir(parents=True)
         (self.data / "settings.json").write_text('{"version": 1}\n')
+        self.linux_data = self.home / ".local/share/com.diffloupe.app"
+        self.linux_data.mkdir(parents=True)
+        (self.linux_data / "settings.json").write_text('{"version": 1}\n')
+
+    def write_stub(self, name: str, body: str) -> None:
+        stub = self.bin / name
+        stub.write_text(f'#!/bin/bash\nlog() {{ echo "$*" >> "{self.log}"; }}\n{body}\n')
+        stub.chmod(0o755)
+
+    def add_package_manager(self, name: str) -> None:
+        self.write_stub(
+            name,
+            f"""
+log {name} "$@"
+pkg="${{@: -1}}"
+[ -f "$pkg" ] || exit 1
+cp "$pkg" "{self.linux_root}/installed-package"
+echo 0.2.0 > "{self.linux_root}/version"
+""",
+        )
 
     def cleanup(self):
         for path in [self.tmp, *self.tmp.rglob("*")]:
@@ -82,12 +146,17 @@ class InstallTest(unittest.TestCase):
                 path.chmod(stat.S_IRWXU)
         shutil.rmtree(self.tmp)
 
-    def script(self, checksum=None):
+    def script(self, checksum=None, deb_checksum=None, rpm_checksum=None):
         text = TEMPLATE.read_text()
         values = {
             "@VERSION@": "0.2.0",
             "@URL@": "https://github.com/brisote/diff-loupe/releases/download/v0.2.0/Diffloupe-0.2.0.dmg",
             "@SHA256@": checksum or hashlib.sha256(PAYLOAD).hexdigest(),
+            "@LINUX_VERSION@": "0.2.0",
+            "@DEB_URL@": "https://github.com/brisote/diff-loupe/releases/download/v0.2.0/Diffloupe-0.2.0-linux-amd64.deb",
+            "@DEB_SHA256@": deb_checksum or hashlib.sha256(DEB_PAYLOAD).hexdigest(),
+            "@RPM_URL@": "https://github.com/brisote/diff-loupe/releases/download/v0.2.0/Diffloupe-0.2.0-linux-x86_64.rpm",
+            "@RPM_SHA256@": rpm_checksum or hashlib.sha256(RPM_PAYLOAD).hexdigest(),
         }
         for placeholder, value in values.items():
             text = text.replace(placeholder, value)
@@ -99,11 +168,13 @@ class InstallTest(unittest.TestCase):
         return subprocess.run(
             ["bash", str(script or self.script())],
             env={
-                "PATH": f"{self.bin}:{os.environ['PATH']}",
+                "PATH": f"{self.bin}:{self.sysbin}",
                 "HOME": str(self.home),
                 "TMPDIR": str(self.temp),
                 "DIFFLOUPE_APP_DIR": str(self.apps),
                 "FAKE_DMG": str(self.dmg),
+                "FAKE_DEB": str(self.deb),
+                "FAKE_RPM": str(self.rpm),
                 "FAKE_RUNNING": str(self.running),
                 **env,
             },
@@ -123,10 +194,10 @@ class InstallTest(unittest.TestCase):
         contents.mkdir(parents=True)
         (contents / "version").write_text("0.1.0\n")
 
-    def assert_unchanged(self, result, before, message):
+    def assert_unchanged(self, result, before, message, root=None):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn(message, result.stderr)
-        self.assertEqual(self.tree(self.apps), before)
+        self.assertEqual(self.tree(root or self.apps), before)
         self.assertEqual(list(self.temp.iterdir()), [])
 
     def test_a_fresh_install_puts_the_app_in_the_target_folder(self):
@@ -265,6 +336,54 @@ class InstallTest(unittest.TestCase):
         self.apps.chmod(0o555)
         result = self.run_script()
         self.assert_unchanged(result, before, "not writable")
+        self.assertNotIn("curl", self.calls())
+
+    def test_linux_fresh_install_uses_apt_get_with_deb(self):
+        self.add_package_manager("apt-get")
+        result = self.run_script(FAKE_KERNEL="Linux")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("sudo apt-get install -y", self.calls())
+        self.assertIn("Diffloupe-0.2.0-linux-amd64.deb", self.calls())
+        self.assertEqual((self.linux_root / "installed-package").read_bytes(), DEB_PAYLOAD)
+        self.assertEqual((self.linux_root / "version").read_text(), "0.2.0\n")
+        self.assertEqual(list(self.temp.iterdir()), [])
+        self.assertIn("Diffloupe 0.2.0 is installed", result.stdout)
+
+    def test_linux_fresh_install_uses_dnf_with_rpm(self):
+        self.add_package_manager("dnf")
+        result = self.run_script(FAKE_KERNEL="Linux")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("sudo dnf install -y", self.calls())
+        self.assertIn("Diffloupe-0.2.0-linux-x86_64.rpm", self.calls())
+        self.assertEqual((self.linux_root / "installed-package").read_bytes(), RPM_PAYLOAD)
+        self.assertEqual(list(self.temp.iterdir()), [])
+
+    def test_linux_upgrade_replaces_package_and_keeps_user_data(self):
+        self.add_package_manager("apt-get")
+        (self.linux_root / "version").write_text("0.1.0\n")
+        result = self.run_script(FAKE_KERNEL="Linux")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual((self.linux_root / "version").read_text(), "0.2.0\n")
+        self.assertEqual((self.linux_data / "settings.json").read_text(), '{"version": 1}\n')
+        self.assertEqual(list(self.temp.iterdir()), [])
+
+    def test_linux_wrong_checksum_changes_nothing(self):
+        self.add_package_manager("apt-get")
+        (self.linux_root / "version").write_text("0.1.0\n")
+        before = self.tree(self.linux_root)
+        result = self.run_script(self.script(deb_checksum="0" * 64), FAKE_KERNEL="Linux")
+        self.assert_unchanged(result, before, "SHA-256 checksum", root=self.linux_root)
+        self.assertNotIn("apt-get", self.calls())
+
+    def test_linux_arm64_is_refused_before_any_download(self):
+        self.add_package_manager("apt-get")
+        result = self.run_script(FAKE_KERNEL="Linux", FAKE_ARCH="aarch64")
+        self.assert_unchanged(result, {}, "x86_64", root=self.linux_root)
+        self.assertNotIn("curl", self.calls())
+
+    def test_linux_without_apt_get_or_dnf_is_refused_before_any_download(self):
+        result = self.run_script(FAKE_KERNEL="Linux")
+        self.assert_unchanged(result, {}, "apt-get", root=self.linux_root)
         self.assertNotIn("curl", self.calls())
 
     def test_a_cut_off_script_runs_nothing(self):

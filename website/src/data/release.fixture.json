@@ -15,6 +15,26 @@
           "name": "Diffloupe-0.2.0.dmg.sha256",
           "size": 86,
           "browser_download_url": "https://github.com/brisote/diff-loupe/releases/download/v0.2.0/Diffloupe-0.2.0.dmg.sha256"
+        },
+        {
+          "name": "Diffloupe-0.2.0-linux-amd64.deb",
+          "size": 10200000,
+          "browser_download_url": "https://github.com/brisote/diff-loupe/releases/download/v0.2.0/Diffloupe-0.2.0-linux-amd64.deb"
+        },
+        {
+          "name": "Diffloupe-0.2.0-linux-amd64.deb.sha256",
+          "size": 98,
+          "browser_download_url": "https://github.com/brisote/diff-loupe/releases/download/v0.2.0/Diffloupe-0.2.0-linux-amd64.deb.sha256"
+        },
+        {
+          "name": "Diffloupe-0.2.0-linux-x86_64.rpm",
+          "size": 10400000,
+          "browser_download_url": "https://github.com/brisote/diff-loupe/releases/download/v0.2.0/Diffloupe-0.2.0-linux-x86_64.rpm"
+        },
+        {
+          "name": "Diffloupe-0.2.0-linux-x86_64.rpm.sha256",
+          "size": 99,
+          "browser_download_url": "https://github.com/brisote/diff-loupe/releases/download/v0.2.0/Diffloupe-0.2.0-linux-x86_64.rpm.sha256"
         }
       ]
     },
@@ -25,12 +45,23 @@
       "prerelease": false,
       "assets": [
         {
-          "name": "Diffloupe_0.1.0_aarch64.dmg",
+          "name": "Diffloupe-0.1.0.dmg",
           "size": 11523456,
-          "browser_download_url": "https://github.com/brisote/diff-loupe/releases/download/v0.1.0/Diffloupe_0.1.0_aarch64.dmg"
+          "browser_download_url": "https://github.com/brisote/diff-loupe/releases/download/v0.1.0/Diffloupe-0.1.0.dmg"
+        },
+        {
+          "name": "Diffloupe-0.1.0.dmg.sha256",
+          "size": 86,
+          "browser_download_url": "https://github.com/brisote/diff-loupe/releases/download/v0.1.0/Diffloupe-0.1.0.dmg.sha256"
         }
       ]
     }
   ],
-  "checksum": "3f1c9a7e5b2d4f6081a9c3e5d7f9b1a3c5e7092b4d6f8a1c3e5b7d9f0a2c4e6b  Diffloupe-0.2.0.dmg\n"
+  "checksum": "3f1c9a7e5b2d4f6081a9c3e5d7f9b1a3c5e7092b4d6f8a1c3e5b7d9f0a2c4e6b  Diffloupe-0.2.0.dmg\n",
+  "checksums": {
+    "Diffloupe-0.2.0.dmg": "3f1c9a7e5b2d4f6081a9c3e5d7f9b1a3c5e7092b4d6f8a1c3e5b7d9f0a2c4e6b  Diffloupe-0.2.0.dmg\n",
+    "Diffloupe-0.2.0-linux-amd64.deb": "7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b  Diffloupe-0.2.0-linux-amd64.deb\n",
+    "Diffloupe-0.2.0-linux-x86_64.rpm": "8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c  Diffloupe-0.2.0-linux-x86_64.rpm\n",
+    "Diffloupe-0.1.0.dmg": "1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b  Diffloupe-0.1.0.dmg\n"
+  }
 }
