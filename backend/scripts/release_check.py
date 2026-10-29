@@ -4,18 +4,20 @@ Run it before tagging, on the commit of main you will tag. With --tag it also ch
 the tag names the app version and that the commit is on main. With --notes it writes the
 version's CHANGELOG.md section, which becomes the release notes. The Release workflow runs
 the checks on Linux (--only checks) and the build on each system (--only build): the .dmg on
-macOS, and the .deb and .rpm on Linux, because macOS minutes cost ten times as much.
+macOS, the .deb and .rpm on Linux, and the setup program on Windows.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import os
 import platform
 import plistlib
 import shutil
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -79,11 +81,58 @@ def linux_packages(version: str, machine: str) -> tuple[str, str]:
     return f"deb/Diffloupe_{version}_{deb}.deb", f"rpm/Diffloupe-{version}-1.{rpm}.rpm"
 
 
+def windows_package(version: str) -> str:
+    return f"nsis/Diffloupe_{version}_x64-setup.exe"
+
+
 def build(version: str) -> None:
     if sys.platform.startswith("linux"):
         build_linux(version, platform.machine())
+    elif sys.platform.startswith("win"):
+        build_windows(version)
     else:
         build_macos(version)
+
+
+def build_windows(version: str) -> None:
+    if subprocess.run(["pnpm", "tauri", "build"], cwd=ROOT, shell=True).returncode != 0:
+        fail("pnpm tauri build")
+    bundle = BACKEND / "target/release/bundle"
+    setup = bundle / windows_package(version)
+    if not setup.exists():
+        fail(f"{setup.name} is missing")
+    setup_path = str(setup).replace("'", "''")
+    info = run("powershell", "-NoProfile", "-Command", f"(Get-Item '{setup_path}').VersionInfo.ProductVersion").stdout.strip()
+    if version not in info:
+        fail(f"{setup.name} does not report version {version}: {info}")
+    print(f"ok    {setup.relative_to(ROOT)} is Diffloupe {version} setup for x64")
+    install = run("powershell", "-NoProfile", "-Command", f"$p = Start-Process -FilePath '{setup_path}' -ArgumentList '/S' -Wait -PassThru; exit $p.ExitCode")
+    if install.returncode != 0:
+        fail(f"silent install of {setup.name} failed: {install.stderr}")
+    local = os.environ.get("LOCALAPPDATA") or str(Path.home() / "AppData/Local")
+    installed_dir = Path(local) / "Programs/Diffloupe"
+    installed_exe = installed_dir / "diffloupe.exe"
+    uninstaller = installed_dir / "uninstall.exe"
+    if not installed_exe.exists():
+        fail(f"installed executable not found at {installed_exe}")
+    if not uninstaller.exists():
+        fail(f"uninstaller not found at {uninstaller}")
+    print(f"ok    installed {setup.name} silently")
+    smoke = run(sys.executable, "backend/scripts/app_smoke.py", "--platform", "windows")
+    sys.stdout.write(smoke.stdout)
+    if smoke.returncode != 0:
+        fail(f"the Windows smoke check failed: {smoke.stderr[-400:]}")
+    print("ok    the smoke check passes")
+    uninstaller_path = str(uninstaller).replace("'", "''")
+    uninst = run("powershell", "-NoProfile", "-Command", f"$p = Start-Process -FilePath '{uninstaller_path}' -ArgumentList '/S' -Wait -PassThru; exit $p.ExitCode")
+    if uninst.returncode != 0:
+        fail(f"silent uninstall failed: {uninst.stderr}")
+    deadline = time.time() + 30
+    while installed_exe.exists() and time.time() < deadline:
+        time.sleep(0.5)
+    if installed_exe.exists():
+        fail(f"uninstall did not remove {installed_exe}")
+    print("ok    uninstalled cleanly")
 
 
 def build_linux(version: str, machine: str) -> None:

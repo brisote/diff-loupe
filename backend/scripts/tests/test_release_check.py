@@ -65,5 +65,13 @@ class LinuxPackagesTest(unittest.TestCase):
             release_check.linux_packages("0.3.0", "riscv64")
 
 
+class WindowsPackageTest(unittest.TestCase):
+    def test_the_package_name_is_the_nsis_setup_exe(self):
+        self.assertEqual(
+            release_check.windows_package("0.3.0"),
+            "nsis/Diffloupe_0.3.0_x64-setup.exe",
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

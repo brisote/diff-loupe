@@ -107,10 +107,41 @@ jobs:
             backend/target/release/bundle/rpm/*.rpm
           retention-days: 7
 
+  windows:
+    name: Build the Windows setup program
+    needs: checks
+    runs-on: windows-2025
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Rust toolchain
+        run: rustup show active-toolchain || rustup toolchain install
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install packages
+        run: pnpm install --frozen-lockfile
+
+      - name: Build, check and smoke-test the setup program
+        run: python3 backend/scripts/release_check.py --only build
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: diffloupe-windows
+          path: backend/target/release/bundle/nsis/*.exe
+          retention-days: 7
+
   publish:
     name: Publish the release
     if: github.ref_type == 'tag'
-    needs: [dmg, linux]
+    needs: [dmg, linux, windows]
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
@@ -128,14 +159,16 @@ jobs:
           dmg="Diffloupe-${version}.dmg"
           deb="Diffloupe-${version}-linux-amd64.deb"
           rpm="Diffloupe-${version}-linux-x86_64.rpm"
+          setup="Diffloupe-${version}-windows-x64-setup.exe"
           mv "$(find . -name 'Diffloupe_*.dmg' | head -n 1)" "$dmg"
           mv "$(find . -name 'Diffloupe_*_amd64.deb' | head -n 1)" "$deb"
           mv "$(find . -name 'Diffloupe-*-1.x86_64.rpm' | head -n 1)" "$rpm"
-          for file in "$dmg" "$deb" "$rpm"; do
+          mv "$(find . -name 'Diffloupe_*_x64-setup.exe' | head -n 1)" "$setup"
+          for file in "$dmg" "$deb" "$rpm" "$setup"; do
             sha256sum "$file" > "$file.sha256"
             cat "$file.sha256"
           done
-          echo "FILES=$dmg $deb $rpm" >> "$GITHUB_ENV"
+          echo "FILES=$dmg $deb $rpm $setup" >> "$GITHUB_ENV"
 
       - name: Create or update the release
         env:
