@@ -1,5 +1,6 @@
 use crate::error::{Error, Result};
 use crate::events::{CoreEvent, EventSink};
+use crate::platform::Platform;
 use crate::shellenv::ShellEnv;
 use portable_pty::{CommandBuilder, MasterPty, PtySize, native_pty_system};
 #[cfg(unix)]
@@ -95,8 +96,9 @@ impl Terminals {
             .openpty(size(cols, rows))
             .map_err(terminal_error)?;
         let mut command = CommandBuilder::new(env.shell());
-        #[cfg(unix)]
-        command.arg("-l");
+        for arg in shell_args(Platform::CURRENT, env.shell()) {
+            command.arg(arg);
+        }
         command.cwd(root);
         command.env("PATH", env.path());
         command.env("TERM", "xterm-256color");
@@ -326,10 +328,34 @@ fn stream(
 }
 
 pub fn default_locale(get: impl Fn(&str) -> Option<String>) -> Option<&'static str> {
+    default_locale_on(Platform::CURRENT, get)
+}
+
+pub fn default_locale_on(
+    platform: Platform,
+    get: impl Fn(&str) -> Option<String>,
+) -> Option<&'static str> {
+    if platform == Platform::Windows {
+        return None;
+    }
     let set = ["LC_ALL", "LC_CTYPE", "LANG"]
         .iter()
         .any(|name| get(name).is_some_and(|value| !value.is_empty()));
     (!set).then_some("en_US.UTF-8")
+}
+
+pub fn shell_args(platform: Platform, shell: &str) -> Vec<&'static str> {
+    match platform {
+        Platform::Macos | Platform::Linux => vec!["-l"],
+        Platform::Windows => {
+            let lower = shell.to_ascii_lowercase();
+            if lower.ends_with("cmd.exe") || lower == "cmd" {
+                vec!["/d"]
+            } else {
+                vec!["-NoLogo"]
+            }
+        }
+    }
 }
 
 fn take_text(pending: &mut Vec<u8>) -> String {
@@ -377,22 +403,56 @@ fn terminal_error(error: impl std::fmt::Display) -> Error {
 
 #[cfg(test)]
 mod tests {
-    use super::{default_locale, take_text};
+    use super::*;
 
     #[test]
     fn a_missing_locale_falls_back_to_utf8() {
-        assert_eq!(default_locale(|_| None), Some("en_US.UTF-8"));
         assert_eq!(
-            default_locale(|name| (name == "LANG").then(|| "".into())),
+            default_locale_on(Platform::Macos, |_| None),
             Some("en_US.UTF-8")
         );
         assert_eq!(
-            default_locale(|name| (name == "LC_CTYPE").then(|| "UTF-8".into())),
+            default_locale_on(Platform::Linux, |_| None),
+            Some("en_US.UTF-8")
+        );
+        assert_eq!(default_locale_on(Platform::Windows, |_| None), None);
+        assert_eq!(
+            default_locale_on(Platform::Macos, |name| (name == "LANG").then(|| "".into())),
+            Some("en_US.UTF-8")
+        );
+        assert_eq!(
+            default_locale_on(Platform::Macos, |name| (name == "LC_CTYPE")
+                .then(|| "UTF-8".into())),
             None
         );
         assert_eq!(
-            default_locale(|name| (name == "LANG").then(|| "de_DE.UTF-8".into())),
+            default_locale_on(Platform::Macos, |name| (name == "LANG")
+                .then(|| "de_DE.UTF-8".into())),
             None
+        );
+    }
+
+    #[test]
+    fn shell_arguments_match_platform_and_program() {
+        assert_eq!(shell_args(Platform::Macos, "/bin/zsh"), vec!["-l"]);
+        assert_eq!(shell_args(Platform::Linux, "/bin/sh"), vec!["-l"]);
+        assert_eq!(shell_args(Platform::Windows, "pwsh.exe"), vec!["-NoLogo"]);
+        assert_eq!(
+            shell_args(Platform::Windows, "powershell.exe"),
+            vec!["-NoLogo"]
+        );
+        assert_eq!(
+            shell_args(
+                Platform::Windows,
+                "C:\\Program Files\\PowerShell\\7\\pwsh.exe"
+            ),
+            vec!["-NoLogo"]
+        );
+        assert_eq!(shell_args(Platform::Windows, "cmd.exe"), vec!["/d"]);
+        assert_eq!(shell_args(Platform::Windows, "cmd"), vec!["/d"]);
+        assert_eq!(
+            shell_args(Platform::Windows, "C:\\Windows\\System32\\cmd.exe"),
+            vec!["/d"]
         );
     }
 

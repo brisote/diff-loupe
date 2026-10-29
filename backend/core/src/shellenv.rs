@@ -13,16 +13,35 @@ pub struct ShellEnv {
 
 impl ShellEnv {
     pub fn detect() -> ShellEnv {
-        let path = Arc::new(OnceLock::new());
-        let cell = path.clone();
-        std::thread::spawn(move || {
-            let found =
-                login_shell_path().unwrap_or_else(|| std::env::var("PATH").unwrap_or_default());
-            let _ = cell.set(found);
-        });
-        ShellEnv {
-            path,
-            shell: login_shell(),
+        #[cfg(unix)]
+        {
+            let path = Arc::new(OnceLock::new());
+            let cell = path.clone();
+            std::thread::spawn(move || {
+                let found =
+                    login_shell_path().unwrap_or_else(|| std::env::var("PATH").unwrap_or_default());
+                let _ = cell.set(found);
+            });
+            ShellEnv {
+                path,
+                shell: login_shell(),
+            }
+        }
+        #[cfg(windows)]
+        {
+            let path_val = windows_path();
+            let shell = windows_shell(&path_val, |name| std::env::var(name).ok(), |p| p.is_file());
+            ShellEnv {
+                path: Arc::new(OnceLock::from(path_val)),
+                shell,
+            }
+        }
+        #[cfg(not(any(unix, windows)))]
+        {
+            ShellEnv {
+                path: Arc::new(OnceLock::from(std::env::var("PATH").unwrap_or_default())),
+                shell: "powershell.exe".to_string(),
+            }
         }
     }
 
@@ -31,6 +50,11 @@ impl ShellEnv {
             path: Arc::new(OnceLock::from(path.to_string())),
             shell: "/bin/sh".to_string(),
         }
+    }
+
+    pub fn with_shell(mut self, shell: &str) -> ShellEnv {
+        self.shell = shell.to_string();
+        self
     }
 
     pub fn path(&self) -> &str {
@@ -83,20 +107,113 @@ pub fn login_shell_from(platform: Platform, get: impl Fn(&str) -> Option<String>
         .unwrap_or_else(|| {
             match platform {
                 Platform::Macos => "/bin/zsh",
-                _ => "/bin/sh",
+                Platform::Linux => "/bin/sh",
+                Platform::Windows => "powershell.exe",
             }
             .to_string()
         })
 }
 
-#[cfg(not(unix))]
-fn login_shell() -> String {
+pub fn expand_vars(raw: &str, get: impl Fn(&str) -> Option<String>) -> String {
+    let mut result = String::with_capacity(raw.len());
+    let mut remaining = raw;
+    while let Some(start) = remaining.find('%') {
+        result.push_str(&remaining[..start]);
+        let after = &remaining[start + 1..];
+        if let Some(end) = after.find('%') {
+            let name = &after[..end];
+            if !name.is_empty()
+                && !name.contains('\\')
+                && !name.contains('/')
+                && !name.contains(';')
+                && let Some(val) = get(name)
+            {
+                result.push_str(&val);
+                remaining = &after[end + 1..];
+                continue;
+            }
+            result.push('%');
+            remaining = after;
+        } else {
+            result.push_str(&remaining[start..]);
+            remaining = "";
+            break;
+        }
+    }
+    result.push_str(remaining);
+    result
+}
+
+pub fn join_windows_paths(system: Option<&str>, user: Option<&str>) -> Option<String> {
+    let sys = clean_path(system);
+    let usr = clean_path(user);
+    match (sys, usr) {
+        (Some(sys), Some(usr)) => Some(format!("{sys};{usr}")),
+        (Some(sys), None) => Some(sys.to_string()),
+        (None, Some(usr)) => Some(usr.to_string()),
+        (None, None) => None,
+    }
+}
+
+fn clean_path(s: Option<&str>) -> Option<&str> {
+    s.map(|v| v.trim().trim_matches(';').trim())
+        .filter(|v| !v.is_empty())
+}
+
+pub fn choose_windows_shell(path: &str, exists: impl Fn(&Path) -> bool) -> String {
+    for dir in path.split(';') {
+        let dir = dir.trim().trim_matches('"').trim();
+        if dir.is_empty() {
+            continue;
+        }
+        let candidate = Path::new(dir).join("pwsh.exe");
+        if exists(&candidate) {
+            return "pwsh.exe".to_string();
+        }
+    }
     "powershell.exe".to_string()
 }
 
-#[cfg(not(unix))]
-fn login_shell_path() -> Option<String> {
-    None
+pub fn windows_shell(
+    path: &str,
+    get: impl Fn(&str) -> Option<String>,
+    exists: impl Fn(&Path) -> bool,
+) -> String {
+    if let Some(shell) = get("SHELL").filter(|s| !s.is_empty()) {
+        return shell;
+    }
+    choose_windows_shell(path, exists)
+}
+
+#[cfg(windows)]
+fn read_reg_string(key: &winreg::RegKey, name: &str) -> Option<String> {
+    key.get_value::<String, _>(name)
+        .or_else(|_| key.get_value::<String, _>(&name.to_uppercase()))
+        .ok()
+}
+
+#[cfg(windows)]
+fn read_registry_path() -> Option<String> {
+    use winreg::RegKey;
+    use winreg::enums::{HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE};
+
+    let system = RegKey::predef(HKEY_LOCAL_MACHINE)
+        .open_subkey("SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment")
+        .ok()
+        .and_then(|key| read_reg_string(&key, "Path"));
+
+    let user = RegKey::predef(HKEY_CURRENT_USER)
+        .open_subkey("Environment")
+        .ok()
+        .and_then(|key| read_reg_string(&key, "Path"));
+
+    let joined = join_windows_paths(system.as_deref(), user.as_deref())?;
+    Some(expand_vars(&joined, |name| std::env::var(name).ok()))
+}
+
+#[cfg(windows)]
+fn windows_path() -> String {
+    read_registry_path().unwrap_or_else(|| std::env::var("PATH").unwrap_or_default())
 }
 
 #[cfg(unix)]
@@ -156,6 +273,79 @@ mod tests {
         assert_eq!(login_shell_from(Platform::Macos, none), "/bin/zsh");
         assert_eq!(login_shell_from(Platform::Linux, none), "/bin/sh");
         assert_eq!(login_shell_from(Platform::Linux, empty), "/bin/sh");
+        assert_eq!(login_shell_from(Platform::Windows, none), "powershell.exe");
+        assert_eq!(login_shell_from(Platform::Windows, set), "/usr/bin/fish");
+    }
+
+    #[test]
+    fn expanding_variables_resolves_known_and_leaves_unknown() {
+        let get = |name: &str| match name {
+            "SystemRoot" => Some("C:\\Windows".to_string()),
+            "USERPROFILE" => Some("C:\\Users\\User".to_string()),
+            _ => None,
+        };
+        assert_eq!(
+            expand_vars("%SystemRoot%\\System32;%USERPROFILE%\\bin", get),
+            "C:\\Windows\\System32;C:\\Users\\User\\bin"
+        );
+        assert_eq!(
+            expand_vars("C:\\tools;%UNKNOWN%\\bin;%SystemRoot%", get),
+            "C:\\tools;%UNKNOWN%\\bin;C:\\Windows"
+        );
+        assert_eq!(
+            expand_vars("C:\\tools%unmatched", get),
+            "C:\\tools%unmatched"
+        );
+        assert_eq!(expand_vars("C:\\a%b\\c%d", get), "C:\\a%b\\c%d");
+        assert_eq!(expand_vars("", get), "");
+    }
+
+    #[test]
+    fn joining_windows_paths_combines_system_before_user() {
+        assert_eq!(
+            join_windows_paths(Some("C:\\sys;"), Some(";C:\\usr;")),
+            Some("C:\\sys;C:\\usr".to_string())
+        );
+        assert_eq!(
+            join_windows_paths(Some("C:\\sys"), None),
+            Some("C:\\sys".to_string())
+        );
+        assert_eq!(
+            join_windows_paths(None, Some("C:\\usr")),
+            Some("C:\\usr".to_string())
+        );
+        assert_eq!(join_windows_paths(None, None), None);
+        assert_eq!(join_windows_paths(Some("  "), Some("")), None);
+        assert_eq!(join_windows_paths(Some(";;"), Some(" ; ")), None);
+    }
+
+    #[test]
+    fn choosing_windows_shell_prefers_pwsh_when_present() {
+        let has_pwsh =
+            |p: &Path| p.to_string_lossy().contains("PowerShell") && p.ends_with("pwsh.exe");
+        let path = "C:\\Windows\\System32;C:\\Program Files\\PowerShell\\7;C:\\bin";
+        assert_eq!(choose_windows_shell(path, has_pwsh), "pwsh.exe");
+        let quoted = "C:\\Windows\\System32;\"C:\\Program Files\\PowerShell\\7\";C:\\bin";
+        assert_eq!(choose_windows_shell(quoted, has_pwsh), "pwsh.exe");
+        assert_eq!(
+            choose_windows_shell("C:\\Windows;C:\\bin", has_pwsh),
+            "powershell.exe"
+        );
+        assert_eq!(choose_windows_shell("", has_pwsh), "powershell.exe");
+    }
+
+    #[test]
+    fn windows_shell_respects_shell_env_override() {
+        let none = |_: &str| None;
+        let set = |_: &str| Some("cmd.exe".to_string());
+        assert_eq!(windows_shell("C:\\bin", set, |_| false), "cmd.exe");
+        assert_eq!(windows_shell("C:\\bin", none, |_| false), "powershell.exe");
+    }
+
+    #[test]
+    fn a_shell_override_can_be_applied() {
+        let env = ShellEnv::from_path("/bin").with_shell("/bin/bash");
+        assert_eq!(env.shell(), "/bin/bash");
     }
 
     #[test]

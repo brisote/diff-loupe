@@ -20,6 +20,8 @@ struct Args {
     pick: Option<PathBuf>,
     #[arg(long, value_parser = platform_name, default_value = Platform::CURRENT.name())]
     platform: Platform,
+    #[arg(long)]
+    shell: Option<String>,
 }
 
 fn platform_name(name: &str) -> Result<Platform, String> {
@@ -40,8 +42,12 @@ async fn main() -> ExitCode {
 async fn run(args: Args) -> Result<(), String> {
     std::fs::create_dir_all(&args.data_dir).map_err(|e| e.to_string())?;
     let pick = args.pick.map(|p| p.display().to_string());
-    let bridge = Bridge::start(&args.data_dir, ShellEnv::detect(), pick, args.platform)
-        .map_err(|e| e.to_string())?;
+    let mut env = ShellEnv::detect();
+    if let Some(shell) = &args.shell {
+        env = env.with_shell(shell);
+    }
+    let bridge =
+        Bridge::start(&args.data_dir, env, pick, args.platform).map_err(|e| e.to_string())?;
     for path in &args.open {
         bridge
             .core()
