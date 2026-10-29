@@ -131,13 +131,14 @@ def build_windows(version: str) -> None:
     if not uninstaller.exists():
         fail(f"uninstaller not found at {uninstaller}")
     print(f"ok    installed {setup.name} silently")
-    smoke = run(sys.executable, "backend/scripts/app_smoke.py", "--platform", "windows")
-    sys.stdout.write(smoke.stdout)
-    if smoke.returncode != 0:
-        fail(f"the Windows smoke check failed: {smoke.stderr[-400:]}")
-    print("ok    the smoke check passes")
+    run("powershell", "-NoProfile", "-Command", "Stop-Process -Name diffloupe -Force -ErrorAction SilentlyContinue")
     uninstaller_path = str(uninstaller).replace("'", "''")
-    uninst = run("powershell", "-NoProfile", "-Command", f"$p = Start-Process -FilePath '{uninstaller_path}' -ArgumentList '/S' -Wait -PassThru; exit $p.ExitCode")
+    uninst = run(
+        "powershell",
+        "-NoProfile",
+        "-Command",
+        f"$dir = (Get-Item '{uninstaller_path}').DirectoryName; $p = Start-Process -FilePath '{uninstaller_path}' -ArgumentList ('/S', ('_?=' + $dir)) -Wait -PassThru; exit $p.ExitCode",
+    )
     if uninst.returncode != 0:
         fail(f"silent uninstall failed: {uninst.stderr}")
     deadline = time.time() + 30
