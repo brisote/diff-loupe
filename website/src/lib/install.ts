@@ -1,4 +1,4 @@
-import type { LinuxRelease, MacosRelease } from "./release";
+import type { LinuxRelease, MacosRelease, WindowsRelease } from "./release";
 
 export function installScript(template: string, macos: MacosRelease, linux?: LinuxRelease): string {
   const required: Record<string, string> = {
@@ -22,6 +22,23 @@ export function installScript(template: string, macos: MacosRelease, linux?: Lin
     const value = values[name];
     if (value === undefined)
       throw new Error(`install.sh has an unknown placeholder ${placeholder}.`);
+    return value;
+  });
+}
+
+export function installPs1Script(template: string, windows?: WindowsRelease): string {
+  const values: Record<string, string> = {
+    WINDOWS_VERSION: windows?.version ?? "",
+    SETUP_URL: windows?.setup.url ?? "",
+    SETUP_SHA256: windows?.setup.sha256 ?? "",
+  };
+  for (const value of Object.values(values))
+    if (value && !/^[\w.:/-]+$/.test(value))
+      throw new Error(`${value} cannot go into install.ps1.`);
+  return template.replace(/@([A-Z0-9_]+)@/g, (placeholder, name: string) => {
+    const value = values[name];
+    if (value === undefined)
+      throw new Error(`install.ps1 has an unknown placeholder ${placeholder}.`);
     return value;
   });
 }
