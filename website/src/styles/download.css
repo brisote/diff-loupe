@@ -13,16 +13,36 @@
 main[data-platform] [data-platform-section] {
   display: none;
 }
-main[data-platform="macos"] [data-platform-section="macos"],
-main[data-platform="linux"] [data-platform-section="linux"] {
+main[data-platform="macos"] section.dl-hero[data-platform-section="macos"],
+main[data-platform="windows"] section.dl-hero[data-platform-section="windows"],
+main[data-platform="linux"] section.dl-hero[data-platform-section="linux"] {
+  display: flex;
+}
+main[data-platform="macos"] div.manual-in[data-platform-section="macos"],
+main[data-platform="windows"] div.manual-in[data-platform-section="windows"],
+main[data-platform="linux"] div.manual-in[data-platform-section="linux"] {
   display: grid;
 }
+main:not([data-platform]):has([id="windows"]:target, [id="manual-windows"]:target)
+  [data-platform-section="macos"],
 main:not([data-platform]):has([id="linux"]:target, [id="manual-linux"]:target)
   [data-platform-section="macos"] {
   display: none;
 }
+main:not([data-platform]):has([id="windows"]:target, [id="manual-windows"]:target)
+  section.dl-hero[data-platform-section="windows"] {
+  display: flex;
+}
+main:not([data-platform]):has([id="windows"]:target, [id="manual-windows"]:target)
+  div.manual-in[data-platform-section="windows"] {
+  display: grid;
+}
 main:not([data-platform]):has([id="linux"]:target, [id="manual-linux"]:target)
-  [data-platform-section="linux"] {
+  section.dl-hero[data-platform-section="linux"] {
+  display: flex;
+}
+main:not([data-platform]):has([id="linux"]:target, [id="manual-linux"]:target)
+  div.manual-in[data-platform-section="linux"] {
   display: grid;
 }
 @media (prefers-color-scheme: dark) {

@@ -30,6 +30,16 @@ export function choosePlatform() {
   };
   const apply = (platform: Platform) => {
     main.dataset.platform = platform;
+    for (const tab of main.querySelectorAll<HTMLAnchorElement>(".install-tab")) {
+      const match = tab.getAttribute("href") === `#${platform}`;
+      if (match) {
+        tab.setAttribute("aria-current", "true");
+        tab.setAttribute("aria-selected", "true");
+      } else {
+        tab.removeAttribute("aria-current");
+        tab.setAttribute("aria-selected", "false");
+      }
+    }
     for (const menu of main.querySelectorAll<HTMLDetailsElement>("details.platform-menu"))
       menu.removeAttribute("open");
   };
@@ -41,7 +51,7 @@ export function choosePlatform() {
     const target = fromHash();
     if (target) apply(target);
   });
-  for (const link of main.querySelectorAll<HTMLAnchorElement>(".platform-list a")) {
+  for (const link of main.querySelectorAll<HTMLAnchorElement>(".platform-list a, .install-tab")) {
     link.addEventListener("click", () => {
       const id = link.getAttribute("href")?.slice(1) as Platform | undefined;
       if (id && available.has(id)) apply(id);

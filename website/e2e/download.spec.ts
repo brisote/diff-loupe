@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { expect, test } from "@playwright/test";
-import { formatDate, formatSize } from "../src/lib/release";
+import { formatSize } from "../src/lib/release";
 import { latest, latestLinux, siteUrl } from "./release";
 
 const command = "curl -fsSL https://diffloupe.com/install.sh | bash";
@@ -38,10 +38,9 @@ test("the copy buttons put the exact commands on the clipboard", async ({ page }
 });
 
 test("the release facts and the disk image link come from the release", async ({ page }) => {
-  const stats = page.locator("#macos .stats");
-  await expect(stats).toContainText(latest.version);
-  await expect(stats).toContainText(formatDate(latest.date));
-  await expect(stats).toContainText(formatSize(latest.dmg.size));
+  const caption = page.locator("#macos .install-caption");
+  await expect(caption).toContainText(latest.version);
+  await expect(caption).toContainText(formatSize(latest.dmg.size));
   const link = page.getByRole("link", { name: `Download ${latest.dmg.name}` });
   await expect(link).toHaveAttribute("href", latest.dmg.url);
   await expect(page.locator('.manual [data-platform-section="macos"]')).toContainText(
@@ -54,14 +53,12 @@ test("the Linux section shows the .deb and .rpm links and copies their commands"
 }) => {
   test.skip(!latestLinux, "no Linux release");
   if (!latestLinux) return;
-  await page.locator("#macos details.platform-menu summary").click();
-  await page.locator("#macos .platform-list").getByRole("link", { name: "Linux" }).click();
+  await page.locator('#macos .install-tab[href="#linux"]').click();
   await expect(page.locator("#linux")).toBeVisible();
   await expect(page.locator("#macos")).toBeHidden();
-  const stats = page.locator("#linux .stats");
-  await expect(stats).toContainText(latestLinux.version);
-  await expect(stats).toContainText(formatDate(latestLinux.date));
-  await expect(stats).toContainText(formatSize(latestLinux.deb.size));
+  const caption = page.locator("#linux .install-caption");
+  await expect(caption).toContainText(latestLinux.version);
+  await expect(caption).toContainText(formatSize(latestLinux.deb.size));
   const debLink = page.getByRole("link", { name: `Download ${latestLinux.deb.name}` });
   await expect(debLink).toHaveAttribute("href", latestLinux.deb.url);
   const rpmLink = page.getByRole("link", { name: "Download the .rpm" });
@@ -74,52 +71,46 @@ test("the Linux section shows the .deb and .rpm links and copies their commands"
   ]);
 });
 
-test("user-agent recognition and dropdown selection switch between macOS and Linux", async ({
-  browser,
-}) => {
+test("user-agent recognition and tab selection switch between platforms", async ({ browser }) => {
   test.skip(!latestLinux, "no Linux release");
   const agents = [
     {
       ua: "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15",
       expected: "macos",
-      label: "macOS",
     },
     {
       ua: "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
       expected: "linux",
-      label: "Linux",
     },
     {
       ua: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
-      expected: "macos",
-      label: "macOS",
+      expected: "windows",
     },
   ] as const;
 
-  for (const { ua, expected, label } of agents) {
+  for (const { ua, expected } of agents) {
     const context = await browser.newContext({ userAgent: ua });
     try {
       const page = await context.newPage();
       await page.goto("/download/");
       const active = page.locator(`#${expected}`);
-      const other = page.locator(expected === "macos" ? "#linux" : "#macos");
       await expect(active).toBeVisible();
-      await expect(other).toBeHidden();
-      await expect(active.locator("summary.platform-btn")).toContainText(label);
-
-      if (expected === "macos") {
-        await active.locator("summary.platform-btn").click();
-        await active.locator(".platform-list").getByRole("link", { name: "Linux" }).click();
-        await expect(page.locator("#linux")).toBeVisible();
-        await expect(page.locator("#macos")).toBeHidden();
-        await expect(page.locator("#linux summary.platform-btn")).toContainText("Linux");
-      } else {
-        await active.locator("summary.platform-btn").click();
-        await active.locator(".platform-list").getByRole("link", { name: "macOS" }).click();
-        await expect(page.locator("#macos")).toBeVisible();
-        await expect(page.locator("#linux")).toBeHidden();
-        await expect(page.locator("#macos summary.platform-btn")).toContainText("macOS");
+      for (const id of ["macos", "linux", "windows"]) {
+        if (id !== expected) await expect(page.locator(`#${id}`)).toBeHidden();
       }
+      await expect(active.locator(`.install-tab[href="#${expected}"]`)).toHaveAttribute(
+        "aria-current",
+        "true",
+      );
+
+      const target = expected === "macos" ? "linux" : "macos";
+      await active.locator(`.install-tab[href="#${target}"]`).click();
+      await expect(page.locator(`#${target}`)).toBeVisible();
+      await expect(active).toBeHidden();
+      await expect(page.locator(`#${target} .install-tab[href="#${target}"]`)).toHaveAttribute(
+        "aria-current",
+        "true",
+      );
     } finally {
       await context.close();
     }

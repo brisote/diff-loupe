@@ -261,11 +261,15 @@
 .footer-col ul { margin-top: 16px; display: flex; flex-direction: column; gap: 12px; }
 .footer-col a { font-size: 15px; line-height: 24px; color: oklch(1 0 0 / 0.62); }
 .wordmark { margin-top: 72px; height: 178px; overflow: hidden; font-size: 236px; line-height: 236px; font-weight: 600; letter-spacing: -0.04em; color: #ffffff; white-space: nowrap; }
-.dl-hero { position: relative; padding: 104px 0 96px; display: grid; grid-template-columns: minmax(0, 1fr) 440px; gap: 80px; align-items: start; }
-.dl-glow { position: absolute; right: -120px; top: -80px; width: 520px; height: 520px; border-radius: 999px; background: var(--glow); pointer-events: none; }
+.dl-hero { position: relative; padding: 72px 0 88px; display: flex; flex-direction: column; align-items: center; }
+.dl-glow { position: absolute; left: 50%; top: -60px; transform: translateX(-50%); width: 600px; height: 420px; border-radius: 999px; background: var(--glow); pointer-events: none; }
+.dl-hero-header { text-align: center; max-width: 640px; margin: 0 auto; position: relative; z-index: 1; }
+.dl-title { font-size: 44px; line-height: 52px; font-weight: 600; letter-spacing: -0.025em; margin: 0; }
+.dl-sub { margin-top: 14px; font-size: 17px; line-height: 28px; color: var(--muted); }
 .dl-hero .h1-page { margin-top: 24px; }
 .dl-hero .sub { margin-top: 28px; max-width: 540px; }
 .dl-hero .chips { margin-top: 32px; }
+.chips-center { justify-content: center; margin-top: 24px; }
 .text-link { text-decoration: underline; text-underline-offset: 3px; }
 .platform { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
 .platform-menu { position: relative; }
@@ -284,6 +288,16 @@
 .stat-value { margin-top: 10px; font-size: 18px; line-height: 28px; font-weight: 500; }
 .stat-sub { font-size: 13px; line-height: 20px; color: var(--muted); }
 .install { position: relative; z-index: 1; }
+.dl-hero .install { max-width: 680px; width: 100%; margin: 36px auto 0; }
+.install-tabs { display: flex; align-items: center; gap: 6px; padding: 6px; margin-bottom: 8px; border-radius: 18px; background: oklch(1 0 0 / 0.05); border: 1px solid oklch(1 0 0 / 0.08); }
+.install-tab { flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 38px; padding: 0 14px; border-radius: 12px; font-size: 14px; font-weight: 500; color: oklch(1 0 0 / 0.6); text-decoration: none; transition: background 0.15s, color 0.15s; }
+.install-tab .i { width: 16px; height: 16px; color: inherit; }
+.install-tab:hover { background: oklch(1 0 0 / 0.08); color: #ffffff; }
+.install-tab[aria-current="true"] { background: oklch(1 0 0 / 0.14); color: #ffffff; font-weight: 600; box-shadow: 0 1px 2px oklch(0 0 0 / 0.2); }
+.install-actions { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-top: 24px; }
+.install-actions .btn-light { margin-top: 0; }
+.install-actions .install-alt { margin: 0; }
+.dl-hero .star-panel { max-width: 680px; width: 100%; margin: 24px auto 0; }
 .install-card { padding: 8px; border-radius: 28px; background: oklch(0.090 0.011 6.000); box-shadow: var(--shadow-dark-card); color: #ffffff; }
 @media (prefers-color-scheme: dark) {
   .site .install-card { background: #0b0b0e; border: 1px solid oklch(1 0 0 / 0.1); }
@@ -437,7 +451,13 @@
   .footer-in { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 40px 24px; }
   .footer-in > :first-child { grid-column: 1 / -1; }
   .wordmark { margin-top: 56px; height: 54px; font-size: 72px; line-height: 72px; }
-  .dl-hero { grid-template-columns: minmax(0, 1fr); gap: 48px; padding: 56px 0 64px; }
+  .dl-hero { padding: 48px 0 56px; }
+  .dl-title { font-size: 32px; line-height: 38px; }
+  .dl-sub { font-size: 15px; line-height: 24px; }
+  .install-tabs { gap: 4px; padding: 4px; }
+  .install-tab { padding: 0 8px; font-size: 13px; gap: 6px; }
+  .install-actions { flex-direction: column; align-items: stretch; text-align: center; }
+  .chips-center { gap: 8px; }
   .h1-page { font-size: 56px; line-height: 56px; }
   .dl-glow { right: -200px; }
   .install-in { padding: 24px 20px; }
