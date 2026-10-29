@@ -34,7 +34,7 @@ fn open_repo_returns_name_branch_and_the_default_branch_as_target() {
     assert_eq!(info["branch"], "main");
     assert_eq!(info["target"], "main");
     assert_eq!(info["defaultBranch"], "main");
-    assert_eq!(info["lastTab"], "changes");
+    assert_eq!(info["lastTab"], "review");
     assert_eq!(
         info["path"],
         repo.path().canonicalize().unwrap().display().to_string()
@@ -135,10 +135,10 @@ fn the_open_repository_switches_in_place_and_remembers_its_tab() {
         "set_repo_view",
         json!({"path": first["path"], "tab": "log", "selection": "abc123"}),
     );
-    assert_eq!(second["lastTab"], "changes");
+    assert_eq!(second["lastTab"], "review");
     assert_eq!(
         call(&core, "current_repo", Value::Null)["lastTab"],
-        "changes"
+        "review"
     );
     let back = call(&core, "open_repo", json!({"path": a.path()}));
     assert_eq!(back["lastTab"], "log");

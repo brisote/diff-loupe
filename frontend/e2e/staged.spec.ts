@@ -17,7 +17,7 @@ test("a file staged and edited again shows the staged part and the later edit ap
 
   const tree = page.getByRole("tree", { name: "Changed files" });
   await expect(tree.getByRole("treeitem", { name: /^Staged/ })).toContainText("1 file");
-  await expect(tree.getByRole("treeitem", { name: /^Changes/ })).toContainText("1 file");
+  await expect(tree.getByRole("treeitem", { name: /^Branch changes/ })).toContainText("1 file");
 
   await tree.getByRole("treeitem", { name: "notes_v1.md, staged" }).click();
   await expect(

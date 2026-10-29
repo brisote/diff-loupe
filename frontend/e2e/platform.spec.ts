@@ -44,7 +44,7 @@ for (const platform of platforms) {
       const foreign = platform === "macos" ? "Control" : "Meta";
       const settings = page.getByRole("dialog", { name: "Settings" });
       const commit = page.getByRole("dialog", { name: "Commit Changes" });
-      await page.getByRole("tab", { name: "Changes" }).waitFor();
+      await page.getByRole("tab", { name: "Review" }).waitFor();
       await page.keyboard.press(`${foreign}+Comma`);
       await page.keyboard.press(`${foreign}+k`);
       await expect(settings).toHaveCount(0);

@@ -26,7 +26,7 @@ test("the Changes list matches the repository", async ({ page, workspace, startA
   await startApp({ open: [repo] });
   const tree = page.getByRole("tree", { name: "Changed files" });
   await expect(tree.getByRole("treeitem", { name: /^Staged/ })).toContainText("2 files");
-  await expect(tree.getByRole("treeitem", { name: /^Changes/ })).toContainText("2 files");
+  await expect(tree.getByRole("treeitem", { name: /^Branch changes/ })).toContainText("2 files");
   for (const path of ["new name.md, staged", "web/src/exportButton.tsx, staged"]) {
     await expect(tree.getByRole("treeitem", { name: path })).toBeVisible();
   }

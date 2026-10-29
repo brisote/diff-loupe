@@ -106,7 +106,7 @@ export function Editor() {
   const [views, setViews] = useState<Record<string, MarkdownView>>({});
   const resolving = useApp(
     (state) =>
-      tab === "changes" &&
+      tab !== "log" &&
       state.merge?.operation === "merge" &&
       Boolean(state.merge.conflicts.some((conflict) => conflict.path === selection)),
   );
