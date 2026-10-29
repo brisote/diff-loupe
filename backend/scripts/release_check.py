@@ -85,6 +85,17 @@ def windows_package(version: str) -> str:
     return f"nsis/Diffloupe_{version}_x64-setup.exe"
 
 
+def windows_installed_paths(local: Path) -> tuple[Path, Path, Path]:
+    candidate_dirs = [local / "Diffloupe", local / "Programs/Diffloupe"]
+    for d in candidate_dirs:
+        if d.is_dir():
+            for child in d.iterdir():
+                if child.name.lower() == "diffloupe.exe":
+                    return d, child, d / "uninstall.exe"
+    installed_dir = next((d for d in candidate_dirs if d.exists()), candidate_dirs[0])
+    return installed_dir, installed_dir / "diffloupe.exe", installed_dir / "uninstall.exe"
+
+
 def build(version: str) -> None:
     if sys.platform.startswith("linux"):
         build_linux(version, platform.machine())
@@ -109,10 +120,12 @@ def build_windows(version: str) -> None:
     install = run("powershell", "-NoProfile", "-Command", f"$p = Start-Process -FilePath '{setup_path}' -ArgumentList '/S' -Wait -PassThru; exit $p.ExitCode")
     if install.returncode != 0:
         fail(f"silent install of {setup.name} failed: {install.stderr}")
-    local = os.environ.get("LOCALAPPDATA") or str(Path.home() / "AppData/Local")
-    installed_dir = Path(local) / "Programs/Diffloupe"
-    installed_exe = installed_dir / "diffloupe.exe"
-    uninstaller = installed_dir / "uninstall.exe"
+    local = Path(os.environ.get("LOCALAPPDATA") or (Path.home() / "AppData/Local"))
+    deadline = time.time() + 10
+    installed_dir, installed_exe, uninstaller = windows_installed_paths(local)
+    while (not installed_exe.exists() or not uninstaller.exists()) and time.time() < deadline:
+        time.sleep(0.5)
+        installed_dir, installed_exe, uninstaller = windows_installed_paths(local)
     if not installed_exe.exists():
         fail(f"installed executable not found at {installed_exe}")
     if not uninstaller.exists():

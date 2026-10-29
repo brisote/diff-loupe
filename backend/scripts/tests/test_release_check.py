@@ -73,5 +73,65 @@ class WindowsPackageTest(unittest.TestCase):
         )
 
 
+class WindowsInstalledPathsTest(unittest.TestCase):
+    def test_finds_in_local_diffloupe_when_it_exists(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            local = Path(tmp)
+            target = local / "Diffloupe"
+            target.mkdir()
+            (target / "diffloupe.exe").write_bytes(b"")
+            (target / "uninstall.exe").write_bytes(b"")
+            installed_dir, installed_exe, uninstaller = release_check.windows_installed_paths(local)
+            self.assertEqual(installed_dir, target)
+            self.assertEqual(installed_exe, target / "diffloupe.exe")
+            self.assertEqual(uninstaller, target / "uninstall.exe")
+
+    def test_finds_in_programs_diffloupe_when_diffloupe_absent(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            local = Path(tmp)
+            target = local / "Programs/Diffloupe"
+            target.mkdir(parents=True)
+            (target / "diffloupe.exe").write_bytes(b"")
+            (target / "uninstall.exe").write_bytes(b"")
+            installed_dir, installed_exe, uninstaller = release_check.windows_installed_paths(local)
+            self.assertEqual(installed_dir, target)
+            self.assertEqual(installed_exe, target / "diffloupe.exe")
+            self.assertEqual(uninstaller, target / "uninstall.exe")
+
+    def test_finds_capitalized_executable(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            local = Path(tmp)
+            target = local / "Diffloupe"
+            target.mkdir()
+            (target / "Diffloupe.exe").write_bytes(b"")
+            (target / "uninstall.exe").write_bytes(b"")
+            installed_dir, installed_exe, uninstaller = release_check.windows_installed_paths(local)
+            self.assertEqual(installed_dir, target)
+            self.assertEqual(installed_exe, target / "Diffloupe.exe")
+            self.assertEqual(uninstaller, target / "uninstall.exe")
+
+    def test_prefers_directory_with_executable_over_empty_directory(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            local = Path(tmp)
+            empty = local / "Diffloupe"
+            empty.mkdir()
+            target = local / "Programs/Diffloupe"
+            target.mkdir(parents=True)
+            (target / "diffloupe.exe").write_bytes(b"")
+            (target / "uninstall.exe").write_bytes(b"")
+            installed_dir, installed_exe, uninstaller = release_check.windows_installed_paths(local)
+            self.assertEqual(installed_dir, target)
+            self.assertEqual(installed_exe, target / "diffloupe.exe")
+            self.assertEqual(uninstaller, target / "uninstall.exe")
+
+
 if __name__ == "__main__":
     unittest.main()
