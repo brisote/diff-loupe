@@ -129,7 +129,7 @@ jobs:
       - name: Install packages
         run: pnpm install --frozen-lockfile
 
-      - name: Build, check and smoke-test the setup program
+      - name: Build and check the setup program
         run: python3 backend/scripts/release_check.py --only build
 
       - uses: actions/upload-artifact@v4
