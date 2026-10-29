@@ -5,22 +5,41 @@ import fixture from "../src/data/release.fixture.json";
 import { installScript } from "../src/lib/install";
 import {
   compareVersions,
+  debName,
+  dmgName,
   fetchReleases,
   formatDate,
   formatSize,
+  latestFor,
   latestRelease,
+  newestFor,
   newestRelease,
   type PublishedRelease,
+  parseLinuxRelease,
   parseRelease,
   parseReleaseList,
+  parseWindowsRelease,
+  releasedPlatforms,
   releases,
+  resolveFixtureReleases,
+  rpmName,
+  setupName,
 } from "../src/lib/release";
+import { getStaticPaths, GET as getVersion } from "../src/pages/download/latest/[platform]/version";
 import { GET } from "../src/pages/install.sh";
 
 const template = readFileSync(join(__dirname, "../src/install/install.sh"), "utf8");
 const sha256 = "3f1c9a7e5b2d4f6081a9c3e5d7f9b1a3c5e7092b4d6f8a1c3e5b7d9f0a2c4e6b";
+const debSha256 = "7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b";
+const rpmSha256 = "8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c";
 const dmgUrl = "https://github.com/brisote/diff-loupe/releases/download/v0.2.0/Diffloupe-0.2.0.dmg";
+const debUrl =
+  "https://github.com/brisote/diff-loupe/releases/download/v0.2.0/Diffloupe-0.2.0-linux-amd64.deb";
+const rpmUrl =
+  "https://github.com/brisote/diff-loupe/releases/download/v0.2.0/Diffloupe-0.2.0-linux-x86_64.rpm";
 const sumsUrl = `${dmgUrl}.sha256`;
+const debSumsUrl = `${debUrl}.sha256`;
+const rpmSumsUrl = `${rpmUrl}.sha256`;
 
 function release(): PublishedRelease {
   return newestRelease(parseReleaseList(fixture.releases));
@@ -70,13 +89,88 @@ describe("parseReleaseList", () => {
   });
 });
 
-describe("parseRelease", () => {
+describe("parseRelease and per-platform packages", () => {
   it("reads the version, date, disk image and checksum", () => {
     expect(parseRelease(release(), fixture.checksum)).toEqual({
       version: "0.2.0",
       date: "2026-11-03T09:30:00Z",
       dmg: { name: "Diffloupe-0.2.0.dmg", url: dmgUrl, size: 11812345, sha256 },
     });
+  });
+
+  it("reads the Linux .deb and .rpm packages and checksums", () => {
+    expect(
+      parseLinuxRelease(release(), {
+        deb: fixture.checksums["Diffloupe-0.2.0-linux-amd64.deb"],
+        rpm: fixture.checksums["Diffloupe-0.2.0-linux-x86_64.rpm"],
+      }),
+    ).toEqual({
+      version: "0.2.0",
+      date: "2026-11-03T09:30:00Z",
+      deb: {
+        name: debName("0.2.0"),
+        url: debUrl,
+        size: 10200000,
+        sha256: debSha256,
+      },
+      rpm: {
+        name: rpmName("0.2.0"),
+        url: rpmUrl,
+        size: 10400000,
+        sha256: rpmSha256,
+      },
+    });
+  });
+
+  it("reads a Windows setup package and checksum", () => {
+    const setupFile = setupName("0.2.0");
+    const setupUrl = `https://github.com/brisote/diff-loupe/releases/download/v0.2.0/${setupFile}`;
+    const withWin: PublishedRelease = {
+      ...release(),
+      assets: [
+        ...release().assets,
+        { name: setupFile, size: 13100000, browser_download_url: setupUrl },
+      ],
+    };
+    expect(parseWindowsRelease(withWin, `${sha256}  ${setupFile}\n`)).toEqual({
+      version: "0.2.0",
+      date: "2026-11-03T09:30:00Z",
+      setup: { name: setupFile, url: setupUrl, size: 13100000, sha256 },
+    });
+  });
+
+  it("falls back per platform when a newer release only has a .dmg", async () => {
+    const list = parseReleaseList(fixture.releases);
+    const macOnly: PublishedRelease = {
+      version: "0.2.1",
+      date: "2026-11-04T09:30:00Z",
+      assets: [
+        {
+          name: dmgName("0.2.1"),
+          size: 11812345,
+          browser_download_url:
+            "https://github.com/brisote/diff-loupe/releases/download/v0.2.1/Diffloupe-0.2.1.dmg",
+        },
+        {
+          name: `${dmgName("0.2.1")}.sha256`,
+          size: 86,
+          browser_download_url:
+            "https://github.com/brisote/diff-loupe/releases/download/v0.2.1/Diffloupe-0.2.1.dmg.sha256",
+        },
+      ],
+    };
+    const combined = [macOnly, ...list];
+    expect(newestFor(combined, "macos")?.version).toBe("0.2.1");
+    expect(newestFor(combined, "linux")?.version).toBe("0.2.0");
+    expect(newestFor(combined, "windows")).toBeUndefined();
+  });
+
+  it("lists only platforms that have a published release", async () => {
+    const resolved = resolveFixtureReleases();
+    expect(await releasedPlatforms(resolved)).toEqual(["macos", "linux"]);
+    expect((await latestFor("macos", resolved))?.version).toBe("0.2.0");
+    expect((await latestFor("linux", resolved))?.version).toBe("0.2.0");
+    expect(await latestFor("windows", resolved)).toBeUndefined();
   });
 
   it("refuses a release without its disk image", () => {
@@ -154,21 +248,31 @@ describe("fetchReleases", () => {
     vi.unstubAllEnvs();
   });
 
-  it("reads every page of releases and the newest one's checksum file", async () => {
+  it("reads every page of releases and the newest release's checksum files", async () => {
     const [newest, oldest] = fixture.releases;
     answer({
       [api]: [JSON.stringify([oldest]), `<${second}>; rel="next"`],
       [second]: JSON.stringify([newest]),
       [sumsUrl]: fixture.checksum,
+      [debSumsUrl]: fixture.checksums["Diffloupe-0.2.0-linux-amd64.deb"],
+      [rpmSumsUrl]: fixture.checksums["Diffloupe-0.2.0-linux-x86_64.rpm"],
     });
-    const { list, latest } = await fetchReleases();
+    const { list, latest, platforms } = await fetchReleases();
     expect(list.map((item) => item.version)).toEqual(["0.2.0", "0.1.0"]);
     expect(latest.dmg.sha256).toBe(sha256);
+    expect(platforms.linux?.deb.sha256).toBe(debSha256);
+    expect(platforms.linux?.rpm.sha256).toBe(rpmSha256);
+    expect(platforms.windows).toBeUndefined();
   });
 
   it("sends the workflow's token to the API when it has one", async () => {
     vi.stubEnv("GITHUB_TOKEN", "token-for-the-test");
-    const seen = answer({ [api]: JSON.stringify(fixture.releases), [sumsUrl]: fixture.checksum });
+    const seen = answer({
+      [api]: JSON.stringify(fixture.releases),
+      [sumsUrl]: fixture.checksum,
+      [debSumsUrl]: fixture.checksums["Diffloupe-0.2.0-linux-amd64.deb"],
+      [rpmSumsUrl]: fixture.checksums["Diffloupe-0.2.0-linux-x86_64.rpm"],
+    });
     await fetchReleases();
     expect(seen[0]?.headers.Authorization).toBe("Bearer token-for-the-test");
   });
@@ -187,12 +291,16 @@ describe("fetchReleases", () => {
 });
 
 describe("installScript", () => {
-  it("writes the fixture's version, URL and checksum into the script", async () => {
-    const script = installScript(template, await latestRelease());
+  it("writes the fixture's macOS and Linux versions, URLs and checksums into the script", async () => {
+    const script = installScript(template, await latestRelease(), await latestFor("linux"));
     expect(script).toContain('version="0.2.0"');
     expect(script).toContain(`url="${dmgUrl}"`);
     expect(script).toContain(`checksum="${sha256}"`);
-    expect(script).not.toMatch(/@[A-Z0-9]+@/);
+    expect(script).toContain(`deb_url="${debUrl}"`);
+    expect(script).toContain(`deb_checksum="${debSha256}"`);
+    expect(script).toContain(`rpm_url="${rpmUrl}"`);
+    expect(script).toContain(`rpm_checksum="${rpmSha256}"`);
+    expect(script).not.toMatch(/@[A-Z0-9_]+@/);
   });
 
   it("refuses a value that could break out of its quotes", async () => {
@@ -207,12 +315,28 @@ describe("installScript", () => {
   });
 });
 
-describe("the install.sh endpoint", () => {
+describe("the install.sh and version endpoints", () => {
   it("serves the filled script as plain text", async () => {
     const response = await GET({} as Parameters<typeof GET>[0]);
     expect(response.headers.get("Content-Type")).toBe("text/plain; charset=utf-8");
     const script = await response.text();
     expect(script).toContain('version="0.2.0"');
+    expect(script).toContain(`deb_url="${debUrl}"`);
     expect(script.trimEnd().endsWith("install_diffloupe")).toBe(true);
+  });
+
+  it("generates version files only for platforms that have a release", async () => {
+    const paths = await getStaticPaths({} as Parameters<typeof getStaticPaths>[0]);
+    expect(paths.map((item) => item.params.platform)).toEqual(["macos", "linux"]);
+    const macosRes = await getVersion({
+      params: { platform: "macos" },
+      props: { version: "0.2.0" },
+    } as unknown as Parameters<typeof getVersion>[0]);
+    expect(await macosRes.text()).toBe("0.2.0\n");
+    const linuxRes = await getVersion({
+      params: { platform: "linux" },
+      props: { version: "0.2.0" },
+    } as unknown as Parameters<typeof getVersion>[0]);
+    expect(await linuxRes.text()).toBe("0.2.0\n");
   });
 });

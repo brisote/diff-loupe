@@ -80,7 +80,16 @@ test("the 404 page matches its board", async ({ page }, info) => {
   });
 });
 
-for (const target of pages) {
+for (const target of [
+  ...pages,
+  {
+    path: "/download/#linux",
+    title: "Download",
+    current: "Download",
+    board: "DownloadLinux",
+    boards: ["DownloadLinux"],
+  },
+]) {
   const boards = target.boards;
   if (!boards) continue;
   test(`${target.path} matches its boards section by section`, async ({ page }, info) => {
@@ -89,6 +98,7 @@ for (const target of pages) {
     await page.evaluate(() => document.fonts.ready);
     await loadImages(page);
     await page.evaluate(() => {
+      window.scrollTo(0, 0);
       for (const panel of document.querySelectorAll<HTMLElement>("[data-star-panel]"))
         panel.dataset.shown = "";
     });

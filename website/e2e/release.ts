@@ -1,19 +1,12 @@
 import { readFileSync } from "node:fs";
-import {
-  compareVersions,
-  latestRelease,
-  type PublishedRelease,
-  type Release,
-  releases,
-} from "../src/lib/release";
-
+import { compareVersions, type Releases, resolveFixtureReleases } from "../src/lib/release";
 import { liveReleases, siteUrl } from "./live";
 
 export { siteUrl };
 
-const known: { list: PublishedRelease[]; latest: Release } = siteUrl
+const known: Releases = siteUrl
   ? JSON.parse(readFileSync(liveReleases, "utf8"))
-  : { list: await releases(), latest: await latestRelease() };
+  : resolveFixtureReleases();
 
 const changelog = readFileSync(
   new URL(siteUrl ? "../../CHANGELOG.md" : "../src/data/changelog.fixture.md", import.meta.url),
@@ -21,6 +14,8 @@ const changelog = readFileSync(
 );
 
 export const latest = known.latest;
+export const latestLinux = known.platforms.linux;
+export const latestWindows = known.platforms.windows;
 export const published = known.list.filter(
   (release) =>
     compareVersions(release.version, "0.2.0") >= 0 &&

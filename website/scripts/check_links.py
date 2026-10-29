@@ -1,5 +1,7 @@
 """Checks that every internal link, asset and anchor in the built site resolves, and with --external that every link to another site answers."""
 
+from __future__ import annotations
+
 import argparse
 import http.client
 import re

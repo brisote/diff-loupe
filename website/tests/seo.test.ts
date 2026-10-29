@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { appData, indexedPages, robots, sitemap } from "../src/lib/seo";
+import { detectPlatform } from "../src/scripts/platform";
 
 const site = new URL("https://diffloupe.com");
 
@@ -18,7 +19,7 @@ describe("seo", () => {
     );
   });
 
-  it("describes the app as a free macOS developer tool of the latest release", () => {
+  it("describes the app as a free developer tool for macOS, Windows and Linux", () => {
     const data = appData(site, {
       version: "0.2.0",
       date: "2026-10-24T16:48:11Z",
@@ -28,11 +29,32 @@ describe("seo", () => {
       "@type": "SoftwareApplication",
       softwareVersion: "0.2.0",
       applicationCategory: "DeveloperApplication",
+      operatingSystem: "macOS 13 or later, Windows 10 or later, Linux",
+      processorRequirements: "arm64, x86_64",
       url: "https://diffloupe.com/",
       image: "https://diffloupe.com/og.jpg",
       offers: { price: "0" },
       downloadUrl: "https://example.com",
       sameAs: "https://github.com/brisote/diff-loupe",
     });
+  });
+});
+
+describe("detectPlatform", () => {
+  it("identifies desktop macOS, Windows and Linux user agents and ignores mobile platforms", () => {
+    expect(detectPlatform("macOS", "")).toBe("macos");
+    expect(detectPlatform("Windows", "")).toBe("windows");
+    expect(detectPlatform("Linux", "")).toBe("linux");
+    expect(
+      detectPlatform("", "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_5) AppleWebKit/605.1.15"),
+    ).toBe("macos");
+    expect(detectPlatform("", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)")).toBe("windows");
+    expect(detectPlatform("", "Mozilla/5.0 (X11; Linux x86_64) Gecko/20100101 Firefox/130.0")).toBe(
+      "linux",
+    );
+    expect(detectPlatform("Android", "Mozilla/5.0 (Linux; Android 11; Pixel 5)")).toBeUndefined();
+    expect(
+      detectPlatform("", "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)"),
+    ).toBeUndefined();
   });
 });

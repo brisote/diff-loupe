@@ -9,7 +9,11 @@ for (const path of [...pages.map((target) => target.path), missing.path]) {
     await page.goto(path);
     const expected = await page.evaluate(() =>
       [...document.querySelectorAll("a[href], button, summary, input, select, textarea")]
-        .filter((element) => (element as HTMLElement).offsetParent !== null)
+        .filter(
+          (element) =>
+            (element as HTMLElement).offsetParent !== null &&
+            !element.closest("details:not([open]) > :not(summary)"),
+        )
         .map((element, index) => {
           element.setAttribute("data-focus-order", String(index));
           return String(index);
