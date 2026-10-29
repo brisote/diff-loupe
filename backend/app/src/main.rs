@@ -6,8 +6,11 @@ mod install;
 #[path = "install_linux.rs"]
 mod install;
 #[cfg(windows)]
-#[path = "install_unsupported.rs"]
+#[path = "install_windows.rs"]
 mod install;
+#[cfg(all(test, not(windows)))]
+#[path = "install_windows.rs"]
+mod install_windows_tests;
 #[cfg(target_os = "linux")]
 mod package;
 #[cfg(debug_assertions)]
@@ -316,7 +319,8 @@ fn install_target() -> Option<install::Target> {
 
 #[cfg(windows)]
 fn install_target() -> Option<install::Target> {
-    None
+    let exe = std::env::current_exe().ok()?;
+    uninstaller_at(&exe).map(|_| exe)
 }
 
 #[cfg(target_os = "macos")]
