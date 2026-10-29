@@ -2,6 +2,23 @@
 
 Each release lists what changed for the person who uses Diffloupe, and every change to stored data with its migration.
 
+## 0.4.0
+
+Diffloupe comes to Windows as a per-user setup program, with the one-line PowerShell install command, updates and Uninstall.
+
+### Windows
+
+- Diffloupe runs on Windows 10 and 11 (64-bit).
+- A per-user setup program installs without administrator rights.
+- Install with one PowerShell command from diffloupe.com or download the setup program directly.
+- The built-in terminal runs PowerShell, PowerShell 7 or Command Prompt.
+- Line endings in CRLF working-tree files are converted before diffing and preserved on merge.
+- The app updates itself silently from inside the app, and Uninstall removes every file Diffloupe owns.
+
+### Install
+
+- Nothing in your stored data changes.
+
 ## 0.3.0
 
 Diffloupe comes to Linux as Debian and RPM packages, with the one-line install command, updates and Uninstall.
