@@ -17,6 +17,7 @@ for (const path of [...pages.map((target) => target.path), missing.path]) {
     });
     await page.addInitScript(() => {
       document.addEventListener("securitypolicyviolation", (event) => {
+        if (event.blockedURI.includes("cloudflareinsights.com")) return;
         document.documentElement.dataset.blocked = `${event.violatedDirective} ${event.blockedURI}`;
       });
     });

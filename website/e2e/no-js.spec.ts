@@ -14,7 +14,9 @@ for (const path of [...pages.map((target) => target.path), missing.path]) {
     const scripts = await page
       .locator('script:not([type="application/ld+json"])')
       .evaluateAll((elements) =>
-        elements.map((element) => element.getAttribute("src") ?? "inline"),
+        elements
+          .map((element) => element.getAttribute("src") ?? "inline")
+          .filter((src) => !src.includes("cloudflareinsights.com")),
       );
     expect(scripts).toEqual(
       ["/", "/download/"].includes(path) ? [expect.stringMatching(/^\/_astro\/.+\.js$/)] : [],
