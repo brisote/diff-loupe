@@ -500,7 +500,14 @@ fn alert_then_exit(app: &AppHandle, title: &str, message: &str, code: i32) -> Re
     .map_err(|e| e.to_string())
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(windows)]
+fn alert_then_exit(app: &AppHandle, title: &str, message: &str, code: i32) -> Result<(), String> {
+    show_alert(title, message);
+    app.exit(code);
+    Ok(())
+}
+
+#[cfg(target_os = "linux")]
 fn alert_then_exit(app: &AppHandle, title: &str, message: &str, code: i32) -> Result<(), String> {
     use tauri_plugin_dialog::MessageDialogKind;
     let handle = app.clone();
@@ -524,6 +531,29 @@ fn show_alert(title: &str, message: &str) {
     alert.setMessageText(&NSString::from_str(title));
     alert.setInformativeText(&NSString::from_str(message));
     alert.runModal();
+}
+
+#[cfg(windows)]
+fn show_alert(title: &str, message: &str) {
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::UI::WindowsAndMessaging::{MB_ICONERROR, MB_OK, MessageBoxW};
+
+    let title: Vec<u16> = std::ffi::OsStr::new(title)
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect();
+    let message: Vec<u16> = std::ffi::OsStr::new(message)
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect();
+    unsafe {
+        MessageBoxW(
+            std::ptr::null_mut(),
+            message.as_ptr(),
+            title.as_ptr(),
+            MB_OK | MB_ICONERROR,
+        );
+    }
 }
 
 fn page_loaded(webview: &tauri::Webview, payload: &PageLoadPayload<'_>) {

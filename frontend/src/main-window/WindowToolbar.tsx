@@ -35,7 +35,7 @@ function WindowControls() {
       .catch(() => undefined);
   };
   return (
-    <span className="dl-winctl">
+    <span className="dl-winctl" data-tauri-drag-region="false">
       <button className="dl-wbtn" type="button" aria-label="Minimize" onClick={act("minimize")}>
         <span className="dl-wglyph-min" />
       </button>

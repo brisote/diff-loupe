@@ -24,30 +24,48 @@ import demo_repos
 
 ROOT = Path(__file__).resolve().parents[2]
 BACKEND = ROOT / "backend"
-BRIDGE = BACKEND / "target/debug/diffloupe-devbridge"
+PLATFORM = "windows" if sys.platform == "win32" else ("linux" if sys.platform.startswith("linux") else "macos")
+BRIDGE = (
+    BACKEND / "target/debug/diffloupe-devbridge.exe"
+    if PLATFORM == "windows"
+    else BACKEND / "target/debug/diffloupe-devbridge"
+)
 BUNDLE_ID = "com.diffloupe.app"
-PLATFORM = "linux" if sys.platform.startswith("linux") else "macos"
 APP = (
-    BACKEND / "target/debug/diffloupe"
-    if PLATFORM == "linux"
-    else BACKEND / "target/debug/bundle/macos/Diffloupe.app/Contents/MacOS/diffloupe"
+    BACKEND / "target/debug/diffloupe.exe"
+    if PLATFORM == "windows"
+    else (
+        BACKEND / "target/debug/diffloupe"
+        if PLATFORM == "linux"
+        else BACKEND / "target/debug/bundle/macos/Diffloupe.app/Contents/MacOS/diffloupe"
+    )
 )
 NO_UPDATES = f"http://127.0.0.1:9/download/latest/{PLATFORM}/version"
 
 
 def data_dir(home: Path) -> Path:
+    if PLATFORM == "windows":
+        return home / "AppData/Roaming" / BUNDLE_ID
     if PLATFORM == "linux":
         return home / ".local/share" / BUNDLE_ID
     return home / "Library/Application Support" / BUNDLE_ID
 
 
 def cache_dir(home: Path) -> Path:
+    if PLATFORM == "windows":
+        return home / "AppData/Local" / BUNDLE_ID
     return home / (".cache" if PLATFORM == "linux" else "Library/Caches") / BUNDLE_ID
 
 
 def environment(home: Path, **extra: str) -> dict:
     env = {**os.environ, "HOME": str(home), **extra}
-    if PLATFORM == "linux":
+    if PLATFORM == "windows":
+        env.update(
+            USERPROFILE=str(home),
+            APPDATA=str(home / "AppData/Roaming"),
+            LOCALAPPDATA=str(home / "AppData/Local"),
+        )
+    elif PLATFORM == "linux":
         env.update(
             XDG_DATA_HOME=str(home / ".local/share"),
             XDG_CACHE_HOME=str(home / ".cache"),
@@ -64,6 +82,32 @@ def report(home: Path, while_running=None) -> dict:
     out = home / "smoke.json"
     out.unlink(missing_ok=True)
     env = environment(home, DIFFLOUPE_SMOKE_REPORT=str(out))
+    if PLATFORM == "windows" and os.environ.get("SSH_CONNECTION"):
+        batch = home / "run_smoke.cmd"
+        lines = ["@echo off"]
+        for k, v in env.items():
+            lines.append(f'set "{k}={v}"')
+        lines.append(f'"{APP}"')
+        batch.write_text("\r\n".join(lines) + "\r\n")
+        subprocess.run(
+            ["schtasks", "/create", "/tn", "DiffloupeSmoke", "/tr", f'"{batch}"', "/sc", "once", "/st", "00:00", "/f", "/it"],
+            capture_output=True,
+            check=True,
+        )
+        subprocess.run(["schtasks", "/run", "/tn", "DiffloupeSmoke"], capture_output=True, check=True)
+        if while_running:
+            time.sleep(2)
+            while_running()
+        start = time.time()
+        while time.time() - start < 60:
+            if out.exists():
+                break
+            time.sleep(0.5)
+        subprocess.run(["schtasks", "/delete", "/tn", "DiffloupeSmoke", "/f"], capture_output=True)
+        if not out.exists():
+            subprocess.run(["taskkill", "/F", "/IM", "diffloupe.exe"], capture_output=True)
+            raise SystemExit("the app did not report within 60 seconds")
+        return json.loads(out.read_text())
     process = subprocess.Popen([str(APP)], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     if while_running:
         time.sleep(1.2)
@@ -211,14 +255,14 @@ def uninstall(home: Path) -> list[bool]:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--no-build", action="store_true", help="use the existing debug build")
-    parser.add_argument("--platform", choices=["macos", "linux"], help="the system the check runs on; this one by default")
+    parser.add_argument("--platform", choices=["macos", "linux", "windows"], help="the system the check runs on; this one by default")
     args = parser.parse_args()
     if args.platform and args.platform != PLATFORM:
         raise SystemExit(f"this system is {PLATFORM}; run --platform {args.platform} on a {args.platform} machine")
     os.environ["DIFFLOUPE_UPDATE_URL"] = NO_UPDATES
     if not args.no_build:
-        bundle = ["--no-bundle"] if PLATFORM == "linux" else ["--bundles", "app"]
-        subprocess.run(["pnpm", "tauri", "build", "--debug", *bundle], cwd=ROOT, check=True)
+        bundle = ["--no-bundle"] if PLATFORM in ("linux", "windows") else ["--bundles", "app"]
+        subprocess.run(["pnpm", "tauri", "build", "--debug", *bundle], cwd=ROOT, check=True, shell=PLATFORM == "windows")
         subprocess.run(["cargo", "build", "-q", "-p", "diffloupe-devbridge"], cwd=BACKEND, check=True)
 
     if PLATFORM == "macos":
@@ -263,7 +307,7 @@ def main() -> int:
             finder = finder_report(Path(tmp) / "finder.json", f"DIFFLOUPE_SMOKE_DATA_DIR={data}")
             results.append(check("started like Finder, git runs", "Billing.kt" in finder["text"], finder["text"][:300]))
         else:
-            print("skip  started like Finder: there is no Finder on Linux")
+            print(f"skip  started like Finder: there is no Finder on {PLATFORM.capitalize()}")
         if installed_open:
             print("skip  a second start hands over and exits: quit the running Diffloupe to run this check")
         elif PLATFORM == "linux" and "DBUS_SESSION_BUS_ADDRESS" not in os.environ:
@@ -271,7 +315,8 @@ def main() -> int:
         else:
             results.append(single_instance(home))
         results += newer_data(Path(tmp) / "newer-home")
-        results += uninstall(home)
+        if PLATFORM != "windows":
+            results += uninstall(home)
     return 0 if all(results) else 1
 
 

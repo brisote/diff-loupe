@@ -68,6 +68,11 @@ class Gates(unittest.TestCase):
         self.assertIn("xvfb-run", smoke)
         self.assertIn("backend/scripts/app_smoke.py", smoke)
 
+    def test_the_windows_smoke_gate_runs_app_smoke_for_windows(self):
+        smoke = platform_check.WINDOWS_REMOTE_GATES["smoke"]
+        self.assertIn("app_smoke.py", smoke)
+        self.assertIn("--platform windows", smoke)
+
     def test_only_picks_the_named_gates_in_order(self):
         picked = platform_check.chosen(platform_check.LINUX_GATES, ["test", "fmt"])
         self.assertEqual(list(picked), ["test", "fmt"])

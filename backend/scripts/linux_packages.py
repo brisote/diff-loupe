@@ -12,6 +12,8 @@ runs Uninstall without `pkexec`, which must delete nothing and say how to remove
 packages and checks them and the app with release_check.py, and takes no --system.
 """
 
+from __future__ import annotations
+
 import argparse
 import hashlib
 import shutil
