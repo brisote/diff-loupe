@@ -7,6 +7,8 @@ the checks on Linux (--only checks) and the build on each system (--only build):
 macOS, and the .deb and .rpm on Linux, because macOS minutes cost ten times as much.
 """
 
+from __future__ import annotations
+
 import argparse
 import json
 import platform

@@ -2,6 +2,26 @@
 
 Each release lists what changed for the person who uses Diffloupe, and every change to stored data with its migration.
 
+## 0.3.0
+
+Diffloupe comes to Linux as Debian and RPM packages, with the one-line install command, updates and Uninstall.
+
+### Linux
+
+- Diffloupe runs on Ubuntu 22.04+, Debian 12+ and Fedora 40+.
+- Native .deb and .rpm packages install and update with your system package manager.
+- Install with one command from diffloupe.com or download the package directly.
+- The app updates itself from inside the app and Uninstall removes every file Diffloupe owns.
+
+### Review
+
+- A dedicated Local changes tab keeps uncommitted work separate from Review.
+- Conflicted files open directly into the three-way merge view from the Review tab.
+
+### Install
+
+- Nothing in your stored data changes.
+
 ## 0.2.2
 
 A branch log drawn as a commit graph, folded Markdown, and Markdown changes marked where they happen.
