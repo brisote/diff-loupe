@@ -66,6 +66,7 @@ type StartOptions = {
   dataDir?: string;
   updateUrl?: string;
   platform?: PlatformName;
+  shell?: string;
 };
 
 export const platformUnderTest: PlatformName =
@@ -136,11 +137,15 @@ export async function startBridge(options: StartOptions, scratch: string): Promi
   for (const path of options.open ?? []) args.push("--open", path);
   if (options.pick) args.push("--pick", options.pick);
   args.push("--platform", options.platform ?? platformUnderTest);
+  const shell =
+    options.shell ??
+    (process.platform === "win32" ? (process.env.COMSPEC ?? "cmd.exe") : "/bin/sh");
+  args.push("--shell", shell);
   const child = spawn(bridgeBinary, args, {
     stdio: ["ignore", "pipe", "inherit"],
     env: {
       ...process.env,
-      SHELL: "/bin/sh",
+      SHELL: shell,
       ENV: "",
       DIFFLOUPE_UPDATE_URL: options.updateUrl ?? noUpdates,
     },

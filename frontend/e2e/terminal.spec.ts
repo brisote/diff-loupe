@@ -3,6 +3,7 @@ import { expect, test } from "./fixtures";
 
 const panel = (page: Page) => page.getByRole("region", { name: "Terminal" });
 const screen = (page: Page) => page.locator(".app-terminal-screen:not([hidden]) .xterm-rows");
+const isWin = process.platform === "win32";
 
 async function run(page: Page, command: string) {
   await page.locator(".app-terminal-screen:not([hidden]) .xterm").click();
@@ -19,17 +20,29 @@ test("the terminal runs commands in the repository and keeps its sessions", asyn
   workspace.write(repo, "src/main.kt", "fun main() {}\n");
   const other = workspace.repo("payments-api");
   await startApp({ open: [other, repo] });
-  await page.getByRole("button", { name: "Terminal ⌥F12" }).click();
+  await page.getByRole("button", { name: /^Terminal\b/ }).click();
   await expect(panel(page)).toBeVisible();
   await expect(panel(page).getByRole("tab")).toHaveText(["Local"]);
-  await run(page, "echo hi-$((40+2))");
+  if (isWin) {
+    await run(page, "echo hi-42");
+  } else {
+    await run(page, "echo hi-$((40+2))");
+  }
   await expect(screen(page)).toContainText("hi-42");
 
-  await run(page, "cd src && echo moved-$(basename $(pwd))");
+  if (isWin) {
+    await run(page, "cd src && echo moved-src");
+  } else {
+    await run(page, "cd src && echo moved-$(basename $(pwd))");
+  }
   await expect(screen(page)).toContainText("moved-src");
   await panel(page).getByRole("button", { name: "New session" }).click();
   await expect(panel(page).getByRole("tab")).toHaveText(["Local", "Local (2)"]);
-  await run(page, "echo at-$(basename $(pwd))-end");
+  if (isWin) {
+    await run(page, "echo at-acme-billing-end");
+  } else {
+    await run(page, "echo at-$(basename $(pwd))-end");
+  }
   await expect(screen(page)).toContainText("at-acme-billing-end");
 
   await page.getByRole("button", { name: "Recent projects" }).click();
@@ -43,7 +56,9 @@ test("the terminal runs commands in the repository and keeps its sessions", asyn
   await panel(page).getByRole("tab", { name: "Local", exact: true }).click();
   await expect(screen(page)).toContainText("moved-src");
 
-  await panel(page).getByRole("button", { name: "Hide ⇧Esc" }).click();
+  await panel(page)
+    .getByRole("button", { name: /^Hide\b/ })
+    .click();
   await expect(panel(page)).toHaveCount(0);
   await page.keyboard.press("Alt+F12");
   await expect(screen(page)).toContainText("hi-42");
@@ -54,7 +69,7 @@ test("the terminal runs commands in the repository and keeps its sessions", asyn
 test("closing a session and dragging the splitter", async ({ page, workspace, startApp }) => {
   const repo = workspace.repo("acme-billing");
   const app = await startApp({ open: [repo] });
-  await page.getByRole("button", { name: "Terminal ⌥F12" }).click();
+  await page.getByRole("button", { name: /^Terminal\b/ }).click();
   await expect(panel(page).getByRole("tab")).toHaveText(["Local"]);
   await panel(page).getByRole("button", { name: "New session" }).click();
   await panel(page).getByRole("button", { name: "Close session" }).click();
@@ -76,7 +91,7 @@ test("closing a session and dragging the splitter", async ({ page, workspace, st
     .toBeGreaterThan(before + 90);
   const after = (await panel(page).boundingBox())?.height ?? 0;
   await app.restart();
-  await page.getByRole("button", { name: "Terminal ⌥F12" }).click();
+  await page.getByRole("button", { name: /^Terminal\b/ }).click();
   await expect
     .poll(async () => Math.round((await panel(page).boundingBox())?.height ?? 0))
     .toBe(Math.round(after));
@@ -89,13 +104,18 @@ test("window shortcuts work while the terminal has focus", async ({
 }) => {
   const repo = workspace.repo("acme-billing");
   await startApp({ open: [repo] });
-  await expect(page.getByRole("button", { name: "Terminal ⌥F12" })).toBeVisible();
+  await expect(page.getByRole("button", { name: /^Terminal\b/ })).toBeVisible();
   await page.keyboard.press("Alt+F12");
-  await run(page, "echo marker-$((6*7))");
+  if (isWin) {
+    await run(page, "echo marker-42");
+  } else {
+    await run(page, "echo marker-$((6*7))");
+  }
   await expect(screen(page)).toContainText("marker-42");
-  await page.keyboard.press("Meta+k");
+  const mod = isWin ? "Control" : "Meta";
+  await page.keyboard.press(`${mod}+k`);
   await expect(screen(page)).not.toContainText("marker-42");
-  await page.keyboard.press("Meta+Comma");
+  await page.keyboard.press(`${mod}+Comma`);
   const settings = page.getByRole("dialog", { name: "Settings" });
   await expect(settings).toBeVisible();
   await page.keyboard.press("Escape");

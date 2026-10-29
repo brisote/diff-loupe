@@ -20,6 +20,7 @@ def main() -> int:
     parser.add_argument("--open", type=Path, action="append", default=[], help="repository to open at start")
     parser.add_argument("--pick", type=Path, help="folder that the Open… button returns")
     parser.add_argument("--platform", choices=["macos", "windows", "linux"], help="platform the UI should behave as; this system's by default")
+    parser.add_argument("--shell", help="shell executable to use in the terminal")
     parser.add_argument("--demo", action="store_true", help="create demo repositories and open them")
     args = parser.parse_args()
 
@@ -36,6 +37,8 @@ def main() -> int:
         bridge += ["--pick", str(args.pick)]
     if args.platform:
         bridge += ["--platform", args.platform]
+    if args.shell:
+        bridge += ["--shell", args.shell]
 
     processes = [subprocess.Popen(bridge, cwd=ROOT)]
     processes.append(subprocess.Popen(["pnpm", "vite", "--port", str(args.vite_port), "--strictPort"], cwd=ROOT / "frontend"))
