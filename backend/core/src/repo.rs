@@ -1,4 +1,5 @@
 use crate::error::{Error, Result};
+use crate::platform;
 use std::path::{Path, PathBuf};
 
 pub struct Repo {
@@ -13,7 +14,7 @@ impl Repo {
         if !path.exists() {
             return Err(Error::NotFound(path.display().to_string()));
         }
-        let path = &path.canonicalize()?;
+        let path = &platform::canonicalize(path)?;
         let repo = gix::discover(path).map_err(|_| match std::fs::read_dir(path) {
             Err(error) => Error::Io(error),
             Ok(_) => Error::NotARepository {
@@ -25,9 +26,9 @@ impl Repo {
                 path: path.display().to_string(),
             });
         };
-        let root = workdir.canonicalize()?;
-        let git_dir = repo.git_dir().canonicalize()?;
-        let common_dir = repo.common_dir().canonicalize()?;
+        let root = platform::canonicalize(workdir)?;
+        let git_dir = platform::canonicalize(repo.git_dir())?;
+        let common_dir = platform::canonicalize(repo.common_dir())?;
         Ok(Repo {
             root,
             git_dir,

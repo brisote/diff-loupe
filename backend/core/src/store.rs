@@ -164,6 +164,11 @@ impl Store {
         branch: Option<&str>,
         now: i64,
     ) -> Result<()> {
+        let path = clean_path(path);
+        self.db.execute(
+            "DELETE FROM recent WHERE path = ?1 COLLATE NOCASE AND path <> ?1",
+            params![path],
+        )?;
         self.db.execute(
             "INSERT INTO recent (path, name, branch, last_opened) VALUES (?1, ?2, ?3, ?4)
              ON CONFLICT(path) DO UPDATE SET name = ?2, branch = ?3, last_opened = ?4",
@@ -189,16 +194,20 @@ impl Store {
     }
 
     pub fn remove_recent(&self, path: &str) -> Result<()> {
-        self.db
-            .execute("DELETE FROM recent WHERE path = ?1", params![path])?;
+        let path = clean_path(path);
+        self.db.execute(
+            "DELETE FROM recent WHERE path = ?1 COLLATE NOCASE",
+            params![path],
+        )?;
         Ok(())
     }
 
     pub fn repo_state(&self, path: &str) -> Result<RepoState> {
+        let path = clean_path(path);
         let row = self
             .db
             .query_row(
-                "SELECT target_branch, last_tab, last_selection FROM repo_state WHERE path = ?1",
+                "SELECT target_branch, last_tab, last_selection FROM repo_state WHERE path = ?1 COLLATE NOCASE",
                 params![path],
                 |r| {
                     Ok(RepoState {
@@ -213,6 +222,11 @@ impl Store {
     }
 
     pub fn set_repo_state(&self, path: &str, state: &RepoState) -> Result<()> {
+        let path = clean_path(path);
+        self.db.execute(
+            "DELETE FROM repo_state WHERE path = ?1 COLLATE NOCASE AND path <> ?1",
+            params![path],
+        )?;
         self.db.execute(
             "INSERT INTO repo_state (path, target_branch, last_tab, last_selection) VALUES (?1, ?2, ?3, ?4)
              ON CONFLICT(path) DO UPDATE SET target_branch = ?2, last_tab = ?3, last_selection = ?4",
@@ -241,6 +255,11 @@ impl Store {
     }
 
     pub fn add_commit_message(&self, repo: &str, message: &str, now: i64) -> Result<()> {
+        let repo = clean_path(repo);
+        self.db.execute(
+            "UPDATE OR REPLACE commit_message SET repo = ?1 WHERE repo = ?1 COLLATE NOCASE AND repo <> ?1",
+            params![repo],
+        )?;
         self.db.execute(
             "INSERT INTO commit_message (repo, message, used_at) VALUES (?1, ?2, ?3)
              ON CONFLICT(repo, message) DO UPDATE SET used_at = ?3",
@@ -255,8 +274,9 @@ impl Store {
     }
 
     pub fn commit_messages(&self, repo: &str) -> Result<Vec<String>> {
+        let repo = clean_path(repo);
         let mut stmt = self.db.prepare(
-            "SELECT message FROM commit_message WHERE repo = ?1 ORDER BY used_at DESC, message",
+            "SELECT message FROM commit_message WHERE repo = ?1 COLLATE NOCASE ORDER BY used_at DESC, message",
         )?;
         let rows = stmt.query_map(params![repo], |r| r.get(0))?;
         rows.collect::<std::result::Result<Vec<String>, _>>()
@@ -272,6 +292,26 @@ impl Store {
     pub fn written_by(&self) -> Option<String> {
         written_by(&self.db)
     }
+}
+
+fn clean_path(path: &str) -> String {
+    let stripped = path.strip_prefix(r"\\?\").unwrap_or(path);
+    let bytes = stripped.as_bytes();
+    if bytes.len() >= 3
+        && bytes[0].is_ascii_alphabetic()
+        && bytes[1] == b':'
+        && matches!(bytes[2], b'\\' | b'/')
+    {
+        let drive = char::from(bytes[0].to_ascii_uppercase());
+        let rest = stripped[2..].replace('/', "\\");
+        let rest = rest.trim_end_matches('\\');
+        return if rest.is_empty() {
+            format!("{drive}:\\")
+        } else {
+            format!("{drive}:{rest}")
+        };
+    }
+    stripped.to_string()
 }
 
 fn read_settings(path: &Path) -> (Value, Option<String>) {
@@ -590,6 +630,52 @@ mod tests {
         assert_eq!(store.recent().unwrap()[0].branch.as_deref(), Some("dev"));
         store.remove_recent("/a").unwrap();
         assert_eq!(store.recent().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn recent_list_and_repo_state_normalise_windows_paths_and_ignore_case() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::open(dir.path()).unwrap();
+        store
+            .touch_recent(r"\\?\c:\Work\My Repo\", "My Repo", Some("main"), 1)
+            .unwrap();
+        store
+            .set_repo_state(
+                r"C:\Work\My Repo",
+                &RepoState {
+                    target_branch: Some("main".into()),
+                    last_tab: Some("log".into()),
+                    last_selection: None,
+                },
+            )
+            .unwrap();
+        store
+            .touch_recent(r"C:/work/my repo", "My Repo", Some("dev"), 2)
+            .unwrap();
+        let recent = store.recent().unwrap();
+        assert_eq!(recent.len(), 1);
+        assert_eq!(recent[0].path, r"C:\work\my repo");
+        assert_eq!(recent[0].branch.as_deref(), Some("dev"));
+        assert_eq!(
+            store
+                .repo_state(r"c:\WORK\MY REPO")
+                .unwrap()
+                .last_tab
+                .as_deref(),
+            Some("log")
+        );
+        store
+            .add_commit_message(r"C:\Work\My Repo", "Fix invoice total", 10)
+            .unwrap();
+        store
+            .add_commit_message(r"c:\work\my repo", "Fix invoice total", 20)
+            .unwrap();
+        assert_eq!(
+            store.commit_messages(r"C:\WORK\MY REPO").unwrap(),
+            vec!["Fix invoice total"]
+        );
+        store.remove_recent(r"C:\WORK\MY REPO").unwrap();
+        assert!(store.recent().unwrap().is_empty());
     }
 
     const OLD: Migrations<'static> = Migrations {

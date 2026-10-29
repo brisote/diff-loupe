@@ -243,7 +243,7 @@ def main() -> int:
         seed(home, repo)
         main_window = report(home, lambda: (repo / "draft.txt").write_text("new\n"))
         text = main_window["text"]
-        results.append(check("the last repository reopens", "acme-billing" in text and "Changes" in text, text[:200]))
+        results.append(check("the last repository reopens", "acme-billing" in text and "Review" in text, text[:200]))
         results.append(check("the Changes list shows the edited file", "Billing.kt" in text and "1 change" in text, text[:300]))
         results.append(check("a file created while running appears", "draft.txt" in text, text[:300]))
         diff = main_window.get("diff", "")

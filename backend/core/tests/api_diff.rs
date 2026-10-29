@@ -301,3 +301,34 @@ fn a_staged_diff_follows_git_add() {
         "three\n"
     );
 }
+
+#[test]
+fn autocrlf_and_gitattributes_eol_report_only_the_edited_line() {
+    let repo = TempRepo::new();
+    repo.git(&["config", "core.autocrlf", "true"]);
+    repo.write(".gitattributes", "* text=auto eol=crlf\n");
+    repo.write("readme.txt", "one\r\ntwo\r\nthree\r\n");
+    repo.commit_all("Initial commit");
+    let (_data, core, _events, path) = open(&repo);
+    let clean = core.dispatch("status", json!({ "path": path })).unwrap();
+    assert_eq!(clean, json!([]));
+    let clean_diff = diff(&core, &path, "readme.txt", None);
+    assert!(kinds(&clean_diff).is_empty());
+    assert_eq!(clean_diff["left"]["crlf"], clean_diff["right"]["crlf"]);
+
+    repo.write("readme.txt", "one\r\nTWO\r\nthree\r\n");
+    let status = core.dispatch("status", json!({ "path": path })).unwrap();
+    assert_eq!(status.as_array().unwrap().len(), 1);
+    assert_eq!(status[0]["path"], "readme.txt");
+    let d = diff(&core, &path, "readme.txt", None);
+    assert_eq!(d["left"]["crlf"], false);
+    assert_eq!(d["right"]["crlf"], false);
+    assert_eq!(d["left"]["text"], "one\ntwo\nthree\n");
+    assert_eq!(d["right"]["text"], "one\nTWO\nthree\n");
+    assert_eq!(kinds(&d), ["modified"]);
+    assert_eq!(d["blocks"].as_array().unwrap().len(), 1);
+    assert_eq!(d["blocks"][0]["leftStart"], 1);
+    assert_eq!(d["blocks"][0]["leftEnd"], 2);
+    assert_eq!(d["blocks"][0]["rightStart"], 1);
+    assert_eq!(d["blocks"][0]["rightEnd"], 2);
+}

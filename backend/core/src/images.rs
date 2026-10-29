@@ -1,4 +1,5 @@
 use crate::error::{Error, Result};
+use crate::platform;
 use std::path::{Component, Path, PathBuf};
 
 const IMAGE_LIMIT: u64 = 10 * 1024 * 1024;
@@ -78,7 +79,7 @@ pub fn read(
             let Ok(meta) = std::fs::metadata(&full) else {
                 return Ok(None);
             };
-            let inside = full.canonicalize().is_ok_and(|real| real.starts_with(root));
+            let inside = platform::canonicalize(&full).is_ok_and(|real| real.starts_with(root));
             if !meta.is_file() || !inside || meta.len() > IMAGE_LIMIT {
                 return Ok(None);
             }

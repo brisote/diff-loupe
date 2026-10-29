@@ -300,11 +300,12 @@ pub fn read(repo: &gix::Repository, path: &str) -> Result<MergeFile> {
     else {
         return Ok(file(MergeContent::Encoding));
     };
+    let worktree = crate::filediff::to_worktree(repo, path, ours.clone());
     let disk = repo
         .workdir()
         .and_then(|root| std::fs::read(root.join(path)).ok())
-        .unwrap_or_else(|| ours.clone());
-    let crlf = crlf_lines(&disk);
+        .unwrap_or_else(|| worktree.clone());
+    let crlf = crlf_lines(&disk) || crlf_lines(&worktree);
     let [base, ours, theirs] =
         [texts[0], texts[1], texts[2]].map(|text| text.replace("\r\n", "\n"));
     Ok(MergeFile {

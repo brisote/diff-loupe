@@ -2,7 +2,8 @@
 
 use diffloupe_core::Core;
 use diffloupe_core::events::{CoreEvent, NoEvents, RecordedEvents};
-use diffloupe_core::testutil::{TempRepo, git_in, test_env};
+use diffloupe_core::platform;
+use diffloupe_core::testutil::{TempRepo, git_in, isolate, test_env};
 use serde_json::{Value, json};
 use std::fs;
 use std::sync::Arc;
@@ -37,7 +38,10 @@ fn open_repo_returns_name_branch_and_the_default_branch_as_target() {
     assert_eq!(info["lastTab"], "review");
     assert_eq!(
         info["path"],
-        repo.path().canonicalize().unwrap().display().to_string()
+        platform::canonicalize(repo.path())
+            .unwrap()
+            .display()
+            .to_string()
     );
 }
 
@@ -63,7 +67,10 @@ fn a_plain_folder_is_not_a_repository() {
         .unwrap_err();
     assert_eq!(serde_json::to_value(err.code).unwrap(), "notARepository");
     assert!(err.message.contains("is not a git repository"));
-    let canonical = plain.path().canonicalize().unwrap().display().to_string();
+    let canonical = platform::canonicalize(plain.path())
+        .unwrap()
+        .display()
+        .to_string();
     assert_eq!(err.path.as_deref(), Some(canonical.as_str()));
 }
 
@@ -215,6 +222,18 @@ fn ui_values_round_trip_and_unknown_commands_fail() {
     assert_eq!(serde_json::to_value(err.code).unwrap(), "invalidArgs");
 }
 
+#[cfg(windows)]
+fn expected_home() -> String {
+    std::env::var("USERPROFILE")
+        .or_else(|_| std::env::var("HOME"))
+        .unwrap()
+}
+
+#[cfg(not(windows))]
+fn expected_home() -> String {
+    std::env::var("HOME").unwrap()
+}
+
 #[test]
 fn app_info_reports_a_broken_settings_file() {
     let data = tempfile::tempdir().unwrap();
@@ -227,5 +246,31 @@ fn app_info_reports_a_broken_settings_file() {
             .unwrap()
             .contains("could not be read")
     );
-    assert_eq!(info["home"], std::env::var("HOME").unwrap());
+    assert_eq!(info["home"], expected_home());
+}
+
+#[test]
+fn open_repo_handles_spaces_in_the_folder_name() {
+    let dir = tempfile::tempdir().unwrap();
+    let spaced = dir.path().join("My Projects").join("Acme Billing");
+    fs::create_dir_all(&spaced).unwrap();
+    git_in(&spaced, &["init", "-q", "-b", "main"]);
+    isolate(&spaced);
+    fs::write(spaced.join("README.md"), "# Acme Billing\n").unwrap();
+    git_in(&spaced, &["add", "-A"]);
+    git_in(&spaced, &["commit", "-q", "-m", "Initial commit"]);
+
+    let (_data, core) = core();
+    let info = call(&core, "open_repo", json!({"path": spaced}));
+    assert_eq!(info["name"], "Acme Billing");
+    assert_eq!(info["branch"], "main");
+    let canonical = platform::canonicalize(&spaced)
+        .unwrap()
+        .display()
+        .to_string();
+    assert!(!canonical.starts_with(r"\\?\"));
+    assert_eq!(info["path"], canonical);
+    let recent = call(&core, "recent_repos", Value::Null);
+    assert_eq!(recent.as_array().unwrap().len(), 1);
+    assert_eq!(recent[0]["path"], canonical);
 }

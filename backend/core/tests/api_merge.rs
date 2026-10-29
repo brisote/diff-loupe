@@ -501,6 +501,41 @@ fn line_endings_and_binary_files_are_kept_apart() {
 }
 
 #[test]
+fn resolving_a_conflict_with_autocrlf_writes_crlf_on_disk() {
+    let repo = TempRepo::new();
+    repo.git(&["config", "core.autocrlf", "true"]);
+    repo.write(".gitattributes", "* text=auto eol=crlf\n");
+    repo.write("doc.txt", "line1\r\nbase\r\n");
+    repo.commit_all("Base");
+    repo.branch("gs/feature");
+    repo.write("doc.txt", "line1\r\nours\r\n");
+    repo.commit_all("Ours");
+    repo.switch("main");
+    repo.write("doc.txt", "line1\r\ntheirs\r\n");
+    repo.commit_all("Theirs");
+    repo.switch("gs/feature");
+    let (_data, core, path) = open(&repo);
+    call(&core, "merge_target", json!({ "path": path }));
+    let merged = call(
+        &core,
+        "merge_file",
+        json!({ "path": path, "file": "doc.txt" }),
+    );
+    assert_eq!(merged["crlf"], true);
+    assert_eq!(merged["ours"], "line1\nours\n");
+    assert_eq!(merged["theirs"], "line1\ntheirs\n");
+    call(
+        &core,
+        "apply_merge",
+        json!({ "path": path, "file": "doc.txt", "text": "line1\nresolved\n", "crlf": false }),
+    );
+    assert_eq!(
+        fs::read(repo.path().join("doc.txt")).unwrap(),
+        b"line1\r\nresolved\r\n"
+    );
+}
+
+#[test]
 fn clean_three_way_merges_match_git_merge_file() {
     let cases = [
         ("a\nb\nc\nd\ne\n", "A\nb\nc\nd\ne\n", "a\nb\nc\nd\nE\n"),
