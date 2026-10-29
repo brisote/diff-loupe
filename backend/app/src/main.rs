@@ -19,8 +19,9 @@ use diffloupe_core::footprint;
 use diffloupe_core::shellenv::ShellEnv;
 use serde_json::{Value, json};
 use std::path::PathBuf;
+use std::process::Command;
 #[cfg(unix)]
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::webview::{PageLoadEvent, PageLoadPayload};
@@ -236,7 +237,41 @@ fn touches_system() -> bool {
     true
 }
 
-#[cfg(not(unix))]
+#[cfg(windows)]
+fn clean_up_after_exit(locations: &[PathBuf], _defaults: Option<&str>) -> Result<(), String> {
+    if locations.is_empty() {
+        return Ok(());
+    }
+    use std::os::windows::process::CommandExt;
+    const CREATE_NO_WINDOW: u32 = 0x08000000;
+
+    let pid = std::process::id();
+    let paths: Vec<String> = locations
+        .iter()
+        .map(|p| format!("'{}'", p.display().to_string().replace('\'', "''")))
+        .collect();
+    let joined = paths.join(",");
+    let script = format!(
+        "$p = Get-Process -Id {pid} -ErrorAction SilentlyContinue; if ($p) {{ $p.WaitForExit(10000) }}; @({joined}) | ForEach-Object {{ if (Test-Path $_) {{ Remove-Item -Recurse -Force $_ -ErrorAction SilentlyContinue }} }}"
+    );
+    Command::new("powershell.exe")
+        .args([
+            "-ExecutionPolicy",
+            "Bypass",
+            "-NoProfile",
+            "-NonInteractive",
+            "-WindowStyle",
+            "Hidden",
+            "-Command",
+            &script,
+        ])
+        .creation_flags(CREATE_NO_WINDOW)
+        .spawn()
+        .map(drop)
+        .map_err(|e| e.to_string())
+}
+
+#[cfg(not(any(unix, windows)))]
 fn clean_up_after_exit(_locations: &[PathBuf], _defaults: Option<&str>) -> Result<(), String> {
     Err("Uninstall is not available on this system yet.".to_string())
 }
@@ -341,9 +376,47 @@ fn remove_app() -> Result<(), String> {
     package::remove()
 }
 
+#[cfg(any(windows, test))]
+fn uninstaller_at(exe: &std::path::Path) -> Option<PathBuf> {
+    let dir = exe.parent()?;
+    let uninstaller = dir.join("uninstall.exe");
+    uninstaller.exists().then_some(uninstaller)
+}
+
+#[cfg(windows)]
+fn installed() -> Option<PathBuf> {
+    let exe = std::env::current_exe().ok()?;
+    uninstaller_at(&exe)
+}
+
 #[cfg(windows)]
 fn remove_app() -> Result<(), String> {
-    Ok(())
+    use std::os::windows::process::CommandExt;
+    const CREATE_NO_WINDOW: u32 = 0x08000000;
+
+    let Some(uninstaller) = installed() else {
+        return Ok(());
+    };
+    let pid = std::process::id();
+    let uninstaller_path = uninstaller.display().to_string().replace('\'', "''");
+    let script = format!(
+        "$p = Get-Process -Id {pid} -ErrorAction SilentlyContinue; if ($p) {{ $p.WaitForExit(30000) }}; Start-Process -FilePath '{uninstaller_path}' -ArgumentList '/S' -Wait"
+    );
+    Command::new("powershell.exe")
+        .args([
+            "-ExecutionPolicy",
+            "Bypass",
+            "-NoProfile",
+            "-NonInteractive",
+            "-WindowStyle",
+            "Hidden",
+            "-Command",
+            &script,
+        ])
+        .creation_flags(CREATE_NO_WINDOW)
+        .spawn()
+        .map(drop)
+        .map_err(|e| e.to_string())
 }
 
 #[cfg(target_os = "linux")]
@@ -626,5 +699,15 @@ mod tests {
         assert!(!page("https://attacker.example/"));
         assert!(!page("file:///etc/passwd"));
         assert!(!page("javascript:alert(1)"));
+    }
+
+    #[test]
+    fn uninstaller_detects_uninstall_exe_in_the_same_directory() {
+        let dir = tempfile::tempdir().unwrap();
+        let exe = dir.path().join("diffloupe.exe");
+        assert_eq!(super::uninstaller_at(&exe), None);
+        let uninstaller = dir.path().join("uninstall.exe");
+        std::fs::write(&uninstaller, b"fake").unwrap();
+        assert_eq!(super::uninstaller_at(&exe), Some(uninstaller));
     }
 }
