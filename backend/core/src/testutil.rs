@@ -14,11 +14,21 @@ pub fn test_env() -> ShellEnv {
     ShellEnv::from_path(&std::env::var("PATH").unwrap_or_default())
 }
 
+#[cfg(windows)]
+fn null_device() -> &'static str {
+    "NUL"
+}
+
+#[cfg(not(windows))]
+fn null_device() -> &'static str {
+    "/dev/null"
+}
+
 fn test_git(dir: &Path, args: &[&str]) -> std::process::Output {
     Command::new("git")
         .current_dir(dir)
         .args(args)
-        .env("GIT_CONFIG_GLOBAL", "/dev/null")
+        .env("GIT_CONFIG_GLOBAL", null_device())
         .env("GIT_CONFIG_NOSYSTEM", "1")
         .env("GIT_AUTHOR_NAME", "Ada Lovelace")
         .env("GIT_AUTHOR_EMAIL", "ada@example.com")
@@ -34,6 +44,7 @@ pub fn isolate(repo: &Path) {
         ("user.email", "ada@example.com"),
         ("commit.gpgsign", "false"),
         ("core.hooksPath", ".git/hooks"),
+        ("core.autocrlf", "false"),
     ] {
         git_in(repo, &["config", key, value]);
     }

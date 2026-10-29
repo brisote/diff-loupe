@@ -331,7 +331,14 @@ pub fn abort(env: &ShellEnv, root: &Path, git_dir: &Path) -> Result<()> {
     Ok(())
 }
 
-pub fn write_result(env: &ShellEnv, root: &Path, file: &str, text: &str, crlf: bool) -> Result<()> {
+pub fn write_result(
+    env: &ShellEnv,
+    repo: &gix::Repository,
+    root: &Path,
+    file: &str,
+    text: &str,
+    crlf: bool,
+) -> Result<()> {
     if !conflicts(env, root)?
         .iter()
         .any(|conflict| conflict.path == file)
@@ -340,10 +347,14 @@ pub fn write_result(env: &ShellEnv, root: &Path, file: &str, text: &str, crlf: b
             "{file} has no conflict to resolve"
         )));
     }
-    let content = if crlf {
-        text.replace("\r\n", "\n").replace('\n', "\r\n")
+    let normalized = text.replace("\r\n", "\n");
+    let bytes = crate::filediff::to_worktree(repo, file, normalized.into_bytes());
+    let content = if crlf && !bytes.windows(2).any(|pair| pair == b"\r\n") {
+        String::from_utf8_lossy(&bytes)
+            .replace('\n', "\r\n")
+            .into_bytes()
     } else {
-        text.to_string()
+        bytes
     };
     let target = root.join(file);
     if std::fs::symlink_metadata(&target).is_ok_and(|meta| meta.file_type().is_symlink()) {

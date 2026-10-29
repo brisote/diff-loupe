@@ -1,4 +1,6 @@
+pub use dunce::canonicalize;
 use serde::Serialize;
+use std::path::Path;
 use std::process::{Child, Command};
 use ts_rs::TS;
 
@@ -117,6 +119,19 @@ fn taskkill(pid: u32, force: bool) {
         command.arg("/F");
     }
     let _ = hidden(&mut command).output();
+}
+
+pub fn same_path(a: &Path, b: &Path) -> bool {
+    same_path_on(Platform::CURRENT, a, b)
+}
+
+pub fn same_path_on(platform: Platform, a: &Path, b: &Path) -> bool {
+    match platform {
+        Platform::Windows => {
+            a.to_string_lossy().to_lowercase() == b.to_string_lossy().to_lowercase()
+        }
+        Platform::Macos | Platform::Linux => a == b,
+    }
 }
 
 pub fn first_line(text: &str) -> Option<String> {
@@ -246,6 +261,15 @@ mod tests {
             Some("Windows 11 (build 22631)")
         );
         assert_eq!(os_name(Platform::Macos, &|_, _| None), None);
+    }
+
+    #[test]
+    fn windows_compares_paths_without_regard_to_case() {
+        let upper = Path::new(r"C:\Work\Acme");
+        let lower = Path::new(r"c:\work\acme");
+        assert!(same_path_on(Platform::Windows, upper, lower));
+        assert!(!same_path_on(Platform::Macos, upper, lower));
+        assert!(!same_path_on(Platform::Linux, upper, lower));
     }
 
     #[cfg(unix)]

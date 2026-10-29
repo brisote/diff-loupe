@@ -1007,6 +1007,7 @@ name = "diffloupe-core"
 version = "0.2.2"
 dependencies = [
  "diffloupe-core",
+ "dunce",
  "gix",
  "imara-diff",
  "notify",

@@ -220,7 +220,7 @@ pub fn compare_sources(
 
 fn read(repo: &gix::Repository, root: &Path, source: &Source, path: &str) -> Result<Read> {
     match source {
-        Source::Worktree => read_worktree(root, path),
+        Source::Worktree => read_worktree(repo, root, path),
         Source::Index => read_index(repo, path),
         Source::Head => {
             if repo.head_id().is_err() {
@@ -292,7 +292,7 @@ fn read_index(repo: &gix::Repository, path: &str) -> Result<Read> {
     Ok(Read::Bytes(object.detach().data))
 }
 
-fn read_worktree(root: &Path, path: &str) -> Result<Read> {
+fn read_worktree(repo: &gix::Repository, root: &Path, path: &str) -> Result<Read> {
     let full = root.join(path);
     let Ok(meta) = std::fs::symlink_metadata(&full) else {
         return Ok(Read::Missing);
@@ -315,7 +315,53 @@ fn read_worktree(root: &Path, path: &str) -> Result<Read> {
     if meta.len() as usize > SIZE_LIMIT {
         return Ok(Read::TooLarge);
     }
-    Ok(Read::Bytes(std::fs::read(&full)?))
+    let bytes = std::fs::read(&full)?;
+    if is_binary(&bytes) {
+        return Ok(Read::Bytes(bytes));
+    }
+    Ok(Read::Bytes(to_git(repo, path, bytes)))
+}
+
+pub fn to_git(repo: &gix::Repository, path: &str, bytes: Vec<u8>) -> Vec<u8> {
+    let Ok((mut pipeline, index)) = repo.filter_pipeline(None) else {
+        return bytes;
+    };
+    let Ok(mut converted) =
+        pipeline.convert_to_git(std::io::Cursor::new(&bytes), Path::new(path), &index)
+    else {
+        return bytes;
+    };
+    if !converted.is_changed() {
+        return bytes;
+    }
+    let mut out = Vec::with_capacity(bytes.len());
+    if std::io::Read::read_to_end(&mut converted, &mut out).is_ok() {
+        out
+    } else {
+        bytes
+    }
+}
+
+pub fn to_worktree(repo: &gix::Repository, path: &str, bytes: Vec<u8>) -> Vec<u8> {
+    let Ok((mut pipeline, _)) = repo.filter_pipeline(None) else {
+        return bytes;
+    };
+    let Ok(mut converted) = pipeline.convert_to_worktree(
+        &bytes,
+        path.as_bytes().as_bstr(),
+        gix::filter::plumbing::pipeline::convert::to_worktree::Options::default(),
+    ) else {
+        return bytes;
+    };
+    if !converted.is_changed() || converted.is_delayed() {
+        return bytes;
+    }
+    let mut out = Vec::with_capacity(bytes.len());
+    if std::io::Read::read_to_end(&mut converted, &mut out).is_ok() {
+        out
+    } else {
+        bytes
+    }
 }
 
 fn side(read: &Read, source: &Source, repo: &gix::Repository, text: bool) -> DiffSide {

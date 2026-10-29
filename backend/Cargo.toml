@@ -9,6 +9,7 @@ publish = false
 
 [workspace.dependencies]
 diffloupe-core = { path = "core" }
+dunce = "1"
 gix = "0.89"
 rusqlite = { version = "0.40", features = ["bundled"] }
 serde = { version = "1", features = ["derive"] }

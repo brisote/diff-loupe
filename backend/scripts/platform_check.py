@@ -11,6 +11,8 @@ windows  runs clippy for the Windows target with cargo-xwin on this Mac, then, w
          the tests in it. Uncommitted changes are not sent.
 """
 
+from __future__ import annotations
+
 import argparse
 import hashlib
 import json

@@ -349,8 +349,15 @@ impl Core {
             "apply_merge" => {
                 let a: ApplyMergeArgs = parse(args)?;
                 let _exclusive = self.exclusive()?;
-                let (_, root, _) = self.open_root(&a.path)?;
-                merge::write_result(&self.env, &root, &a.file, &a.text, a.crlf)?;
+                let (repo, root, _) = self.open_root(&a.path)?;
+                merge::write_result(
+                    &self.env,
+                    &repo.to_thread_local(),
+                    &root,
+                    &a.file,
+                    &a.text,
+                    a.crlf,
+                )?;
                 reply(())
             }
             "abort_merge" => {
@@ -551,7 +558,7 @@ impl Core {
         let (repo, root, name, first) = {
             let slot = self.repo_slot()?;
             let open = slot.as_ref().ok_or(Error::NoRepository)?;
-            if open.repo.root() != Path::new(&wanted) {
+            if !platform::same_path(open.repo.root(), Path::new(&wanted)) {
                 return Err(Error::NotOpen(wanted));
             }
             (
@@ -578,7 +585,7 @@ impl Core {
             None => status::read(&self.env, &root, untracked)?,
         };
         if let Some(open) = self.repo_slot()?.as_mut()
-            && open.repo.root() == root
+            && platform::same_path(open.repo.root(), &root)
             && untracked == Untracked::All
         {
             open.status_read = true;
@@ -590,7 +597,7 @@ impl Core {
         let wanted = canonical(path)?;
         let slot = self.repo_slot()?;
         let open = slot.as_ref().ok_or(Error::NoRepository)?;
-        if open.repo.root() != Path::new(&wanted) {
+        if !platform::same_path(open.repo.root(), Path::new(&wanted)) {
             return Err(Error::NotOpen(wanted));
         }
         Ok((
@@ -667,7 +674,7 @@ impl Core {
         let slot = self.repo_slot()?;
         Ok(slot
             .as_ref()
-            .filter(|open| open.repo.root() == root)
+            .filter(|open| platform::same_path(open.repo.root(), root))
             .and_then(|open| open.repo.default_branch()))
     }
 
@@ -949,7 +956,7 @@ fn canonical(path: &str) -> Result<String> {
     if !path.exists() {
         return Err(Error::NotFound(path.display().to_string()));
     }
-    Ok(path.canonicalize()?.display().to_string())
+    Ok(platform::canonicalize(path)?.display().to_string())
 }
 
 fn now_ms() -> i64 {
