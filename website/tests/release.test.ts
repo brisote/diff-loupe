@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import fixture from "../src/data/release.fixture.json";
-import { installScript } from "../src/lib/install";
+import { installPs1Script, installScript } from "../src/lib/install";
 import {
   compareVersions,
   debName,
@@ -24,11 +24,14 @@ import {
   resolveFixtureReleases,
   rpmName,
   setupName,
+  type WindowsRelease,
 } from "../src/lib/release";
 import { getStaticPaths, GET as getVersion } from "../src/pages/download/latest/[platform]/version";
+import { GET as getPs1 } from "../src/pages/install.ps1";
 import { GET } from "../src/pages/install.sh";
 
 const template = readFileSync(join(__dirname, "../src/install/install.sh"), "utf8");
+const ps1Template = readFileSync(join(__dirname, "../src/install/install.ps1"), "utf8");
 const sha256 = "3f1c9a7e5b2d4f6081a9c3e5d7f9b1a3c5e7092b4d6f8a1c3e5b7d9f0a2c4e6b";
 const debSha256 = "7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b";
 const rpmSha256 = "8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c";
@@ -315,7 +318,53 @@ describe("installScript", () => {
   });
 });
 
-describe("the install.sh and version endpoints", () => {
+describe("installPs1Script", () => {
+  it("writes the Windows version, setup URL and checksum into the script", () => {
+    const release: WindowsRelease = {
+      version: "0.4.0",
+      date: "2026-11-03T09:30:00Z",
+      setup: {
+        name: "Diffloupe-0.4.0-windows-x64-setup.exe",
+        url: "https://github.com/brisote/diff-loupe/releases/download/v0.4.0/Diffloupe-0.4.0-windows-x64-setup.exe",
+        size: 10500000,
+        sha256: "4f5e6d7c8b9a0f1e2d3c4b5a6f7e8d9c0b1a2f3e4d5c6b7a8f9e0d1c2b3a4f5e",
+      },
+    };
+    const script = installPs1Script(ps1Template, release);
+    expect(script).toContain('$version = "0.4.0"');
+    expect(script).toContain(
+      '$url = "https://github.com/brisote/diff-loupe/releases/download/v0.4.0/Diffloupe-0.4.0-windows-x64-setup.exe"',
+    );
+    expect(script).toContain(
+      '$checksum = "4f5e6d7c8b9a0f1e2d3c4b5a6f7e8d9c0b1a2f3e4d5c6b7a8f9e0d1c2b3a4f5e"',
+    );
+    expect(script).not.toMatch(/@[A-Z0-9_]+@/);
+  });
+
+  it("refuses a value with invalid characters", () => {
+    const release: WindowsRelease = {
+      version: "0.4.0",
+      date: "2026-11-03T09:30:00Z",
+      setup: {
+        name: "setup.exe",
+        url: 'https://evil.com/setup.exe"; Remove-Item C:\\ -Recurse -Force #',
+        size: 10500000,
+        sha256: "00",
+      },
+    };
+    expect(() => installPs1Script(ps1Template, release)).toThrow("cannot go into install.ps1");
+  });
+
+  it("leaves empty strings when no Windows release is passed", () => {
+    const script = installPs1Script(ps1Template);
+    expect(script).toContain('$version = ""');
+    expect(script).toContain('$url = ""');
+    expect(script).toContain('$checksum = ""');
+    expect(script).not.toMatch(/@[A-Z0-9_]+@/);
+  });
+});
+
+describe("the install.sh, install.ps1 and version endpoints", () => {
   it("serves the filled script as plain text", async () => {
     const response = await GET({} as Parameters<typeof GET>[0]);
     expect(response.headers.get("Content-Type")).toBe("text/plain; charset=utf-8");
@@ -323,6 +372,14 @@ describe("the install.sh and version endpoints", () => {
     expect(script).toContain('version="0.2.0"');
     expect(script).toContain(`deb_url="${debUrl}"`);
     expect(script.trimEnd().endsWith("install_diffloupe")).toBe(true);
+  });
+
+  it("serves install.ps1 as plain text", async () => {
+    const response = await getPs1({} as Parameters<typeof getPs1>[0]);
+    expect(response.headers.get("Content-Type")).toBe("text/plain; charset=utf-8");
+    const script = await response.text();
+    expect(script).toContain("Downloading Diffloupe");
+    expect(script).toContain("Diffloupe was not installed");
   });
 
   it("generates version files only for platforms that have a release", async () => {
