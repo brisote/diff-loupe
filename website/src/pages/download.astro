@@ -2,33 +2,44 @@
 import Icon from "../components/Icon.astro";
 import StarPanel from "../components/StarPanel.astro";
 import Base from "../layouts/Base.astro";
-import { formatDate, formatSize, latestFor, latestRelease, type Platform } from "../lib/release";
+import {
+  formatSize,
+  latestFor,
+  latestRelease,
+  repository,
+  setupName,
+  type WindowsRelease,
+} from "../lib/release";
 import "../styles/download.css";
 
 const macos = await latestRelease();
 const linux = await latestFor("linux");
+const windows = await latestFor("windows");
+
+const windowsFallback: WindowsRelease = {
+  version: macos.version,
+  date: macos.date,
+  setup: {
+    name: setupName(macos.version),
+    url: `https://github.com/${repository}/releases/download/v${macos.version}/${setupName(macos.version)}`,
+    size: 13_100_000,
+    sha256: "",
+  },
+};
+const win = windows ?? windowsFallback;
 
 const macosSize = formatSize(macos.dmg.size);
 const debSize = linux ? formatSize(linux.deb.size) : "";
 const rpmSize = linux ? formatSize(linux.rpm.size) : "";
+const windowsSize = formatSize(win.setup.size);
 
 const curl = "curl -fsSL ";
 const pipe = "https://diffloupe.com/install.sh | bash";
 const command = curl + pipe;
+const winCommand = "irm https://diffloupe.com/install.ps1 | iex";
 const xattr = "xattr -dr com.apple.quarantine /Applications/Diffloupe.app";
 const aptCmd = linux ? `sudo apt install ./${linux.deb.name}` : "";
 const dnfCmd = linux ? `sudo dnf install ./${linux.rpm.name}` : "";
-
-const allChoices: {
-  id: Platform;
-  label: string;
-  icon: "laptop" | "linux";
-  active: boolean;
-}[] = [
-  { id: "macos", label: "macOS", icon: "laptop", active: true },
-  { id: "linux", label: "Linux", icon: "linux", active: Boolean(linux) },
-];
-const choices = allChoices.filter((choice) => choice.active);
 
 const benefits = [
   {
@@ -52,42 +63,17 @@ const benefits = [
   <div class="wrap">
     <section class="dl-hero" id="macos" data-platform-section="macos" aria-labelledby="download-title-macos">
       <span class="dl-glow" aria-hidden="true"></span>
-      <div>
-        <div class="platform">
-          <span class="eyebrow">Get Diffloupe for</span>
-          <details class="platform-menu">
-            <summary class="btn btn-outline platform-btn"><Icon name="laptop" />macOS<Icon name="chevron-down" size="sm" /></summary>
-            <ul class="platform-list">
-              {choices.map((choice) => (
-                <li>
-                  <a href={`#${choice.id}`} aria-current={choice.id === "macos" ? "true" : undefined}>
-                    <Icon name={choice.icon} />{choice.label}
-                  </a>
-                </li>
-              ))}
-            </ul>
-          </details>
-        </div>
-        <h1 class="h1-page" id="download-title-macos">One command.<br />Every change.</h1>
-        <p class="sub">Paste the command into Terminal. It downloads the latest release, checks it, and puts Diffloupe in your Applications folder.</p>
-        <ul class="chips" aria-label="Requirements">
-          <li class="chip"><Icon name="laptop" />macOS 13 or later</li>
-          <li class="chip"><Icon name="chip" />Apple silicon</li>
-          <li class="chip"><Icon name="no-account" />No account</li>
-        </ul>
-        <dl class="stats">
-          <div class="stat">
-            <dt class="eyebrow-mono">Version</dt>
-            <dd><p class="stat-value">{macos.version}</p><p class="stat-sub">{formatDate(macos.date)}</p></dd>
-          </div>
-          <div class="stat">
-            <dt class="eyebrow-mono">Download</dt>
-            <dd><p class="stat-value">{macosSize}</p><p class="stat-sub">Disk image, checked by SHA-256</p></dd>
-          </div>
-        </dl>
+      <div class="dl-hero-header">
+        <h1 class="dl-title" id="download-title-macos">Download Diffloupe</h1>
+        <p class="dl-sub">Fast, local git diff viewer for macOS, Windows and Linux. Everything stays on your computer.</p>
       </div>
       <div class="install">
         <div class="install-card">
+          <div class="install-tabs" role="tablist" aria-label="Platform">
+            <a class="install-tab" href="#macos" aria-current="true" role="tab" aria-selected="true"><Icon name="apple" size="sm" /><span>macOS</span></a>
+            <a class="install-tab" href="#windows" role="tab" aria-selected="false"><Icon name="windows" size="sm" /><span>Windows</span></a>
+            <a class="install-tab" href="#linux" role="tab" aria-selected="false"><Icon name="linux" size="sm" /><span>Linux</span></a>
+          </div>
           <div class="install-in">
             <div class="install-top">
               <div>
@@ -101,12 +87,60 @@ const benefits = [
               <button class="icon-btn" type="button" aria-label="Copy the install command" data-copy={command}><Icon name="copy" size="sm" /></button>
             </div>
             <p class="install-note">The script checks the download's SHA-256 checksum, installs into Applications and keeps your settings. Read it first at <a href="/install.sh">diffloupe.com/install.sh</a>.</p>
-            <button class="btn btn-light" type="button" data-copy={command}><Icon name="copy" size="sm" /><span data-label aria-live="polite">Copy command</span></button>
-            <p class="or">OR</p>
-            <a class="install-alt" href="#manual">Download the disk image instead</a>
+            <div class="install-actions">
+              <button class="btn btn-light" type="button" data-copy={command}><Icon name="copy" size="sm" /><span data-label aria-live="polite">Copy command</span></button>
+              <a class="install-alt" href="#manual">Download the disk image instead</a>
+            </div>
           </div>
         </div>
-        <p class="install-caption">For Macs with Apple silicon and macOS 13 or later.</p>
+        <ul class="chips chips-center" aria-label="Requirements">
+          <li class="chip"><Icon name="apple" size="sm" />macOS 13 or later</li>
+          <li class="chip"><Icon name="chip" />Apple silicon</li>
+          <li class="chip"><Icon name="no-account" />No account</li>
+        </ul>
+        <p class="install-caption">Version {macos.version} · {macosSize} · Disk image checked by SHA-256</p>
+        <StarPanel />
+      </div>
+    </section>
+
+    <section class="dl-hero" id="windows" data-platform-section="windows" aria-labelledby="download-title-windows">
+      <span class="dl-glow" aria-hidden="true"></span>
+      <div class="dl-hero-header">
+        <h1 class="dl-title" id="download-title-windows">Download Diffloupe</h1>
+        <p class="dl-sub">Fast, local git diff viewer for macOS, Windows and Linux. Everything stays on your computer.</p>
+      </div>
+      <div class="install">
+        <div class="install-card">
+          <div class="install-tabs" role="tablist" aria-label="Platform">
+            <a class="install-tab" href="#macos" role="tab" aria-selected="false"><Icon name="apple" size="sm" /><span>macOS</span></a>
+            <a class="install-tab" href="#windows" aria-current="true" role="tab" aria-selected="true"><Icon name="windows" size="sm" /><span>Windows</span></a>
+            <a class="install-tab" href="#linux" role="tab" aria-selected="false"><Icon name="linux" size="sm" /><span>Linux</span></a>
+          </div>
+          <div class="install-in">
+            <div class="install-top">
+              <div>
+                <p class="eyebrow-mono">One-line install</p>
+                <h2 class="install-title">Paste this in PowerShell.</h2>
+              </div>
+              <span class="install-icon" aria-hidden="true"><Icon name="terminal" /></span>
+            </div>
+            <div class="cmd cmd-dark">
+              <code><span class="prompt">PS&gt; </span>irm <span class="cmd-url">https://diffloupe.com/install.ps1 | iex</span></code>
+              <button class="icon-btn" type="button" aria-label="Copy the install command" data-copy={winCommand}><Icon name="copy" size="sm" /></button>
+            </div>
+            <p class="install-note">The script checks the download's SHA-256 checksum, installs for your user and keeps your settings. Read it first at diffloupe.com/install.ps1.</p>
+            <div class="install-actions">
+              <button class="btn btn-light" type="button" data-copy={winCommand}><Icon name="copy" size="sm" /><span data-label aria-live="polite">Copy command</span></button>
+              <a class="install-alt" href="#manual-windows">Download the setup program instead</a>
+            </div>
+          </div>
+        </div>
+        <ul class="chips chips-center" aria-label="Requirements">
+          <li class="chip"><Icon name="windows" size="sm" />Windows 10 or 11</li>
+          <li class="chip"><Icon name="chip" />64-bit</li>
+          <li class="chip"><Icon name="no-account" />No account</li>
+        </ul>
+        <p class="install-caption">Version {win.version} · {windowsSize} · Setup program checked by SHA-256</p>
         <StarPanel />
       </div>
     </section>
@@ -114,42 +148,17 @@ const benefits = [
     {linux && (
       <section class="dl-hero" id="linux" data-platform-section="linux" aria-labelledby="download-title-linux">
         <span class="dl-glow" aria-hidden="true"></span>
-        <div>
-          <div class="platform">
-            <span class="eyebrow">Get Diffloupe for</span>
-            <details class="platform-menu">
-              <summary class="btn btn-outline platform-btn"><Icon name="linux" />Linux<Icon name="chevron-down" size="sm" /></summary>
-              <ul class="platform-list">
-                {choices.map((choice) => (
-                  <li>
-                    <a href={`#${choice.id}`} aria-current={choice.id === "linux" ? "true" : undefined}>
-                      <Icon name={choice.icon} />{choice.label}
-                    </a>
-                  </li>
-                ))}
-              </ul>
-            </details>
-          </div>
-          <h1 class="h1-page" id="download-title-linux">One command.<br />Every change.</h1>
-          <p class="sub">Paste the command into a terminal. It downloads the latest release, checks it, and installs it with your package manager.</p>
-          <ul class="chips" aria-label="Requirements">
-            <li class="chip"><Icon name="linux" />Ubuntu, Debian, Fedora</li>
-            <li class="chip"><Icon name="chip" />64-bit</li>
-            <li class="chip"><Icon name="no-account" />No account</li>
-          </ul>
-          <dl class="stats">
-            <div class="stat">
-              <dt class="eyebrow-mono">Version</dt>
-              <dd><p class="stat-value">{linux.version}</p><p class="stat-sub">{formatDate(linux.date)}</p></dd>
-            </div>
-            <div class="stat">
-              <dt class="eyebrow-mono">Download</dt>
-              <dd><p class="stat-value">{debSize}</p><p class="stat-sub">Package, checked by SHA-256</p></dd>
-            </div>
-          </dl>
+        <div class="dl-hero-header">
+          <h1 class="dl-title" id="download-title-linux">Download Diffloupe</h1>
+          <p class="dl-sub">Fast, local git diff viewer for macOS, Windows and Linux. Everything stays on your computer.</p>
         </div>
         <div class="install">
           <div class="install-card">
+            <div class="install-tabs" role="tablist" aria-label="Platform">
+              <a class="install-tab" href="#macos" role="tab" aria-selected="false"><Icon name="apple" size="sm" /><span>macOS</span></a>
+              <a class="install-tab" href="#windows" role="tab" aria-selected="false"><Icon name="windows" size="sm" /><span>Windows</span></a>
+              <a class="install-tab" href="#linux" aria-current="true" role="tab" aria-selected="true"><Icon name="linux" size="sm" /><span>Linux</span></a>
+            </div>
             <div class="install-in">
               <div class="install-top">
                 <div>
@@ -163,12 +172,18 @@ const benefits = [
                 <button class="icon-btn" type="button" aria-label="Copy the install command" data-copy={command}><Icon name="copy" size="sm" /></button>
               </div>
               <p class="install-note">The script checks the download's SHA-256 checksum, installs the .deb or .rpm with sudo and keeps your settings. Read it first at <a href="/install.sh">diffloupe.com/install.sh</a>.</p>
-              <button class="btn btn-light" type="button" data-copy={command}><Icon name="copy" size="sm" /><span data-label aria-live="polite">Copy command</span></button>
-              <p class="or">OR</p>
-              <a class="install-alt" href="#manual-linux">Download the package instead</a>
+              <div class="install-actions">
+                <button class="btn btn-light" type="button" data-copy={command}><Icon name="copy" size="sm" /><span data-label aria-live="polite">Copy command</span></button>
+                <a class="install-alt" href="#manual-linux">Download the package instead</a>
+              </div>
             </div>
           </div>
-          <p class="install-caption">For 64-bit Ubuntu 22.04, Debian 12 and Fedora 40 or later.</p>
+          <ul class="chips chips-center" aria-label="Requirements">
+            <li class="chip"><Icon name="linux" size="sm" />Ubuntu, Debian, Fedora</li>
+            <li class="chip"><Icon name="chip" />64-bit</li>
+            <li class="chip"><Icon name="no-account" />No account</li>
+          </ul>
+          <p class="install-caption">Version {linux.version} · {debSize} · Package checked by SHA-256</p>
           <StarPanel />
         </div>
       </section>
@@ -193,6 +208,24 @@ const benefits = [
           <p class="or or-light">OR</p>
           <div class="cmd cmd-light"><code>{xattr}</code><button class="icon-btn" type="button" aria-label="Copy the xattr command" data-copy={xattr}><Icon name="copy" size="sm" /></button></div>
         </div></li>
+      </ol>
+    </div>
+
+    <div class="wrap wrap-rows manual-in" id="manual-windows" data-platform-section="windows">
+      <div>
+        <p class="eyebrow">Manual install</p>
+        <h2 class="h2-steps" id="manual-title-windows">Prefer the setup program?</h2>
+        <p class="small">Download the .exe and run it. Diffloupe is free, and a code-signing certificate costs money, so the setup program is not signed yet. Windows asks you once before the first start.</p>
+        <a class="btn btn-outline btn-lg" href={win.setup.url} data-download><Icon name="download" size="sm" />Download {win.setup.name}</a>
+        <p class="manual-meta">{windowsSize} · 64-bit · Windows 10 or 11</p>
+        <StarPanel />
+      </div>
+      <ol class="dl-steps">
+        <li class="dl-step"><span class="dl-step-num">01</span><div><h3>Run the setup program</h3><p>Double-click {win.setup.name} in your Downloads folder.</p></div></li>
+        <li class="dl-step"><span class="dl-step-num">02</span><div><h3>Allow the first start</h3><p>Windows says it protected your PC. Allow it once:</p>
+          <div class="cmd cmd-light"><code>More info → Run anyway</code><span class="icon-btn" aria-hidden="true"><Icon name="settings" size="sm" /></span></div>
+        </div></li>
+        <li class="dl-step"><span class="dl-step-num">03</span><div><h3>Start Diffloupe</h3><p>Open it from the Start menu. It installs for your user and needs no administrator rights.</p></div></li>
       </ol>
     </div>
 

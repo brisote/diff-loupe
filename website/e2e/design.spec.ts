@@ -81,7 +81,16 @@ test("the 404 page matches its board", async ({ page }, info) => {
 });
 
 for (const target of [
-  ...pages,
+  ...pages.map((target) =>
+    target.path === "/download/" ? { ...target, path: "/download/#macos" } : target,
+  ),
+  {
+    path: "/download/#windows",
+    title: "Download",
+    current: "Download",
+    board: "DownloadWindows",
+    boards: ["DownloadWindows"],
+  },
   {
     path: "/download/#linux",
     title: "Download",

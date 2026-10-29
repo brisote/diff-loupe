@@ -43,18 +43,19 @@ test("the install commands are readable text without JavaScript", async ({ page 
   );
 });
 
-test("the platform dropdown and #linux anchor switch to the Linux download section without JavaScript", async ({
+test("the platform tabs and #linux anchor switch to the Linux download section without JavaScript", async ({
   page,
 }) => {
   await page.goto("/download/");
   await expect(page.locator("#macos")).toBeVisible();
-  await expect(page.locator("#macos summary.platform-btn")).toContainText("macOS");
-  await page.locator("#macos summary.platform-btn").click();
-  await page.locator("#macos .platform-list").getByRole("link", { name: "Linux" }).click();
+  await expect(page.locator('#macos .install-tab[href="#macos"]')).toHaveAttribute(
+    "aria-current",
+    "true",
+  );
+  await page.locator('#macos .install-tab[href="#linux"]').click();
   await expect(page).toHaveURL(/#linux$/);
   await expect(page.locator("#linux")).toBeVisible();
   await expect(page.locator("#macos")).toBeHidden();
-  await expect(page.locator("#linux summary.platform-btn")).toContainText("Linux");
   await expect(page.locator('[data-platform-section="linux"] .install-title')).toHaveText(
     "Paste this in a terminal.",
   );
