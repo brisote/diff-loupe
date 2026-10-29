@@ -21,5 +21,8 @@ objc2-foundation = { version = "0.3.2", default-features = false, features = ["s
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = ["Win32_UI_WindowsAndMessaging"] }
 
+[dev-dependencies]
+tempfile.workspace = true
+
 [lints]
 workspace = true

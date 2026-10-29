@@ -1,4 +1,5 @@
 {
+  "productName": "Diffloupe",
   "app": {
     "windows": [
       {
@@ -13,5 +14,18 @@
         "dragDropEnabled": true
       }
     ]
+  },
+  "bundle": {
+    "targets": ["nsis"],
+    "publisher": "Diffloupe",
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser"
+      },
+      "webviewInstallMode": {
+        "type": "downloadBootstrapper",
+        "silent": true
+      }
+    }
   }
 }

@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import json
 import unittest
 from pathlib import Path
@@ -23,6 +25,13 @@ class TauriConfigTest(unittest.TestCase):
     def test_each_platform_builds_only_its_own_packages(self):
         self.assertEqual(load("tauri.macos.conf.json")["bundle"]["targets"], ["app", "dmg"])
         self.assertEqual(load("tauri.linux.conf.json")["bundle"]["targets"], ["deb", "rpm"])
+        self.assertEqual(load("tauri.windows.conf.json")["bundle"]["targets"], ["nsis"])
+
+    def test_the_windows_bundle_installs_per_user_with_webview_bootstrapper(self):
+        windows = load("tauri.windows.conf.json")["bundle"]
+        self.assertEqual(windows["publisher"], "Diffloupe")
+        self.assertEqual(windows["windows"]["nsis"]["installMode"], "currentUser")
+        self.assertEqual(windows["windows"]["webviewInstallMode"], {"type": "downloadBootstrapper", "silent": True})
 
 
 if __name__ == "__main__":

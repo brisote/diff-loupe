@@ -212,7 +212,15 @@ def single_instance(home: Path) -> bool:
 
 def uninstall(home: Path) -> list[bool]:
     library = home / "Library"
-    if PLATFORM == "linux":
+    if PLATFORM == "windows":
+        owned = [cache_dir(home) / "cache.db"]
+        kept = [
+            home / ".claude/projects/acme-billing/session.jsonl",
+            home / "AppData/Local/com.other.app/cache.db",
+            home / "AppData/Roaming/com.other.app/state.json",
+        ]
+        footprint = [data_dir(home), cache_dir(home)]
+    elif PLATFORM == "linux":
         owned = [cache_dir(home) / "cache.db"]
         kept = [
             home / ".claude/projects/acme-billing/session.jsonl",
@@ -234,14 +242,43 @@ def uninstall(home: Path) -> list[bool]:
     stuck = home / "smoke.json"
     stuck.unlink(missing_ok=True)
     env = environment(home, DIFFLOUPE_SMOKE_REPORT=str(stuck), DIFFLOUPE_SMOKE_UNINSTALL="1")
-    process = subprocess.Popen([str(APP)], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    try:
-        code = process.wait(timeout=60)
-    except subprocess.TimeoutExpired:
-        process.kill()
-        return [check("Uninstall quits the app", False, "still running after 60 seconds")]
-    if stuck.exists():
-        return [check("Uninstall quits the app", False, json.loads(stuck.read_text())["text"][-400:])]
+    if PLATFORM == "windows" and os.environ.get("SSH_CONNECTION"):
+        batch = home / "run_uninstall.cmd"
+        lines = ["@echo off"]
+        for k, v in env.items():
+            lines.append(f'set "{k}={v}"')
+        lines.append(f'"{APP}"')
+        batch.write_text("\r\n".join(lines) + "\r\n")
+        subprocess.run(
+            ["schtasks", "/create", "/tn", "DiffloupeSmokeUninstall", "/tr", f'"{batch}"', "/sc", "once", "/st", "00:00", "/f", "/it"],
+            capture_output=True,
+            check=True,
+        )
+        subprocess.run(["schtasks", "/run", "/tn", "DiffloupeSmokeUninstall"], capture_output=True, check=True)
+        start = time.time()
+        exited = False
+        while time.time() - start < 60:
+            tasks = subprocess.run(["tasklist", "/FI", "IMAGENAME eq diffloupe.exe"], capture_output=True, text=True)
+            if "diffloupe.exe" not in tasks.stdout:
+                exited = True
+                break
+            time.sleep(1)
+        subprocess.run(["schtasks", "/delete", "/tn", "DiffloupeSmokeUninstall", "/f"], capture_output=True)
+        if not exited:
+            subprocess.run(["taskkill", "/F", "/IM", "diffloupe.exe"], capture_output=True)
+            return [check("Uninstall quits the app", False, "still running after 60 seconds")]
+        if stuck.exists():
+            return [check("Uninstall quits the app", False, json.loads(stuck.read_text())["text"][-400:])]
+        code = 0
+    else:
+        process = subprocess.Popen([str(APP)], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        try:
+            code = process.wait(timeout=60)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            return [check("Uninstall quits the app", False, "still running after 60 seconds")]
+        if stuck.exists():
+            return [check("Uninstall quits the app", False, json.loads(stuck.read_text())["text"][-400:])]
     time.sleep(4)
     left = [str(path) for path in footprint if path.exists()]
     return [
@@ -315,8 +352,7 @@ def main() -> int:
         else:
             results.append(single_instance(home))
         results += newer_data(Path(tmp) / "newer-home")
-        if PLATFORM != "windows":
-            results += uninstall(home)
+        results += uninstall(home)
     return 0 if all(results) else 1
 
 
