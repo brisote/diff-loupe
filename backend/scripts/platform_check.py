@@ -76,6 +76,7 @@ WINDOWS_REMOTE_GATES = {
             "pnpm e2e",
         ]
     ),
+    "smoke": "python3 backend/scripts/app_smoke.py --platform windows",
 }
 
 
@@ -197,7 +198,7 @@ def windows(only: list[str] | None, host: str | None) -> list[tuple[str, bool]]:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("platform", choices=["linux", "windows"])
-    parser.add_argument("--only", action="append", help="run one gate; repeat for more (linux: fmt, clippy, test, ui, smoke; windows: clippy, test, ui)")
+    parser.add_argument("--only", action="append", help="run one gate; repeat for more (linux: fmt, clippy, test, ui, smoke; windows: clippy, test, ui, smoke)")
     args = parser.parse_args()
     if args.platform == "linux":
         results = linux(args.only)
