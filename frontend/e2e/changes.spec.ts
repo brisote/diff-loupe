@@ -98,3 +98,20 @@ test("the selection and keys are remembered and unversioned files always show", 
   );
   await expect(tree.getByRole("treeitem", { name: /Unversioned Files/ })).toHaveCount(1);
 });
+
+test("opening a fresh repository with no commits shows untracked files with clean diff", async ({
+  page,
+  workspace,
+  startApp,
+}) => {
+  const repo = workspace.folder("fresh-empty-repo");
+  git(repo, "init", "-q", "-b", "main");
+  workspace.write(repo, "single-file.txt", "hello world\n");
+  await startApp({ open: [repo] });
+  const tree = page.getByRole("tree", { name: "Changed files" });
+  const item = tree.getByRole("treeitem", { name: "single-file.txt" });
+  await expect(item).toBeVisible();
+  await item.click();
+  await expect(page.getByRole("region", { name: "Side-by-side diff" })).toBeVisible();
+  await expect(page.locator(".dl-conn")).toHaveCount(0);
+});
