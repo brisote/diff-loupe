@@ -46,6 +46,37 @@ fn open_repo_returns_name_branch_and_the_default_branch_as_target() {
 }
 
 #[test]
+fn open_repo_with_no_commits_succeeds() {
+    let repo = TempRepo::new();
+    repo.write("file.txt", "hello\n");
+    let (_data, core) = core();
+    let info = call(&core, "open_repo", json!({"path": repo.path()}));
+    assert_eq!(info["name"], "acme-billing");
+    assert_eq!(info["branch"], "main");
+    assert_eq!(info["target"], Value::Null);
+    assert_eq!(info["defaultBranch"], Value::Null);
+
+    let status = call(&core, "status", json!({"path": repo.path()}));
+    assert_eq!(status[0]["path"], "file.txt");
+    assert_eq!(status[0]["kind"], "untracked");
+
+    let diff = call(
+        &core,
+        "diff",
+        json!({"path": repo.path(), "file": "file.txt"}),
+    );
+    assert_eq!(diff["path"], "file.txt");
+    assert_eq!(diff["left"]["exists"], false);
+    assert_eq!(diff["right"]["exists"], true);
+
+    let log = call(&core, "branch_log", json!({"path": repo.path()}));
+    assert_eq!(log["entries"], json!([]));
+
+    let branches = call(&core, "branches", json!({"path": repo.path()}));
+    assert_eq!(branches["current"], "main");
+}
+
+#[test]
 fn open_repo_from_a_subfolder_finds_the_root() {
     let repo = TempRepo::with_commit();
     repo.write("billing/src/Main.kt", "fun main() {}\n");

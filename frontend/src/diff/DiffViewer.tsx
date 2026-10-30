@@ -247,18 +247,20 @@ export function DiffViewer({ diff, current, collapse, sync, highlight, onCurrent
       <div className="dl-divider app-diff-divider" aria-hidden="true">
         <svg>
           <title>Change connectors</title>
-          {shown.map((block) => (
-            <path
-              key={`${block.leftStart}-${block.rightStart}`}
-              className={`dl-conn ${connectorClass(block)}`}
-              d={connector(
-                y("left", block.leftStart),
-                y("left", block.leftEnd),
-                y("right", block.rightStart),
-                y("right", block.rightEnd),
-              )}
-            />
-          ))}
+          {diff.left.exists &&
+            diff.right.exists &&
+            shown.map((block) => (
+              <path
+                key={`${block.leftStart}-${block.rightStart}`}
+                className={`dl-conn ${connectorClass(block)}`}
+                d={connector(
+                  y("left", block.leftStart),
+                  y("left", block.leftEnd),
+                  y("right", block.rightStart),
+                  y("right", block.rightEnd),
+                )}
+              />
+            ))}
         </svg>
       </div>
       <LineNumbers

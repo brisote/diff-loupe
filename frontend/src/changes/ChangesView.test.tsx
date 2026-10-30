@@ -201,4 +201,20 @@ describe("ChangesView", () => {
     expect(row.querySelector(".dl-row-name")).toHaveTextContent("lib");
     expect(row.querySelector(".dl-i-nodes-folder")).not.toBeNull();
   });
+
+  it("displays untracked files when opening a fresh repository with no target branch", async () => {
+    const core = fakeCore({
+      open_repo: () => ({
+        ...repoInfo("fresh-repo"),
+        branch: "main",
+        target: null,
+        defaultBranch: null,
+      }),
+      status: () => [change("single-file.txt", "untracked")],
+    });
+    const { store } = await renderWithStore(<ChangesView />, core);
+    await store.getState().open("/Users/ada/Workspace/fresh-repo");
+    const item = await screen.findByRole("treeitem", { name: "single-file.txt" });
+    expect(item).toBeInTheDocument();
+  });
 });
