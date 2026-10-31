@@ -26,6 +26,14 @@ describe("offered", () => {
   it("offers a release newer than the one put off", () => {
     expect(offered({ ...check, latest: "0.4.0" }, { version: "0.3.0", until: day }, 0)).toBe(true);
   });
+
+  it("does not offer a skipped release", () => {
+    expect(offered(check, null, 0, "0.3.0")).toBe(false);
+  });
+
+  it("offers a release newer than the skipped one", () => {
+    expect(offered({ ...check, latest: "0.4.0" }, null, 0, "0.3.0")).toBe(true);
+  });
 });
 
 describe("parseLater", () => {

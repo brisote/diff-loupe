@@ -1,6 +1,7 @@
 import type { UpdateCheck, UpdateState } from "../api";
 
 export const laterKey = "update.later";
+export const skipKey = "update.skipped";
 export const lastCheckKey = "update.lastCheck";
 export const hour = 60 * 60 * 1000;
 export const day = 24 * hour;
@@ -39,8 +40,17 @@ export function parseLater(value: string | null): Later | null {
   return null;
 }
 
-export function offered(check: UpdateCheck, later: Later | null, now: number): boolean {
-  return check.newer && !(later && later.version === check.latest && now < later.until);
+export function offered(
+  check: UpdateCheck,
+  later: Later | null,
+  now: number,
+  skipped: string | null = null,
+): boolean {
+  return (
+    check.newer &&
+    check.latest !== skipped &&
+    !(later && later.version === check.latest && now < later.until)
+  );
 }
 
 export function parseTime(value: string | null): number {

@@ -4,11 +4,20 @@ import { Action, Banner } from "./Banner";
 export function UpdateBanner() {
   const offer = useApp((state) => (state.noticeShown ? null : state.updateOffer));
   const install = useApp((state) => state.updateInstall);
+  const cancelTask = useApp((state) => state.cancelTask);
   const laterUpdate = useApp((state) => state.laterUpdate);
-  const downloadUpdate = useApp((state) => state.downloadUpdate);
+  const skipVersion = useApp((state) => state.skipVersion);
+  const updateAndRestart = useApp((state) => state.updateAndRestart);
   const restartToUpdate = useApp((state) => state.restartToUpdate);
   const laterInstall = useApp((state) => state.laterInstall);
   const openLink = useApp((state) => state.openLink);
+  if (install.state === "downloading") {
+    return (
+      <Banner kind="info" actions={<Action onClick={() => cancelTask("update")}>Cancel</Action>}>
+        Downloading Diffloupe {install.check.latest} and restarting…
+      </Banner>
+    );
+  }
   if (install.state === "ready" || install.state === "installing")
     return (
       <Banner
@@ -31,7 +40,7 @@ export function UpdateBanner() {
         kind="error"
         actions={
           <>
-            <Action onClick={() => void downloadUpdate(install.check)}>Try again</Action>
+            <Action onClick={() => void updateAndRestart(install.check)}>Try again</Action>
             <Action onClick={() => openLink(install.check.page)}>Release notes</Action>
             <Action onClick={laterInstall}>Later</Action>
           </>
@@ -40,14 +49,14 @@ export function UpdateBanner() {
         {install.message}
       </Banner>
     );
-  if (install.state === "downloading" || !offer) return null;
+  if (!offer) return null;
   return (
     <Banner
       kind="info"
       actions={
         <>
-          <Action onClick={() => void downloadUpdate(offer)}>Update</Action>
-          <Action onClick={() => openLink(offer.page)}>Release notes</Action>
+          <Action onClick={() => void updateAndRestart(offer)}>Update & Restart</Action>
+          <Action onClick={() => void skipVersion(offer.latest)}>Skip this version</Action>
           <Action onClick={() => void laterUpdate()}>Later</Action>
         </>
       }
