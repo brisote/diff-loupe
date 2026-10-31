@@ -41,26 +41,23 @@ describe("the update banner", () => {
     expect(transport.calls.filter((call) => call.cmd === "check_update")).toHaveLength(1);
   });
 
-  it("opens the release notes", async () => {
+  it("opens the release notes from a failed update", async () => {
     const user = userEvent.setup();
-    const transport = core();
+    const transport = core(null, newer, () => {
+      throw { code: "update", message: failed };
+    });
     await renderWithStore(<NoticeBanner />, transport);
+    await user.click(await screen.findByRole("button", { name: "Update & Restart" }));
     await user.click(await screen.findByRole("button", { name: "Release notes" }));
     expect(transport.opened).toEqual([page]);
   });
 
-  it("downloads on Update, then installs on Restart now", async () => {
+  it("downloads and restarts in 1 click on Update & Restart", async () => {
     const user = userEvent.setup();
     const transport = core();
     await renderWithStore(<NoticeBanner />, transport);
-    await user.click(await screen.findByRole("button", { name: "Update" }));
-    expect(
-      await screen.findByText("is ready. It installs when you restart Diffloupe.", {
-        exact: false,
-      }),
-    ).toBeTruthy();
+    await user.click(await screen.findByRole("button", { name: "Update & Restart" }));
     expect(transport.calls.some((call) => call.cmd === "download_update")).toBe(true);
-    await user.click(screen.getByRole("button", { name: "Restart now" }));
     expect(transport.installed).toBe(true);
   });
 
@@ -72,7 +69,7 @@ describe("the update banner", () => {
       throw { code: "update", message: failed };
     });
     await renderWithStore(<NoticeBanner />, transport);
-    await user.click(await screen.findByRole("button", { name: "Update" }));
+    await user.click(await screen.findByRole("button", { name: "Update & Restart" }));
     expect(await screen.findByText(failed)).toBeTruthy();
     await user.click(screen.getByRole("button", { name: "Try again" }));
     expect(attempts).toBe(2);
@@ -86,8 +83,8 @@ describe("the update banner", () => {
       throw { code: "cancelled", message: "The operation was cancelled." };
     });
     await renderWithStore(<NoticeBanner />, transport);
-    await user.click(await screen.findByRole("button", { name: "Update" }));
-    expect(await screen.findByRole("button", { name: "Update" })).toBeTruthy();
+    await user.click(await screen.findByRole("button", { name: "Update & Restart" }));
+    expect(await screen.findByRole("button", { name: "Update & Restart" })).toBeTruthy();
     expect(screen.getByRole("status").textContent).toContain("Diffloupe 0.3.0 is available.");
     expect(screen.queryByText("The operation was cancelled.")).toBeNull();
   });
@@ -97,9 +94,75 @@ describe("the update banner", () => {
     const transport = core();
     transport.installError = { code: "io", message: failed };
     await renderWithStore(<NoticeBanner />, transport);
-    await user.click(await screen.findByRole("button", { name: "Update" }));
-    await user.click(await screen.findByRole("button", { name: "Restart now" }));
+    await user.click(await screen.findByRole("button", { name: "Update & Restart" }));
     expect(await screen.findByText(failed)).toBeTruthy();
+  });
+
+  it("shows downloading message and Cancel button during download", async () => {
+    const user = userEvent.setup();
+    let finishDownload: () => void = () => undefined;
+    const downloadPromise = new Promise<{ version: string }>((resolve) => {
+      finishDownload = () => resolve({ version: "0.3.0" });
+    });
+    const transport = core(null, newer, () => downloadPromise);
+    await renderWithStore(<NoticeBanner />, transport);
+    await user.click(await screen.findByRole("button", { name: "Update & Restart" }));
+    expect(await screen.findByText("Downloading Diffloupe 0.3.0 and restarting…")).toBeTruthy();
+    const cancel = screen.getByRole("button", { name: "Cancel" });
+    expect(cancel).toBeTruthy();
+    await user.click(cancel);
+    expect(
+      transport.calls.some(
+        (call) => call.cmd === "cancel" && (call.args as { id?: string })?.id === "update",
+      ),
+    ).toBe(true);
+    finishDownload();
+  });
+
+  it("hides on Skip this version and remembers the skipped release", async () => {
+    const user = userEvent.setup();
+    const transport = core();
+    await renderWithStore(<NoticeBanner />, transport);
+    await user.click(await screen.findByRole("button", { name: "Skip this version" }));
+    expect(screen.queryByText("Diffloupe 0.3.0")).toBeNull();
+    const stored = transport.calls
+      .filter((call) => call.cmd === "set_ui_value")
+      .map((call) => call.args as { key: string; value: string })
+      .find((args) => args.key === "update.skipped");
+    expect(stored).toBeDefined();
+    expect(stored?.value).toBe("0.3.0");
+  });
+
+  it("stays hidden at start while skipped version matches", async () => {
+    const transport = fakeCore({
+      get_ui_value: (args: unknown) => {
+        const { key } = args as { key: string };
+        if (key === "update.skipped") return "0.3.0";
+        return null;
+      },
+      check_update: () => newer,
+      get_settings: () => ({ ...settings, updates: { check: true } }),
+      update_state: () => ({ ready: null, failure: null, page: null }),
+    });
+    await renderWithStore(<NoticeBanner />, transport);
+    await settle();
+    expect(screen.queryByText("Diffloupe 0.3.0")).toBeNull();
+  });
+
+  it("offers a release newer than the skipped version at start", async () => {
+    const transport = fakeCore({
+      get_ui_value: (args: unknown) => {
+        const { key } = args as { key: string };
+        if (key === "update.skipped") return "0.3.0";
+        return null;
+      },
+      check_update: () => ({ ...newer, latest: "0.4.0" }),
+      get_settings: () => ({ ...settings, updates: { check: true } }),
+      update_state: () => ({ ready: null, failure: null, page: null }),
+    });
+    await renderWithStore(<NoticeBanner />, transport);
+    await settle();
+    expect(await screen.findByText("Diffloupe 0.4.0")).toBeTruthy();
   });
 
   it("hides on Later and remembers the release for a day", async () => {
@@ -188,18 +251,19 @@ describe("the update banner", () => {
       return { version: "0.3.0" };
     });
     await renderWithStore(<NoticeBanner />, transport);
-    await user.click(await screen.findByRole("button", { name: "Update" }));
-    await screen.findByRole("button", { name: "Restart now" });
+    await user.click(await screen.findByRole("button", { name: "Update & Restart" }));
     expect(asked).toEqual([{ version: "0.3.0" }]);
   });
 
-  it("installs once however often Restart now is pressed", async () => {
+  it("installs on Restart now when an update is already ready", async () => {
     const user = userEvent.setup();
-    const transport = core();
+    const transport = core(null, { ...newer, newer: false }, undefined, {
+      ready: "0.3.0",
+      failure: null,
+      page,
+    });
     await renderWithStore(<NoticeBanner />, transport);
-    await user.click(await screen.findByRole("button", { name: "Update" }));
     await user.click(await screen.findByRole("button", { name: "Restart now" }));
-    expect(screen.queryByRole("button", { name: "Restart now" })).toBeNull();
     expect(transport.installs).toBe(1);
   });
 

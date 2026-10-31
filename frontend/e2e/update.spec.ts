@@ -3,8 +3,6 @@ import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { expect, latestPath, packageSuffix, test } from "./fixtures";
 
-const page = "https://github.com/brisote/diff-loupe/releases/tag/v99.0.0";
-
 type Release = { server: Server; url: string; hits: () => number };
 
 const image = Buffer.alloc(200_000, 7);
@@ -59,8 +57,8 @@ test("a newer release is offered at start, and Later keeps it away after a resta
   const app = await startApp({ open: [workspace.repo("acme-billing")], updateUrl: current.url });
   const banner = window.getByRole("status").filter({ hasText: "Diffloupe 99.0.0 is available." });
   await expect(banner).toBeVisible();
-  await banner.getByRole("button", { name: "Release notes" }).click();
-  await expect.poll(() => app.bridge.call("devbridge_opened")).toEqual([page]);
+  await expect(banner.getByRole("button", { name: "Update & Restart" })).toBeVisible();
+  await expect(banner.getByRole("button", { name: "Skip this version" })).toBeVisible();
   await banner.getByRole("button", { name: "Later" }).click();
   await expect(banner).toBeHidden();
   await app.restart({ updateUrl: current.url });
@@ -140,7 +138,7 @@ test("with automatic checks off, no request is made at start", async ({
   expect(current.hits()).toBe(2);
 });
 
-test("Update downloads and verifies the new version, and Restart now installs it", async ({
+test("Update & Restart downloads, verifies, and installs the new version with 1 click", async ({
   page: window,
   workspace,
   startApp,
@@ -148,16 +146,26 @@ test("Update downloads and verifies the new version, and Restart now installs it
   current = await release();
   const app = await startApp({ open: [workspace.repo("acme-billing")], updateUrl: current.url });
   const banner = window.getByRole("status").filter({ hasText: "Diffloupe 99.0.0 is available." });
-  await banner.getByRole("button", { name: "Update" }).click();
-  const ready = window
-    .getByRole("status")
-    .filter({ hasText: "Diffloupe 99.0.0 is ready. It installs when you restart Diffloupe." });
-  await expect(ready).toBeVisible();
-  expect(await app.bridge.call("devbridge_update_installed")).toBeNull();
-  await ready.getByRole("button", { name: "Restart now" }).click();
+  await banner.getByRole("button", { name: "Update & Restart" }).click();
   await expect
     .poll(() => app.bridge.call("devbridge_update_installed"))
     .toContain(`updates/Diffloupe-99.0.0${packageSuffix}`);
+});
+
+test("Skip this version suppresses future banners for that release even after restart", async ({
+  page: window,
+  workspace,
+  startApp,
+}) => {
+  current = await release();
+  const app = await startApp({ open: [workspace.repo("acme-billing")], updateUrl: current.url });
+  const banner = window.getByRole("status").filter({ hasText: "Diffloupe 99.0.0 is available." });
+  await expect(banner).toBeVisible();
+  await banner.getByRole("button", { name: "Skip this version" }).click();
+  await expect(banner).toBeHidden();
+  await app.restart({ updateUrl: current.url });
+  await expect.poll(() => current?.hits()).toBe(2);
+  await expect(window.getByRole("status").filter({ hasText: "is available." })).toHaveCount(0);
 });
 
 test("a download that does not match its checksum is not installed", async ({
@@ -168,7 +176,7 @@ test("a download that does not match its checksum is not installed", async ({
   current = await release("v99.0.0", "0".repeat(64));
   const app = await startApp({ open: [workspace.repo("acme-billing")], updateUrl: current.url });
   const banner = window.getByRole("status").filter({ hasText: "Diffloupe 99.0.0 is available." });
-  await banner.getByRole("button", { name: "Update" }).click();
+  await banner.getByRole("button", { name: "Update & Restart" }).click();
   const failed = window.getByRole("status").filter({
     hasText: "Diffloupe 99.0.0 was not installed because its download does not match the checksum",
   });
@@ -186,11 +194,10 @@ test("a verified download is still ready after a restart", async ({
 }) => {
   current = await release();
   const app = await startApp({ open: [workspace.repo("acme-billing")], updateUrl: current.url });
-  await window
-    .getByRole("status")
-    .filter({ hasText: "Diffloupe 99.0.0 is available." })
-    .getByRole("button", { name: "Update" })
-    .click();
+  await window.getByRole("button", { name: "Settings menu" }).click();
+  await window.getByRole("menuitem", { name: "Check for updates…" }).click();
+  const dialog = window.getByRole("dialog", { name: "Settings" });
+  await dialog.getByRole("button", { name: "Update" }).click();
   const ready = window
     .getByRole("status")
     .filter({ hasText: "Diffloupe 99.0.0 is ready. It installs when you restart Diffloupe." });

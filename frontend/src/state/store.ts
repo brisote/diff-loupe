@@ -55,6 +55,7 @@ import {
   parseLater,
   parseTime,
   restored,
+  skipKey,
   type UpdateInstall,
   type UpdateStatus,
 } from "./updates";
@@ -293,10 +294,13 @@ export type AppState = {
   updateStatus: UpdateStatus;
   updateOffer: UpdateCheck | null;
   updateLater: Later | null;
+  updateSkipped: string | null;
   noticeShown: boolean;
   checkForUpdate: (manual: boolean) => Promise<void>;
   laterUpdate: () => Promise<void>;
+  skipVersion: (version?: string) => Promise<void>;
   updateInstall: UpdateInstall;
+  updateAndRestart: (check: UpdateCheck) => Promise<void>;
   downloadUpdate: (check: UpdateCheck) => Promise<void>;
   restartToUpdate: () => Promise<void>;
   laterInstall: () => void;
@@ -585,13 +589,15 @@ export function createAppStore(backend: Backend) {
         }
         if (repo) performance.mark(openMark);
         set({ info, settings, recent, repo, openError, started: true });
-        const [later, checked, pending] = await Promise.all([
+        const [later, skipped, checked, pending] = await Promise.all([
           backend.call("get_ui_value", { key: laterKey }).catch(() => null),
+          backend.call("get_ui_value", { key: skipKey }).catch(() => null),
           backend.call("get_ui_value", { key: lastCheckKey }).catch(() => null),
           backend.call("update_state").catch(() => null),
         ]);
         set({
           updateLater: parseLater(later),
+          updateSkipped: typeof skipped === "string" && skipped.length > 0 ? skipped : null,
           updateInstall: restored(pending, info.version),
         });
         lastCheck = parseTime(checked);
@@ -1008,6 +1014,7 @@ export function createAppStore(backend: Backend) {
       updateStatus: { state: "idle" },
       updateOffer: null,
       updateLater: null,
+      updateSkipped: null,
       noticeShown: false,
 
       checkForUpdate: async (manual) => {
@@ -1021,7 +1028,11 @@ export function createAppStore(backend: Backend) {
           if (manual) set({ updateStatus: { state: "done", check } });
           if (request !== checkRequest) return;
           if (!manual && !get().settings?.updates.check) return;
-          set({ updateOffer: offered(check, get().updateLater, Date.now()) ? check : null });
+          set({
+            updateOffer: offered(check, get().updateLater, Date.now(), get().updateSkipped)
+              ? check
+              : null,
+          });
         } catch (error) {
           if (manual)
             set({ updateStatus: { state: "failed", message: toApiError(error).message } });
@@ -1046,6 +1057,13 @@ export function createAppStore(backend: Backend) {
           .catch(() => undefined);
       },
 
+      skipVersion: async (version?: string) => {
+        const target = version ?? get().updateOffer?.latest;
+        if (!target) return;
+        set({ updateOffer: null, updateSkipped: target });
+        await backend.call("set_ui_value", { key: skipKey, value: target }).catch(() => undefined);
+      },
+
       openUpdates: () => {
         set({ dialog: "settings", settingsPage: "updates" });
         void get().checkForUpdate(true);
@@ -1056,6 +1074,13 @@ export function createAppStore(backend: Backend) {
       },
 
       updateInstall: { state: "idle" },
+
+      updateAndRestart: async (check) => {
+        await get().downloadUpdate(check);
+        if (get().updateInstall.state === "ready") {
+          await get().restartToUpdate();
+        }
+      },
 
       downloadUpdate: async (check) => {
         if (get().updateInstall.state === "downloading") return;
