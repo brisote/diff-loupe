@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { Block } from "../api/generated/Block";
 import {
   anchors,
+  clampRatio,
   connector,
   folds,
   layout,
@@ -137,5 +138,18 @@ describe("stripeRuns", () => {
     }));
     expect(stripeRuns(marks, 21000, 800)).toEqual([{ kind: "modified", from: 0, to: 20997 }]);
     expect(stripeRuns(marks, 21000, 0)).toEqual([]);
+  });
+
+  it("clamps split ratios within normalized bounds and container constraints", () => {
+    expect(clampRatio(0.5)).toBe(0.5);
+    expect(clampRatio(0.1)).toBe(0.2);
+    expect(clampRatio(0.9)).toBe(0.8);
+    expect(clampRatio(0.2)).toBe(0.2);
+    expect(clampRatio(0.8)).toBe(0.8);
+    expect(clampRatio(0.25, 0.2, 0.8, 1600)).toBe(0.25);
+    expect(clampRatio(0.15, 0.2, 0.8, 1600)).toBe(0.2);
+    expect(clampRatio(0.2, 0.2, 0.8, 1000)).toBe(0.2232);
+    expect(clampRatio(0.8, 0.2, 0.8, 1000)).toBe(0.7768);
+    expect(clampRatio(0.2, 0.2, 0.8, 300)).toBe(0.5);
   });
 });

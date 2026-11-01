@@ -2,7 +2,7 @@ import { createContext, type ReactNode, useContext } from "react";
 import { useStore } from "zustand";
 import type { AppState, AppStore } from "./store";
 
-const StoreContext = createContext<AppStore | null>(null);
+export const StoreContext = createContext<AppStore | null>(null);
 
 export function StoreProvider({ store, children }: { store: AppStore; children: ReactNode }) {
   return <StoreContext.Provider value={store}>{children}</StoreContext.Provider>;
