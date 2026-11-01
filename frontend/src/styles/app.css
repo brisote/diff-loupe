@@ -905,6 +905,19 @@ button {
   background: var(--editor-bg);
 }
 
+.app-md-right {
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+
+.app-md-right > .app-md-scroll {
+  flex: 1;
+  width: 100%;
+}
+
 .app-md-grid {
   padding: var(--space-16) 0;
 }

@@ -1,8 +1,9 @@
 import type { Root } from "hast";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { DiffSide, FileDiff } from "../api";
+import { Stripe } from "../diff/DiffViewer";
 import { LeftHead, RightHead } from "../diff/FileHead";
-import { foldContext, type Range } from "../diff/geometry";
+import { foldContext, layout, type Mark, type Range, rowTop } from "../diff/geometry";
 import { useApp } from "../state/context";
 import { type Block, blocks, parse } from "./blocks";
 import { type Marked, markRow } from "./mark";
@@ -10,6 +11,18 @@ import { match, type Row } from "./match";
 import { type Images, render, sources } from "./render";
 
 export type MarkdownRows = { rows: Row[]; marked: Marked[]; changed: number[] };
+
+export function markdownMarks(rows: Row[], hidden: Range[]): { marks: Mark[]; rows: number } {
+  const map = layout(rows.length, hidden);
+  const marks: Mark[] = [];
+  for (let i = 0; i < rows.length; i += 1) {
+    const row = rows[i];
+    if (row && row.kind !== "equal") {
+      marks.push({ kind: row.kind, row: rowTop(map, i) });
+    }
+  }
+  return { marks, rows: map.rows };
+}
 
 export function isMarkdown(path: string): boolean {
   return /\.(md|markdown|mdown|mkd)$/i.test(path);
@@ -144,6 +157,10 @@ export function MarkdownDiff({ diff, rows, inline, collapse, current, onCurrent 
   const hidden = useMemo(
     () => (collapse ? markdownFolds(rows.rows).filter(([from]) => !expanded.has(from)) : []),
     [collapse, rows.rows, expanded],
+  );
+  const { marks, rows: totalRows } = useMemo(
+    () => markdownMarks(rows.rows, hidden),
+    [rows.rows, hidden],
   );
   const foldAt = (index: number): Range | undefined =>
     hidden.find(([from, to]) => index >= from && index < to);
@@ -292,35 +309,38 @@ export function MarkdownDiff({ diff, rows, inline, collapse, current, onCurrent 
         </div>
       )}
       {inline ? (
-        <section ref={scroller} className="app-md-scroll">
-          <div className="app-md-inline">
-            {rows.rows.map((row, index) => {
-              const folded = fold(index);
-              if (folded !== undefined) return folded;
-              const marked = rows.marked[index];
-              if (!marked) return null;
-              const key = `${index}-${row.kind}`;
-              if (marked.whole) {
+        <div className="app-md-right">
+          <section ref={scroller} className="app-md-scroll">
+            <div className="app-md-inline">
+              {rows.rows.map((row, index) => {
+                const folded = fold(index);
+                if (folded !== undefined) return folded;
+                const marked = rows.marked[index];
+                if (!marked) return null;
+                const key = `${index}-${row.kind}`;
+                if (marked.whole) {
+                  return (
+                    <div key={key} className="dl-md" data-row={index}>
+                      {cell(marked.left, "dl-md-block is-deleted", "left", row.left)}
+                      {cell(marked.right, "dl-md-block is-inserted", "right", row.right)}
+                    </div>
+                  );
+                }
                 return (
                   <div key={key} className="dl-md" data-row={index}>
-                    {cell(marked.left, "dl-md-block is-deleted", "left", row.left)}
-                    {cell(marked.right, "dl-md-block is-inserted", "right", row.right)}
+                    {cell(
+                      marked.merged,
+                      blockClass(row, marked, "merged"),
+                      "merged",
+                      row.right ?? row.left,
+                    )}
                   </div>
                 );
-              }
-              return (
-                <div key={key} className="dl-md" data-row={index}>
-                  {cell(
-                    marked.merged,
-                    blockClass(row, marked, "merged"),
-                    "merged",
-                    row.right ?? row.left,
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </section>
+              })}
+            </div>
+          </section>
+          <Stripe marks={marks} rows={totalRows} />
+        </div>
       ) : (
         <div className="app-md-panes">
           <section
@@ -365,36 +385,39 @@ export function MarkdownDiff({ diff, rows, inline, collapse, current, onCurrent 
               })}
             </div>
           </div>
-          <section
-            ref={scroller}
-            className="app-md-scroll"
-            aria-label="After"
-            onScroll={() => follow(scroller.current)}
-          >
-            <div className="app-md-grid">
-              {rows.rows.map((row, index) => {
-                const folded = fold(index);
-                const key = `${index}-${row.kind}`;
-                if (folded !== undefined)
+          <div className="app-md-right">
+            <section
+              ref={scroller}
+              className="app-md-scroll"
+              aria-label="After"
+              onScroll={() => follow(scroller.current)}
+            >
+              <div className="app-md-grid">
+                {rows.rows.map((row, index) => {
+                  const folded = fold(index);
+                  const key = `${index}-${row.kind}`;
+                  if (folded !== undefined)
+                    return (
+                      folded && (
+                        <div key={key} className="app-md-cell" data-row={index}>
+                          {folded}
+                        </div>
+                      )
+                    );
+                  const marked = rows.marked[index];
+                  if (!marked) return null;
                   return (
-                    folded && (
-                      <div key={key} className="app-md-cell" data-row={index}>
-                        {folded}
-                      </div>
-                    )
+                    <div key={key} className="dl-md app-md-cell" data-row={index}>
+                      {row.kind === "deleted"
+                        ? startsRun(rows.rows, index) && <div className="app-md-gap is-deleted" />
+                        : cell(marked.right, blockClass(row, marked, "right"), "right", row.right)}
+                    </div>
                   );
-                const marked = rows.marked[index];
-                if (!marked) return null;
-                return (
-                  <div key={key} className="dl-md app-md-cell" data-row={index}>
-                    {row.kind === "deleted"
-                      ? startsRun(rows.rows, index) && <div className="app-md-gap is-deleted" />
-                      : cell(marked.right, blockClass(row, marked, "right"), "right", row.right)}
-                  </div>
-                );
-              })}
-            </div>
-          </section>
+                })}
+              </div>
+            </section>
+            <Stripe marks={marks} rows={totalRows} />
+          </div>
         </div>
       )}
     </section>

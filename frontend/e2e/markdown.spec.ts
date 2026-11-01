@@ -16,6 +16,11 @@ test("a Markdown file shows rendered side by side, inline and raw", async ({
   await page.getByRole("treeitem", { name: "README.md" }).click();
   const rendered = page.getByRole("region", { name: "Rendered side-by-side diff" });
   await expect(rendered).toBeVisible();
+  const stripe = rendered.locator(".dl-stripe");
+  await expect(stripe).toBeVisible();
+  await expect(stripe.locator("i")).toHaveCount(4);
+  await expect(stripe.locator("i.dl-mark-mod")).toHaveCount(3);
+  await expect(stripe.locator("i.dl-mark-ins")).toHaveCount(1);
   await page.getByRole("button", { name: "Collapse Unchanged Fragments" }).click();
   await expect(rendered.getByRole("heading", { name: "How totals are rounded" })).toHaveCount(2);
   await expect(rendered.locator("del")).toContainText(["half-up", "1234.5", "all"]);
@@ -24,9 +29,12 @@ test("a Markdown file shows rendered side by side, inline and raw", async ({
     "Empty invoices are skipped, see export notes.",
   );
   await expect(page.getByText("4 differences", { exact: true })).toBeVisible();
+  await expect(stripe.locator("i")).toHaveCount(4);
 
   await page.getByRole("button", { name: "Unified viewer" }).click();
   const inline = page.getByRole("region", { name: "Rendered inline diff" });
+  await expect(inline.locator(".dl-stripe")).toBeVisible();
+  await expect(inline.locator(".dl-stripe i")).toHaveCount(4);
   await expect(inline.locator("del")).toContainText(["half-up"]);
   await expect(inline.locator("ins")).toContainText(["half-even"]);
 

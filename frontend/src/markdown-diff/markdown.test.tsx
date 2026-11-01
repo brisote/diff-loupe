@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { blocks, parse } from "./blocks";
-import { canRender, markdownFolds, markdownRows, startsRun } from "./MarkdownDiff";
+import { canRender, markdownFolds, markdownMarks, markdownRows, startsRun } from "./MarkdownDiff";
 import { markRow } from "./mark";
 import { match } from "./match";
 import { render } from "./render";
@@ -268,5 +268,42 @@ describe("markdownFolds", () => {
   it("folds nothing when every block is unchanged or the run is short", () => {
     expect(markdownFolds(rows("====="))).toEqual([]);
     expect(markdownFolds(rows("=m=m=m"))).toEqual([]);
+  });
+});
+
+describe("markdownMarks", () => {
+  it("calculates marks for changed rows", () => {
+    const { rows } = markdownRows(
+      "# acme\n\nTotals are rounded half-up.\n",
+      "# acme\n\nTotals are rounded half-even.\n\nNew block.\n",
+    );
+    const { marks, rows: totalRows } = markdownMarks(rows, []);
+    expect(totalRows).toBe(rows.length);
+    expect(marks).toEqual([
+      { kind: "modified", row: 1 },
+      { kind: "inserted", row: 2 },
+    ]);
+  });
+
+  it("adjusts marks when unchanged sections are folded", () => {
+    const kinds = "====m===i==d=";
+    const rows = [...kinds].map((char) => {
+      if (char === "m") return { kind: "modified" as const };
+      if (char === "i") return { kind: "inserted" as const };
+      if (char === "d") return { kind: "deleted" as const };
+      return { kind: "equal" as const };
+    });
+    const folds = markdownFolds(rows);
+    const { marks, rows: totalRows } = markdownMarks(rows, folds);
+    expect(totalRows).toBeLessThan(rows.length);
+    expect(marks.map((m) => m.kind)).toEqual(["modified", "inserted", "deleted"]);
+    expect(marks[0]?.row).toBe(1);
+  });
+
+  it("returns empty marks when there are no differences", () => {
+    const { rows } = markdownRows("# acme\n\nNo change.\n", "# acme\n\nNo change.\n");
+    const { marks, rows: totalRows } = markdownMarks(rows, []);
+    expect(marks).toEqual([]);
+    expect(totalRows).toBe(rows.length);
   });
 });
