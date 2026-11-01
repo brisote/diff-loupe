@@ -1,14 +1,29 @@
 import type { EditorView } from "@codemirror/view";
-import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import {
+  memo,
+  type PointerEvent,
+  type KeyboardEvent as ReactKeyboardEvent,
+  useCallback,
+  useContext,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import type { Backend } from "../api";
 import type { Block } from "../api/generated/Block";
 import type { FileDiff } from "../api/generated/FileDiff";
 import type { Highlight } from "../api/generated/Highlight";
+import { StoreContext } from "../state/context";
 import { CodePane, type Decorate } from "./CodePane";
 import { diffDecorations } from "./decorations";
 import { LeftHead, RightHead } from "./FileHead";
 import {
   anchors,
+  clampRatio,
   connector,
+  diffDividerRatioKey,
   folds,
   type Layout,
   layout,
@@ -34,12 +49,110 @@ type Props = {
   collapse: boolean;
   sync: boolean;
   highlight: Highlight;
+  backend?: Backend;
   onCurrent: (index: number) => void;
 };
 
 type Scroll = { left: number; right: number; height: number };
 
-export function DiffViewer({ diff, current, collapse, sync, highlight, onCurrent }: Props) {
+export function DiffViewer({
+  diff,
+  current,
+  collapse,
+  sync,
+  highlight,
+  backend: explicitBackend,
+  onCurrent,
+}: Props) {
+  const store = useContext(StoreContext);
+  const backend = explicitBackend ?? store?.getState().backend;
+  const [ratio, setRatio] = useState(0.5);
+  const lastRatio = useRef(0.5);
+  const drag = useRef<{ startX: number; startRatio: number; width: number } | null>(null);
+  const containerRef = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    if (!backend) return;
+    let active = true;
+    void backend
+      .call("get_ui_value", { key: diffDividerRatioKey })
+      .then((saved) => {
+        if (!active || !saved) return;
+        const num = Number(saved);
+        if (Number.isFinite(num)) {
+          const next = clampRatio(num);
+          lastRatio.current = next;
+          setRatio(next);
+        }
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, [backend]);
+
+  const saveRatio = useCallback(
+    (next: number) => {
+      if (!backend) return;
+      void backend
+        .call("set_ui_value", { key: diffDividerRatioKey, value: String(next) })
+        .catch(() => undefined);
+    },
+    [backend],
+  );
+
+  const onDoubleClick = useCallback(() => {
+    lastRatio.current = 0.5;
+    setRatio(0.5);
+    saveRatio(0.5);
+  }, [saveRatio]);
+
+  const onPointerDown = (event: PointerEvent<HTMLHRElement>) => {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    const container = containerRef.current;
+    const width = container ? container.clientWidth - 104 : 0;
+    drag.current = {
+      startX: event.clientX,
+      startRatio: ratio,
+      width,
+    };
+  };
+
+  const onPointerMove = (event: PointerEvent<HTMLHRElement>) => {
+    if (!drag.current) return;
+    const { startX, startRatio, width } = drag.current;
+    const delta = event.clientX - startX;
+    const container = containerRef.current;
+    const next = clampRatio(
+      startRatio + (width > 0 ? delta / width : 0),
+      0.2,
+      0.8,
+      container?.clientWidth,
+    );
+    lastRatio.current = next;
+    setRatio(next);
+  };
+
+  const onPointerUp = (event: PointerEvent<HTMLHRElement>) => {
+    if (!drag.current) return;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    drag.current = null;
+    saveRatio(lastRatio.current);
+  };
+
+  const onKeyDown = (event: ReactKeyboardEvent<HTMLHRElement>) => {
+    const step = event.key === "ArrowLeft" ? -0.05 : event.key === "ArrowRight" ? 0.05 : 0;
+    if (!step) return;
+    event.preventDefault();
+    const next = clampRatio(ratio + step, 0.2, 0.8, containerRef.current?.clientWidth);
+    lastRatio.current = next;
+    setRatio(next);
+    saveRatio(next);
+  };
   const views = useRef<Record<string, EditorView | null>>({ left: null, right: null });
   const echo = useRef<Record<string, number | null>>({ left: null, right: null });
   const frame = useRef(0);
@@ -217,7 +330,14 @@ export function DiffViewer({ diff, current, collapse, sync, highlight, onCurrent
     return state ? ` is-${state.kind}${state.words ? " has-words" : ""}` : "";
   };
   return (
-    <section className="app-diff" aria-label="Side-by-side diff">
+    <section
+      ref={containerRef}
+      className="app-diff"
+      aria-label="Side-by-side diff"
+      style={{
+        gridTemplateColumns: `minmax(200px, ${ratio}fr) 40px var(--size-divider) 40px minmax(200px, ${1 - ratio}fr)`,
+      }}
+    >
       <div className="dl-filehead app-diff-head-left">
         <LeftHead diff={diff} />
       </div>
@@ -244,7 +364,21 @@ export function DiffViewer({ diff, current, collapse, sync, highlight, onCurrent
         height={scroll.height}
         className="is-left"
       />
-      <div className="dl-divider app-diff-divider" aria-hidden="true">
+      <div className="dl-divider app-diff-divider">
+        <hr
+          className="app-diff-handle"
+          aria-orientation="vertical"
+          aria-label="Resize diff panes"
+          aria-valuenow={Math.round(ratio * 100)}
+          aria-valuemin={20}
+          aria-valuemax={80}
+          tabIndex={0}
+          onPointerDown={onPointerDown}
+          onPointerMove={onPointerMove}
+          onPointerUp={onPointerUp}
+          onDoubleClick={onDoubleClick}
+          onKeyDown={onKeyDown}
+        />
         <svg>
           <title>Change connectors</title>
           {diff.left.exists &&

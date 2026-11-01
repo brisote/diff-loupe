@@ -245,3 +245,52 @@ test("connectors meet their blocks when long lines need a horizontal scrollbar",
   });
   expect(widths).toEqual({ divider: 24, path: 24 });
 });
+
+test("dragging the divider resizes panes, persists across files, and double-click resets", async ({
+  page,
+  workspace,
+  startApp,
+}) => {
+  const repo = repoWith(workspace, {
+    "src/Main.kt": ["fun main() {\n    val sum = 1\n}\n", "fun main() {\n    val count = 1\n}\n"],
+    "src/Second.kt": ["val x = 1\n", "val x = 2\n"],
+  });
+  await startApp({ open: [repo] });
+  await page.getByRole("treeitem", { name: "src/Main.kt" }).click();
+  const separator = page.getByLabel("Resize diff panes");
+  await expect(separator).toBeVisible();
+  await expect(separator).toHaveAttribute("aria-valuenow", "50");
+
+  const diff = page.getByRole("region", { name: "Side-by-side diff" });
+  const beforePane = diff.getByLabel("Before");
+  const afterPane = diff.getByLabel("After");
+
+  const initialBefore = (await beforePane.boundingBox())?.width ?? 0;
+  const initialAfter = (await afterPane.boundingBox())?.width ?? 0;
+  expect(Math.abs(initialBefore - initialAfter)).toBeLessThan(5);
+
+  const sepBox = await separator.boundingBox();
+  expect(sepBox).not.toBeNull();
+  if (sepBox) {
+    await page.mouse.move(sepBox.x + sepBox.width / 2, sepBox.y + sepBox.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(sepBox.x + sepBox.width / 2 + 120, sepBox.y + sepBox.height / 2);
+    await page.mouse.up();
+  }
+
+  const resizedBefore = (await beforePane.boundingBox())?.width ?? 0;
+  const resizedAfter = (await afterPane.boundingBox())?.width ?? 0;
+  expect(resizedBefore).toBeGreaterThan(initialBefore + 50);
+  expect(resizedAfter).toBeLessThan(initialAfter - 50);
+
+  await page.getByRole("treeitem", { name: "src/Second.kt" }).click();
+  await expect(diff.getByLabel("After")).toContainText("val x = 2");
+  const secondBefore = (await beforePane.boundingBox())?.width ?? 0;
+  expect(secondBefore).toBeGreaterThan(initialBefore + 50);
+
+  await separator.dblclick();
+  await expect(separator).toHaveAttribute("aria-valuenow", "50");
+  const resetBefore = (await beforePane.boundingBox())?.width ?? 0;
+  const resetAfter = (await afterPane.boundingBox())?.width ?? 0;
+  expect(Math.abs(resetBefore - resetAfter)).toBeLessThan(5);
+});

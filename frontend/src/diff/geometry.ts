@@ -161,3 +161,32 @@ export function stripeRuns(marks: Mark[], rows: number, height: number): MarkRun
   }
   return runs;
 }
+
+export const diffDividerRatioKey = "diffDividerRatio";
+
+export function clampRatio(
+  ratio: number,
+  min = 0.2,
+  max = 0.8,
+  containerWidth?: number,
+  minPaneWidth = 200,
+  fixedWidth = 104,
+): number {
+  let lower = min;
+  let upper = max;
+  if (containerWidth !== undefined && containerWidth > 0) {
+    const usable = containerWidth - fixedWidth;
+    if (usable > 0) {
+      const minFraction = minPaneWidth / usable;
+      const maxFraction = 1 - minFraction;
+      if (minFraction <= maxFraction) {
+        lower = Math.max(lower, minFraction);
+        upper = Math.min(upper, maxFraction);
+      } else {
+        return 0.5;
+      }
+    }
+  }
+  const clamped = Math.min(upper, Math.max(lower, ratio));
+  return Math.round(clamped * 10000) / 10000;
+}

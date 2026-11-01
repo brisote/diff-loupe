@@ -27,3 +27,22 @@ Object.defineProperties(HTMLElement.prototype, {
   offsetWidth: { configurable: true, get: () => 1024 },
   offsetHeight: { configurable: true, get: () => 768 },
 });
+
+if (!Range.prototype.getClientRects) {
+  Range.prototype.getClientRects = () => [] as unknown as DOMRectList;
+}
+
+if (!Range.prototype.getBoundingClientRect) {
+  Range.prototype.getBoundingClientRect = () =>
+    ({
+      x: 0,
+      y: 0,
+      bottom: 0,
+      height: 0,
+      left: 0,
+      right: 0,
+      top: 0,
+      width: 0,
+      toJSON: () => {},
+    }) as DOMRect;
+}
