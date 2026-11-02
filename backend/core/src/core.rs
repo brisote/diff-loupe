@@ -1,8 +1,9 @@
 use crate::api::{
     AcceptArgs, AppInfo, ApplyMergeArgs, BranchArgs, CommitArgs, CommitIdArgs, DiffArgs, ImageArgs,
     PathArgs, PrepareArgs, RecentRepo, RepoInfo, RepoViewArgs, ReportEnv, RollbackArgs,
-    SettingsArgs, StatusArgs, TargetArgs, TaskArgs, TerminalAckArgs, TerminalOpenArgs,
-    TerminalResizeArgs, TerminalWriteArgs, ToolTab, UiKeyArgs, UiValueArgs, VersionArgs,
+    SaveFileArgs, SettingsArgs, StatusArgs, TargetArgs, TaskArgs, TerminalAckArgs,
+    TerminalOpenArgs, TerminalResizeArgs, TerminalWriteArgs, ToolTab, UiKeyArgs, UiValueArgs,
+    VersionArgs,
 };
 use crate::diffcache::{DiffCache, Prepare};
 use crate::error::{ApiError, Error, Result};
@@ -23,6 +24,7 @@ use crate::watcher::RepoWatcher;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 use serde_json::Value;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
@@ -367,6 +369,12 @@ impl Core {
                 merge::abort(&self.env, &root, repo.to_thread_local().git_dir())?;
                 reply(())
             }
+            "save_file" => {
+                let a: SaveFileArgs = parse(args)?;
+                let _exclusive = self.exclusive()?;
+                self.save_file(a)?;
+                reply(())
+            }
             "read_image" => {
                 let a: ImageArgs = parse(args)?;
                 let (repo, root, _) = self.open_root(&a.path)?;
@@ -605,6 +613,59 @@ impl Core {
             open.repo.root().to_path_buf(),
             open.repo.name(),
         ))
+    }
+
+    fn save_file(&self, args: SaveFileArgs) -> Result<()> {
+        let (_, root, _) = self.open_root(&args.path)?;
+        let relative = Path::new(&args.file);
+        if relative.is_absolute()
+            || relative.components().any(|c| {
+                matches!(
+                    c,
+                    std::path::Component::ParentDir | std::path::Component::Prefix(_)
+                )
+            })
+        {
+            return Err(Error::InvalidArgs(format!(
+                "{} is outside the repository",
+                args.file
+            )));
+        }
+        let target = root.join(relative);
+        if target.exists() {
+            let canonical = platform::canonicalize(&target)?;
+            if !canonical.starts_with(&root) {
+                return Err(Error::InvalidArgs(format!(
+                    "{} is outside the repository",
+                    args.file
+                )));
+            }
+            if std::fs::symlink_metadata(&target).is_ok_and(|meta| meta.file_type().is_symlink()) {
+                return Err(Error::GitRefused(format!(
+                    "{} is a symbolic link",
+                    args.file
+                )));
+            }
+        } else if let Some(parent) = target.parent()
+            && parent.exists()
+        {
+            let canonical_parent = platform::canonicalize(parent)?;
+            if !canonical_parent.starts_with(&root) {
+                return Err(Error::InvalidArgs(format!(
+                    "{} is outside the repository",
+                    args.file
+                )));
+            }
+        }
+        let parent = target
+            .parent()
+            .ok_or_else(|| Error::InvalidArgs(format!("invalid file path: {}", args.file)))?;
+        std::fs::create_dir_all(parent)?;
+        let mut tmp = tempfile::NamedTempFile::new_in(parent)?;
+        tmp.write_all(args.text.as_bytes())?;
+        tmp.flush()?;
+        tmp.persist(&target).map_err(|e| e.error)?;
+        Ok(())
     }
 
     fn diff(&self, args: DiffArgs) -> Result<Arc<FileDiff>> {

@@ -266,3 +266,12 @@ pub struct ApplyMergeArgs {
     pub text: String,
     pub crlf: bool,
 }
+
+#[derive(Debug, Clone, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct SaveFileArgs {
+    pub path: String,
+    pub file: String,
+    pub text: String,
+}
