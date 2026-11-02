@@ -1,4 +1,4 @@
-import { screen } from "@testing-library/react";
+import { screen, waitFor } from "@testing-library/react";
 import { expect, it } from "vitest";
 import type { FileChange, FileDiff } from "../api";
 import { fakeCore, renderWithStore, repoInfo } from "../test/render";
@@ -172,4 +172,59 @@ it("explains a text diff that has no differences", () => {
   expect(
     sameText({ ...diff("", "a\n", null), left: { ...side(""), exists: false } }, "added"),
   ).toBeNull();
+});
+
+it("renders diff search bar when search is open", async () => {
+  const codeFile: FileChange = {
+    path: "src/main.rs",
+    oldPath: null,
+    headPath: null,
+    kind: "modified",
+    staged: false,
+    unstaged: true,
+    unchanged: false,
+  };
+  const core = fakeCore({
+    current_repo: () => ({
+      ...repoInfo("acme-billing", "gs/invoice-export"),
+      lastSelection: "src/main.rs",
+    }),
+    status: () => [codeFile],
+    diff: () => ({
+      path: "src/main.rs",
+      oldPath: null,
+      content: "text",
+      left: {
+        exists: true,
+        text: "fn old() {}\n",
+        crlf: false,
+        encoding: "UTF-8",
+        revision: null,
+        title: null,
+      },
+      right: {
+        exists: true,
+        text: "fn new() {}\n",
+        crlf: false,
+        encoding: "UTF-8",
+        revision: null,
+        title: null,
+      },
+      blocks: [],
+    }),
+  });
+  const { container, store } = await renderWithStore(
+    <>
+      <Editor />
+      <StatusBar />
+    </>,
+    core,
+  );
+  await screen.findByText("1 change");
+  await screen.findByText("Current version");
+  expect(container.querySelector(".dl-diff-search")).not.toBeInTheDocument();
+  store.getState().openSearch();
+  await waitFor(() => expect(container.querySelector(".dl-diff-search")).toBeInTheDocument());
+  store.getState().closeSearch();
+  await waitFor(() => expect(container.querySelector(".dl-diff-search")).not.toBeInTheDocument());
 });

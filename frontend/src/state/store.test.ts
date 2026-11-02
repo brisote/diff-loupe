@@ -509,4 +509,30 @@ describe("actions", () => {
     expect(store.getState().selectedStaged).toBe(true);
     expect(args("set_repo_view").at(-1)?.selection).toBe("notes.md");
   });
+
+  it("toggles and updates diff search state", () => {
+    const store = createAppStore(new Backend(fakeCore()));
+    expect(store.getState().searchOpen).toBe(false);
+    expect(store.getState().searchQuery).toBe("");
+    expect(store.getState().searchCase).toBe(false);
+    expect(store.getState().searchMatch).toEqual({ current: 0, total: 0 });
+
+    store.getState().openSearch();
+    expect(store.getState().searchOpen).toBe(true);
+
+    store.getState().setSearchQuery("hello");
+    expect(store.getState().searchQuery).toBe("hello");
+
+    store.getState().toggleSearchCase();
+    expect(store.getState().searchCase).toBe(true);
+
+    store.getState().setSearchMatch({ current: 1, total: 3 });
+    expect(store.getState().searchMatch).toEqual({ current: 1, total: 3 });
+
+    store.getState().closeSearch();
+    expect(store.getState().searchOpen).toBe(false);
+
+    store.getState().toggleSearch();
+    expect(store.getState().searchOpen).toBe(true);
+  });
 });

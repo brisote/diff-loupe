@@ -4,6 +4,7 @@ import type { ChangeKind } from "../api/generated/ChangeKind";
 import type { MarkdownView } from "../api/generated/MarkdownView";
 import { fileIcon } from "../changes/fileIcons";
 import { buildRows, selectionKey } from "../changes/rows";
+import { DiffSearchBar } from "../diff/DiffSearchBar";
 import { DiffToolbar } from "../diff/DiffToolbar";
 import { DiffViewer } from "../diff/DiffViewer";
 import { UnifiedViewer } from "../diff/UnifiedViewer";
@@ -102,6 +103,13 @@ export function Editor() {
   const { selection, files, diff, diffError, select } = source;
   const diffSettings = useApp((state) => state.settings?.diff ?? defaultDiffSettings);
   const setDiffSettings = useApp((state) => state.setDiffSettings);
+  const searchOpen = useApp((state) => state.searchOpen);
+  const searchQuery = useApp((state) => state.searchQuery);
+  const searchCase = useApp((state) => state.searchCase);
+  const searchMatch = useApp((state) => state.searchMatch);
+  const setSearchQuery = useApp((state) => state.setSearchQuery);
+  const toggleSearchCase = useApp((state) => state.toggleSearchCase);
+  const closeSearch = useApp((state) => state.closeSearch);
   const [current, setCurrent] = useState(-1);
   const [views, setViews] = useState<Record<string, MarkdownView>>({});
   const resolving = useApp(
@@ -215,41 +223,57 @@ export function Editor() {
           <span className="dl-empty-title">Preparing the diff</span>
           <span>{name} shows here as soon as it is ready.</span>
         </div>
-      ) : rows ? (
-        <MarkdownDiff
-          key={`markdown-${shownPath}`}
-          diff={shown}
-          rows={rows}
-          inline={view === "renderedInline"}
-          collapse={diffSettings.collapseUnchanged}
-          current={current}
-          onCurrent={setCurrent}
-        />
-      ) : shown.content === "text" ? (
-        diffSettings.viewer === "unified" ? (
-          <UnifiedViewer
-            key={`unified-${shownPath}`}
-            diff={shown}
-            current={current}
-            collapse={diffSettings.collapseUnchanged}
-            highlight={diffSettings.highlight}
-            onCurrent={setCurrent}
-          />
-        ) : (
-          <DiffViewer
-            key={`split-${shownPath}`}
-            diff={shown}
-            current={current}
-            collapse={diffSettings.collapseUnchanged}
-            sync={diffSettings.syncScroll}
-            highlight={diffSettings.highlight}
-            onCurrent={setCurrent}
-          />
-        )
       ) : (
-        <div className="dl-empty app-fill">
-          <span className="dl-empty-title">No visual diff for this file type</span>
-          <span>{noDiffReason(name, shown.content)}</span>
+        <div className="app-viewer-host">
+          {searchOpen && (
+            <DiffSearchBar
+              query={searchQuery}
+              match={searchMatch}
+              caseSensitive={searchCase}
+              onQueryChange={setSearchQuery}
+              onPrevious={() => undefined}
+              onNext={() => undefined}
+              onToggleCase={toggleSearchCase}
+              onClose={closeSearch}
+            />
+          )}
+          {rows ? (
+            <MarkdownDiff
+              key={`markdown-${shownPath}`}
+              diff={shown}
+              rows={rows}
+              inline={view === "renderedInline"}
+              collapse={diffSettings.collapseUnchanged}
+              current={current}
+              onCurrent={setCurrent}
+            />
+          ) : shown.content === "text" ? (
+            diffSettings.viewer === "unified" ? (
+              <UnifiedViewer
+                key={`unified-${shownPath}`}
+                diff={shown}
+                current={current}
+                collapse={diffSettings.collapseUnchanged}
+                highlight={diffSettings.highlight}
+                onCurrent={setCurrent}
+              />
+            ) : (
+              <DiffViewer
+                key={`split-${shownPath}`}
+                diff={shown}
+                current={current}
+                collapse={diffSettings.collapseUnchanged}
+                sync={diffSettings.syncScroll}
+                highlight={diffSettings.highlight}
+                onCurrent={setCurrent}
+              />
+            )
+          ) : (
+            <div className="dl-empty app-fill">
+              <span className="dl-empty-title">No visual diff for this file type</span>
+              <span>{noDiffReason(name, shown.content)}</span>
+            </div>
+          )}
         </div>
       )}
     </section>
