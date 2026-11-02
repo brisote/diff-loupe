@@ -217,4 +217,25 @@ describe("ChangesView", () => {
     const item = await screen.findByRole("treeitem", { name: "single-file.txt" });
     expect(item).toBeInTheDocument();
   });
+
+  it("opens context menu on right click and opens file in new tab", async () => {
+    const user = userEvent.setup();
+    const { store } = await view();
+    const fileRow = screen.getByRole("treeitem", { name: "web/src/exportButton.tsx" });
+    await user.pointer({ keys: "[MouseRight]", target: fileRow });
+    const menu = await screen.findByRole("menu", { name: "File actions" });
+    expect(menu).toBeInTheDocument();
+    const openItem = within(menu).getByRole("menuitem", { name: "Open in New Tab" });
+    await user.click(openItem);
+    expect(store.getState().openTabs).toContain("web/src/exportButton.tsx");
+    expect(store.getState().activeTab).toBe("web/src/exportButton.tsx");
+  });
+
+  it("opens context menu via Shift+F10 on selected file", async () => {
+    const user = userEvent.setup();
+    await view(changes, "billing/src/InvoiceExporter.kt");
+    screen.getByRole("tree", { name: "Changed files" }).focus();
+    await user.keyboard("{Shift>}{F10}{/Shift}");
+    expect(await screen.findByRole("menu", { name: "File actions" })).toBeInTheDocument();
+  });
 });

@@ -535,4 +535,52 @@ describe("actions", () => {
     store.getState().toggleSearch();
     expect(store.getState().searchOpen).toBe(true);
   });
+
+  it("manages multi-tab diff state with open, select, and close", async () => {
+    const core = fakeCore({
+      current_repo: () => ({ ...repoInfo("acme-billing"), lastSelection: "a.txt" }),
+      status: () => [
+        { path: "a.txt", oldPath: null, kind: "modified", staged: false, unstaged: true },
+        { path: "b.txt", oldPath: null, kind: "modified", staged: false, unstaged: true },
+        { path: "c.txt", oldPath: null, kind: "modified", staged: false, unstaged: true },
+      ],
+      diff: () =>
+        Promise.resolve({
+          path: "a.txt",
+          oldPath: null,
+          content: "text",
+          left: { exists: true, text: "left", crlf: false, encoding: "utf-8" },
+          right: { exists: true, text: "right", crlf: false, encoding: "utf-8" },
+          blocks: [],
+        }),
+    });
+    const store = createAppStore(new Backend(core));
+    await store.getState().start();
+    expect(store.getState().openTabs).toEqual(["a.txt"]);
+    expect(store.getState().activeTab).toBe("a.txt");
+
+    store.getState().openInNewTab("b.txt");
+    expect(store.getState().openTabs).toEqual(["a.txt", "b.txt"]);
+    expect(store.getState().activeTab).toBe("b.txt");
+
+    store.getState().openInNewTab("a.txt");
+    expect(store.getState().openTabs).toEqual(["a.txt", "b.txt"]);
+    expect(store.getState().activeTab).toBe("a.txt");
+
+    store.getState().select("c.txt");
+    expect(store.getState().openTabs).toEqual(["c.txt", "b.txt"]);
+    expect(store.getState().activeTab).toBe("c.txt");
+
+    store.getState().selectTab("b.txt");
+    expect(store.getState().activeTab).toBe("b.txt");
+
+    store.getState().closeTab("b.txt");
+    expect(store.getState().openTabs).toEqual(["c.txt"]);
+    expect(store.getState().activeTab).toBe("c.txt");
+
+    store.getState().closeTab("c.txt");
+    expect(store.getState().openTabs).toEqual([]);
+    expect(store.getState().activeTab).toBeNull();
+    expect(store.getState().repo?.lastSelection).toBeNull();
+  });
 });

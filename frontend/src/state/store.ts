@@ -229,6 +229,7 @@ export const openMark = "open-repo";
 export const changesMeasure = "open-to-changes";
 export const selectMark = "select-file";
 export const diffMeasure = "select-to-diff";
+export const tabsKey = (path: string) => `repo.tabs:${path}`;
 
 export type AppState = {
   backend: Backend;
@@ -248,6 +249,8 @@ export type AppState = {
   selectedStaged: boolean;
   diff: FileDiff | null;
   diffError: ApiError | null;
+  openTabs: string[];
+  activeTab: string | null;
   log: BranchLog | null;
   logError: ApiError | null;
   logCommit: string | null;
@@ -266,6 +269,9 @@ export type AppState = {
   loadStatus: () => Promise<void>;
   loadDiff: () => Promise<void>;
   select: (key: string | null) => void;
+  openInNewTab: (path: string) => void;
+  selectTab: (path: string) => void;
+  closeTab: (path: string) => void;
   loadLog: () => Promise<void>;
   selectCommit: (id: string | null) => void;
   selectLogFile: (path: string | null) => void;
@@ -518,6 +524,12 @@ export function createAppStore(backend: Backend) {
           set({ commitDiffError: failure });
       }
     };
+    const saveTabs = (repoPath: string, tabs: string[]) => {
+      void backend
+        .call("set_ui_value", { key: tabsKey(repoPath), value: JSON.stringify(tabs) })
+        .catch(() => undefined);
+    };
+
     return {
       backend,
       started: false,
@@ -536,6 +548,8 @@ export function createAppStore(backend: Backend) {
       selectedStaged: false,
       diff: null,
       diffError: null,
+      openTabs: [],
+      activeTab: null,
       ...emptyLog,
 
       start: async () => {
@@ -598,7 +612,37 @@ export function createAppStore(backend: Backend) {
           }
         }
         if (repo) performance.mark(openMark);
-        set({ info, settings, recent, repo, openError, started: true });
+        const initialTabs = repo?.lastSelection ? [repo.lastSelection] : [];
+        set({
+          info,
+          settings,
+          recent,
+          repo,
+          openError,
+          started: true,
+          openTabs: initialTabs,
+          activeTab: repo?.lastSelection ?? null,
+        });
+        if (repo) {
+          const repoPath = repo.path;
+          const lastSelection = repo.lastSelection;
+          void backend
+            .call("get_ui_value", { key: tabsKey(repoPath) })
+            .then((val) => {
+              if (!val || get().repo?.path !== repoPath) return;
+              try {
+                const parsed = JSON.parse(val);
+                if (Array.isArray(parsed) && parsed.length > 0) {
+                  const merged =
+                    lastSelection && !parsed.includes(lastSelection)
+                      ? [...parsed, lastSelection]
+                      : parsed;
+                  set({ openTabs: merged, activeTab: lastSelection ?? merged[0] });
+                }
+              } catch {}
+            })
+            .catch(() => undefined);
+        }
         const [later, skipped, checked, pending] = await Promise.all([
           backend.call("get_ui_value", { key: laterKey }).catch(() => null),
           backend.call("get_ui_value", { key: skipKey }).catch(() => null),
@@ -643,8 +687,11 @@ export function createAppStore(backend: Backend) {
           performance.mark(openMark);
           try {
             const repo = await backend.call("open_repo", { path });
+            const initialTabs = repo.lastSelection ? [repo.lastSelection] : [];
             set({
               repo,
+              openTabs: initialTabs,
+              activeTab: repo.lastSelection,
               openError: null,
               branches: null,
               changes: null,
@@ -660,6 +707,24 @@ export function createAppStore(backend: Backend) {
               searchQuery: "",
               searchMatch: { current: 0, total: 0 },
             });
+            const repoPath = repo.path;
+            const lastSelection = repo.lastSelection;
+            void backend
+              .call("get_ui_value", { key: tabsKey(repoPath) })
+              .then((val) => {
+                if (!val || get().repo?.path !== repoPath) return;
+                try {
+                  const parsed = JSON.parse(val);
+                  if (Array.isArray(parsed) && parsed.length > 0) {
+                    const merged =
+                      lastSelection && !parsed.includes(lastSelection)
+                        ? [...parsed, lastSelection]
+                        : parsed;
+                    set({ openTabs: merged, activeTab: lastSelection ?? merged[0] });
+                  }
+                } catch {}
+              })
+              .catch(() => undefined);
             commitRequest += 1;
             commitDiffRequest += 1;
             void get().loadStatus();
@@ -784,8 +849,30 @@ export function createAppStore(backend: Backend) {
           key === null ? { path: null, staged: false } : parseKey(key);
         if (!repo || (repo.lastSelection === selection && get().selectedStaged === staged)) return;
         performance.mark(selectMark);
+        let nextTabs = get().openTabs;
+        let nextActive = selection;
+        if (selection !== null) {
+          if (nextTabs.includes(selection)) {
+            nextActive = selection;
+          } else {
+            const currentActive = get().activeTab;
+            const idx = currentActive ? nextTabs.indexOf(currentActive) : -1;
+            if (idx >= 0) {
+              nextTabs = [...nextTabs];
+              nextTabs[idx] = selection;
+            } else {
+              nextTabs = [...nextTabs, selection];
+            }
+            nextActive = selection;
+          }
+          saveTabs(repo.path, nextTabs);
+        } else {
+          nextActive = null;
+        }
         set({
           repo: { ...repo, lastSelection: selection },
+          openTabs: nextTabs,
+          activeTab: nextActive,
           selectedStaged: staged,
           diff: null,
           diffError: null,
@@ -795,6 +882,77 @@ export function createAppStore(backend: Backend) {
         void backend
           .call("set_repo_view", { path: repo.path, tab: repo.lastTab, selection })
           .catch(() => undefined);
+      },
+
+      openInNewTab: (path) => {
+        const repo = get().repo;
+        if (!repo) return;
+        const currentTabs = get().openTabs;
+        if (currentTabs.includes(path)) {
+          get().select(path);
+          return;
+        }
+        const active = get().activeTab;
+        const currentIdx = active ? currentTabs.indexOf(active) : -1;
+        const nextTabs = [...currentTabs];
+        if (currentIdx >= 0) {
+          nextTabs.splice(currentIdx + 1, 0, path);
+        } else {
+          nextTabs.push(path);
+        }
+        saveTabs(repo.path, nextTabs);
+        performance.mark(selectMark);
+        set({
+          repo: { ...repo, lastSelection: path },
+          openTabs: nextTabs,
+          activeTab: path,
+          selectedStaged: false,
+          diff: null,
+          diffError: null,
+          searchMatch: { current: 0, total: 0 },
+        });
+        void get().loadDiff();
+        void backend
+          .call("set_repo_view", { path: repo.path, tab: repo.lastTab, selection: path })
+          .catch(() => undefined);
+      },
+
+      selectTab: (path) => {
+        const repo = get().repo;
+        if (!repo || get().activeTab === path) return;
+        get().select(path);
+      },
+
+      closeTab: (path) => {
+        const repo = get().repo;
+        if (!repo) return;
+        const currentTabs = get().openTabs;
+        const index = currentTabs.indexOf(path);
+        if (index === -1) return;
+        const nextTabs = currentTabs.filter((t) => t !== path);
+        saveTabs(repo.path, nextTabs);
+        if (get().activeTab === path) {
+          if (nextTabs.length === 0) {
+            set({
+              repo: { ...repo, lastSelection: null },
+              openTabs: [],
+              activeTab: null,
+              diff: null,
+              diffError: null,
+              searchMatch: { current: 0, total: 0 },
+            });
+            void backend
+              .call("set_repo_view", { path: repo.path, tab: repo.lastTab, selection: null })
+              .catch(() => undefined);
+          } else {
+            const nextIndex = Math.min(index, nextTabs.length - 1);
+            const nextActive = nextTabs[nextIndex] ?? null;
+            set({ openTabs: nextTabs, activeTab: nextActive });
+            get().select(nextActive);
+          }
+        } else {
+          set({ openTabs: nextTabs });
+        }
       },
 
       loadLog: async () => {
