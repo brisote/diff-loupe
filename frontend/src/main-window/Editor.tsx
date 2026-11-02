@@ -108,6 +108,29 @@ export function Editor() {
   const logSource = useLogSource();
   const source = tab === "log" ? logSource : changesSource;
   const { selection, files, diff, diffError, select } = source;
+  const openTabs = useApp((state) => state.openTabs);
+  const activeTab = useApp((state) => state.activeTab);
+  const selectTab = useApp((state) => state.selectTab);
+  const closeTab = useApp((state) => state.closeTab);
+  const editorTabs =
+    tab === "log"
+      ? selection
+        ? [selection]
+        : []
+      : openTabs.length > 0
+        ? openTabs
+        : selection
+          ? [selection]
+          : [];
+  const currentActive = tab === "log" ? selection : (activeTab ?? selection);
+  const handleSelect = (path: string) => {
+    if (tab === "log") select(path);
+    else selectTab(path);
+  };
+  const handleClose = (path: string) => {
+    if (tab === "log") select(null);
+    else closeTab(path);
+  };
   const diffSettings = useApp((state) => state.settings?.diff ?? defaultDiffSettings);
   const setDiffSettings = useApp((state) => state.setDiffSettings);
   const searchOpen = useApp((state) => state.searchOpen);
@@ -264,7 +287,12 @@ export function Editor() {
   if (resolving && selection !== null) {
     return (
       <section className="dl-island app-editor" aria-label="Editor">
-        <EditorTab path={selection} onClose={() => select(null)} />
+        <EditorTabs
+          tabs={editorTabs}
+          active={currentActive}
+          onSelect={handleSelect}
+          onClose={handleClose}
+        />
         <MergeBanner />
         <NoticeBanner />
         <MergeHost file={selection} embedded onDone={(next) => select(next)} />
@@ -288,7 +316,12 @@ export function Editor() {
   const name = splitPath(selection).name;
   return (
     <section className="dl-island app-editor" aria-label="Editor">
-      <EditorTab path={selection} onClose={() => select(null)} />
+      <EditorTabs
+        tabs={editorTabs}
+        active={currentActive}
+        onSelect={handleSelect}
+        onClose={handleClose}
+      />
       <MergeBanner />
       <NoticeBanner />
       <DiffToolbar
@@ -439,22 +472,55 @@ function SameNotice({
   );
 }
 
-function EditorTab({ path, onClose }: { path: string; onClose: () => void }) {
+function EditorTabs({
+  tabs,
+  active,
+  onSelect,
+  onClose,
+}: {
+  tabs: string[];
+  active: string | null;
+  onSelect: (path: string) => void;
+  onClose: (path: string) => void;
+}) {
+  if (tabs.length === 0) return null;
   return (
-    <header className="dl-island-header app-editor-tabs">
-      <span className="dl-tab is-selected">
-        <span className={`dl-i ${fileIcon(path)}`} aria-hidden="true" />
-        <span>{splitPath(path).name}</span>
-        <button
-          className="dl-tbtn app-tab-close"
-          type="button"
-          aria-label="Close tab"
-          title="Close tab"
-          onClick={onClose}
-        >
-          <Icon name="general-close" />
-        </button>
-      </span>
+    <header className="dl-island-header app-editor-tabs" role="tablist" aria-label="Editor tabs">
+      {tabs.map((path) => {
+        const isSelected = path === active;
+        const name = splitPath(path).name;
+        return (
+          <span
+            key={path}
+            className={`dl-tab ${isSelected ? "is-selected" : ""}`}
+            role="tab"
+            aria-selected={isSelected}
+            tabIndex={0}
+            onClick={() => onSelect(path)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                onSelect(path);
+              }
+            }}
+          >
+            <span className={`dl-i ${fileIcon(path)}`} aria-hidden="true" />
+            <span>{name}</span>
+            <button
+              className="dl-tbtn app-tab-close"
+              type="button"
+              aria-label="Close tab"
+              title="Close tab"
+              onClick={(event) => {
+                event.stopPropagation();
+                onClose(path);
+              }}
+            >
+              <Icon name="general-close" />
+            </button>
+          </span>
+        );
+      })}
     </header>
   );
 }

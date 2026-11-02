@@ -395,3 +395,70 @@ it("computes matches in markdown diff", async () => {
     expect(screen.getByText("1 of 2")).toBeInTheDocument();
   });
 });
+
+it("renders multiple tabs in the editor and allows switching and closing", async () => {
+  const { default: userEvent } = await import("@testing-library/user-event");
+  const user = userEvent.setup();
+  const file1: FileChange = {
+    path: "src/calc.rs",
+    oldPath: null,
+    headPath: null,
+    kind: "modified",
+    staged: false,
+    unstaged: true,
+    unchanged: false,
+  };
+  const file2: FileChange = {
+    path: "README.md",
+    oldPath: null,
+    headPath: null,
+    kind: "modified",
+    staged: false,
+    unstaged: true,
+    unchanged: false,
+  };
+  const core = fakeCore({
+    current_repo: () => ({ ...repoInfo("acme-billing"), lastSelection: "src/calc.rs" }),
+    status: () => [file1, file2],
+    diff: (args) => {
+      const path = (args as { file: string }).file;
+      return {
+        path,
+        oldPath: null,
+        content: "text",
+        left: text("old\n"),
+        right: text("new\n"),
+        blocks: [],
+      };
+    },
+  });
+  const { store } = await renderWithStore(<Editor />, core);
+  await screen.findByRole("textbox", { name: "After" });
+
+  store.getState().openInNewTab("README.md");
+  await waitFor(() => {
+    const tabs = screen.getAllByRole("tab");
+    expect(tabs).toHaveLength(2);
+    expect(tabs[0]).toHaveTextContent("calc.rs");
+    expect(tabs[1]).toHaveTextContent("README.md");
+    expect(tabs[1]).toHaveClass("is-selected");
+  });
+
+  const firstTab = screen.getAllByRole("tab")[0];
+  if (firstTab) await user.click(firstTab);
+  await waitFor(() => {
+    expect(store.getState().activeTab).toBe("src/calc.rs");
+    const tabs = screen.getAllByRole("tab");
+    expect(tabs[0]).toHaveClass("is-selected");
+    expect(tabs[1]).not.toHaveClass("is-selected");
+  });
+
+  const closeButtons = screen.getAllByRole("button", { name: "Close tab" });
+  if (closeButtons[0]) await user.click(closeButtons[0]);
+  await waitFor(() => {
+    const tabs = screen.getAllByRole("tab");
+    expect(tabs).toHaveLength(1);
+    expect(tabs[0]).toHaveTextContent("README.md");
+    expect(store.getState().activeTab).toBe("README.md");
+  });
+});
