@@ -82,7 +82,11 @@ export function DiffSearchBar({
         aria-label="Previous Match ⇧Enter"
         title="Previous Match (⇧Enter)"
         disabled={match.total === 0}
-        onClick={onPrevious}
+        onMouseDown={(e) => e.preventDefault()}
+        onClick={() => {
+          onPrevious();
+          inputRef.current?.focus();
+        }}
       >
         <Icon name="general-up" />
       </button>
@@ -92,7 +96,11 @@ export function DiffSearchBar({
         aria-label="Next Match Enter"
         title="Next Match (Enter)"
         disabled={match.total === 0}
-        onClick={onNext}
+        onMouseDown={(e) => e.preventDefault()}
+        onClick={() => {
+          onNext();
+          inputRef.current?.focus();
+        }}
       >
         <Icon name="general-down" />
       </button>
@@ -102,7 +110,11 @@ export function DiffSearchBar({
         aria-label="Match Case ⌥C"
         title="Match Case (⌥C)"
         aria-pressed={caseSensitive}
-        onClick={onToggleCase}
+        onMouseDown={(e) => e.preventDefault()}
+        onClick={() => {
+          onToggleCase();
+          inputRef.current?.focus();
+        }}
       >
         Aa
       </button>

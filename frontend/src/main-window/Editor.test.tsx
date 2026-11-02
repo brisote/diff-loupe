@@ -228,3 +228,170 @@ it("renders diff search bar when search is open", async () => {
   store.getState().closeSearch();
   await waitFor(() => expect(container.querySelector(".dl-diff-search")).not.toBeInTheDocument());
 });
+
+it("computes matches and navigates between them in split diff", async () => {
+  const { default: userEvent } = await import("@testing-library/user-event");
+  const user = userEvent.setup();
+  const file: FileChange = {
+    path: "src/calc.rs",
+    oldPath: null,
+    headPath: null,
+    kind: "modified",
+    staged: false,
+    unstaged: true,
+    unchanged: false,
+  };
+  const core = fakeCore({
+    current_repo: () => ({ ...repoInfo("acme-billing"), lastSelection: "src/calc.rs" }),
+    status: () => [file],
+    diff: () => ({
+      path: "src/calc.rs",
+      oldPath: null,
+      content: "text",
+      left: {
+        exists: true,
+        text: "fn calculate() {\n  let total = 0;\n  total\n}\n",
+        crlf: false,
+        encoding: "UTF-8",
+        revision: null,
+        title: null,
+      },
+      right: {
+        exists: true,
+        text: "fn calculate() {\n  let total = 10;\n  let grand_total = total;\n}\n",
+        crlf: false,
+        encoding: "UTF-8",
+        revision: null,
+        title: null,
+      },
+      blocks: [],
+    }),
+  });
+  const { container, store } = await renderWithStore(
+    <>
+      <Editor />
+      <StatusBar />
+    </>,
+    core,
+  );
+  await screen.findByText("1 change");
+  await screen.findByText("Current version");
+
+  store.getState().openSearch();
+  await waitFor(() => expect(container.querySelector(".dl-diff-search")).toBeInTheDocument());
+
+  const input = screen.getByRole("textbox", { name: "Search diff" });
+  await user.type(input, "total");
+
+  await waitFor(() => {
+    expect(screen.getByText("1 of 5")).toBeInTheDocument();
+  });
+
+  const nextBtn = screen.getByRole("button", { name: "Next Match Enter" });
+  await user.click(nextBtn);
+  await waitFor(() => {
+    expect(screen.getByText("2 of 5")).toBeInTheDocument();
+  });
+
+  const prevBtn = screen.getByRole("button", { name: "Previous Match ⇧Enter" });
+  await user.click(prevBtn);
+  await waitFor(() => {
+    expect(screen.getByText("1 of 5")).toBeInTheDocument();
+  });
+
+  const caseBtn = screen.getByRole("button", { name: "Match Case ⌥C" });
+  await user.click(caseBtn);
+  expect(store.getState().searchCase).toBe(true);
+});
+
+it("computes matches and navigates between them in unified diff", async () => {
+  const { default: userEvent } = await import("@testing-library/user-event");
+  const user = userEvent.setup();
+  const file: FileChange = {
+    path: "src/calc.rs",
+    oldPath: null,
+    headPath: null,
+    kind: "modified",
+    staged: false,
+    unstaged: true,
+    unchanged: false,
+  };
+  const core = fakeCore({
+    current_repo: () => ({ ...repoInfo("acme-billing"), lastSelection: "src/calc.rs" }),
+    status: () => [file],
+    diff: () => ({
+      path: "src/calc.rs",
+      oldPath: null,
+      content: "text",
+      left: text("fn calculate() {\n  let total = 0;\n}\n"),
+      right: text("fn calculate() {\n  let total = 10;\n}\n"),
+      blocks: [],
+    }),
+  });
+  const { container, store } = await renderWithStore(
+    <>
+      <Editor />
+      <StatusBar />
+    </>,
+    core,
+  );
+  await screen.findByText("1 change");
+  await screen.findByText("calc.rs");
+
+  await store.getState().setDiffSettings({ viewer: "unified" });
+
+  store.getState().openSearch();
+  await waitFor(() => expect(container.querySelector(".dl-diff-search")).toBeInTheDocument());
+
+  const input = screen.getByRole("textbox", { name: "Search diff" });
+  await user.type(input, "calculate");
+
+  await waitFor(() => {
+    expect(screen.getByText("1 of 1")).toBeInTheDocument();
+  });
+});
+
+it("computes matches in markdown diff", async () => {
+  const { default: userEvent } = await import("@testing-library/user-event");
+  const user = userEvent.setup();
+  const file: FileChange = {
+    path: "README.md",
+    oldPath: null,
+    headPath: null,
+    kind: "modified",
+    staged: false,
+    unstaged: true,
+    unchanged: false,
+  };
+  const core = fakeCore({
+    current_repo: () => ({ ...repoInfo("acme-billing"), lastSelection: "README.md" }),
+    status: () => [file],
+    diff: () => ({
+      path: "README.md",
+      oldPath: null,
+      content: "text",
+      left: text("# Documentation\n\nOld overview.\n"),
+      right: text("# Documentation\n\nNew overview.\n"),
+      blocks: [],
+    }),
+  });
+  const { container, store } = await renderWithStore(
+    <>
+      <Editor />
+      <StatusBar />
+    </>,
+    core,
+  );
+  await screen.findByText("1 change");
+  await screen.findAllByText("Documentation");
+
+  store.getState().openSearch();
+  await waitFor(() => expect(container.querySelector(".dl-diff-search")).toBeInTheDocument());
+
+  const input = screen.getByRole("textbox", { name: "Search diff" });
+  await user.type(input, "overview");
+
+  await waitFor(() => {
+    expect(screen.getByText("1 of 2")).toBeInTheDocument();
+  });
+});

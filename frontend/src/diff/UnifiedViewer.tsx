@@ -1,5 +1,5 @@
 import type { Range as Ranged } from "@codemirror/state";
-import { Decoration, type EditorView } from "@codemirror/view";
+import { Decoration, EditorView } from "@codemirror/view";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { FileDiff } from "../api/generated/FileDiff";
 import type { Highlight } from "../api/generated/Highlight";
@@ -8,6 +8,7 @@ import { clampTop, Stripe } from "./DiffViewer";
 import { LeftHead, RightHead } from "./FileHead";
 import { foldContext, foldMinimum, layout, lineHeight, type Range, rowTop } from "./geometry";
 import { LineNumbers } from "./LineNumbers";
+import type { PaneMatch } from "./search";
 import { buildUnified, type UnifiedRow } from "./unified";
 
 type Props = {
@@ -15,6 +16,8 @@ type Props = {
   current: number;
   collapse: boolean;
   highlight: Highlight;
+  searchDecorations?: Ranged<Decoration>[];
+  activeSearchMatch?: PaneMatch | null;
   onCurrent: (index: number) => void;
 };
 
@@ -33,7 +36,15 @@ export function contextFolds(rows: UnifiedRow[]): Range[] {
   return found;
 }
 
-export function UnifiedViewer({ diff, current, collapse, highlight, onCurrent }: Props) {
+export function UnifiedViewer({
+  diff,
+  current,
+  collapse,
+  highlight,
+  searchDecorations,
+  activeSearchMatch,
+  onCurrent,
+}: Props) {
   const view = useRef<EditorView | null>(null);
   const frame = useRef(0);
   const [scroll, setScroll] = useState({ top: 0, height: 0 });
@@ -87,6 +98,18 @@ export function UnifiedViewer({ diff, current, collapse, highlight, onCurrent }:
     });
     return () => cancelAnimationFrame(frameId);
   }, [current, measure]);
+
+  useEffect(() => {
+    if (!activeSearchMatch) return;
+    const line = activeSearchMatch.line;
+    const fold = hidden.find(([from, to]) => line >= from && line < to);
+    if (fold) {
+      setExpanded((set) => new Set(set).add(fold[0]));
+    }
+    view.current?.dispatch({
+      effects: EditorView.scrollIntoView(activeSearchMatch.from, { y: "center" }),
+    });
+  }, [activeSearchMatch, hidden]);
 
   useEffect(() => {
     const resize = new ResizeObserver(measure);
@@ -167,6 +190,7 @@ export function UnifiedViewer({ diff, current, collapse, highlight, onCurrent }:
           path={diff.path}
           label="Unified"
           decorate={decorate}
+          searchDecorations={searchDecorations}
           hidden={hidden}
           onView={onView}
           onScroll={onScroll}

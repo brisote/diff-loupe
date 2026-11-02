@@ -141,10 +141,19 @@ type Props = {
   inline: boolean;
   collapse: boolean;
   current: number;
+  activeSearchRow?: number | null;
   onCurrent: (index: number) => void;
 };
 
-export function MarkdownDiff({ diff, rows, inline, collapse, current, onCurrent }: Props) {
+export function MarkdownDiff({
+  diff,
+  rows,
+  inline,
+  collapse,
+  current,
+  activeSearchRow,
+  onCurrent,
+}: Props) {
   const scroller = useRef<HTMLElement>(null);
   const left = useRef<HTMLElement>(null);
   const strips = useRef<HTMLDivElement>(null);
@@ -271,8 +280,18 @@ export function MarkdownDiff({ diff, rows, inline, collapse, current, onCurrent 
     const index = changedRef.current[current];
     if (index === undefined) return;
     const target = scroller.current?.querySelector(`[data-row="${index}"]`);
-    target?.scrollIntoView({ block: "center" });
+    target?.scrollIntoView?.({ block: "center" });
   }, [current]);
+
+  useEffect(() => {
+    if (activeSearchRow === null || activeSearchRow === undefined) return;
+    const fold = hidden.find(([from, to]) => activeSearchRow >= from && activeSearchRow < to);
+    if (fold) {
+      setExpanded((set) => new Set(set).add(fold[0]));
+    }
+    const target = scroller.current?.querySelector(`[data-row="${activeSearchRow}"]`);
+    target?.scrollIntoView?.({ block: "center" });
+  }, [activeSearchRow, hidden]);
 
   const cell = (
     tree: Root | undefined,
