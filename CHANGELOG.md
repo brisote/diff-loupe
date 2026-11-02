@@ -2,6 +2,26 @@
 
 Each release lists what changed for the person who uses Diffloupe, and every change to stored data with its migration.
 
+## 0.5.0
+
+Multiple diff tabs across the editor island, context menu actions in the Changes list, and diagnostic error reports.
+
+### Review
+
+- Open multiple files in tabs across the editor island.
+- Switch between open tabs, close tabs, and navigate through tabs without losing your place.
+- Right-click or press Shift+F10 on any file in the Changes list to open it in a new tab.
+- Tabs and active selections are remembered per repository.
+
+### Fixed
+
+- Diagnostic error reports now include UI diff mode, open tab counts, repository status, and sanitized backend commands.
+- Internal React framework scheduler frames are filtered out of error stack traces.
+
+### Install
+
+- Nothing in your stored data changes.
+
 ## 0.4.0
 
 Diffloupe comes to Windows as a per-user setup program, with the one-line PowerShell install command, updates and Uninstall.
