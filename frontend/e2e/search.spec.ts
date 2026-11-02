@@ -1,4 +1,6 @@
-import { expect, git, test, type Workspace } from "./fixtures";
+import { expect, git, platformUnderTest, test, type Workspace } from "./fixtures";
+
+const modKey = platformUnderTest === "macos" ? "Meta" : "Control";
 
 function repoWith(workspace: Workspace, files: Record<string, [string, string]>): string {
   const repo = workspace.repo("search-repo");
@@ -25,7 +27,7 @@ test("opens diff search with Mod+F, finds matches, navigates, and closes with Es
   await expect(page.getByRole("region", { name: "Side-by-side diff" })).toBeVisible();
 
   await expect(page.locator(".dl-diff-search")).not.toBeVisible();
-  await page.keyboard.press("ControlOrMeta+f");
+  await page.keyboard.press(`${modKey}+f`);
   const searchBar = page.locator(".dl-diff-search");
   await expect(searchBar).toBeVisible();
 
@@ -75,7 +77,7 @@ test("searches and navigates in unified diff mode", async ({ page, workspace, st
   await page.getByRole("button", { name: "Unified viewer" }).click();
   await expect(page.getByRole("region", { name: "Unified diff" })).toBeVisible();
 
-  await page.keyboard.press("ControlOrMeta+f");
+  await page.keyboard.press(`${modKey}+f`);
   const searchBar = page.locator(".dl-diff-search");
   await expect(searchBar).toBeVisible();
 
@@ -85,7 +87,7 @@ test("searches and navigates in unified diff mode", async ({ page, workspace, st
   await expect(counter).toHaveText("1 of 1");
   await expect(page.locator(".dl-search-match")).toHaveCount(1);
 
-  await page.getByRole("button", { name: "Close ⎋" }).click();
+  await searchBar.getByRole("button", { name: "Close ⎋" }).click();
   await expect(searchBar).not.toBeVisible();
 });
 
@@ -100,7 +102,7 @@ test("searches in rendered markdown diff", async ({ page, workspace, startApp })
   await page.getByRole("treeitem", { name: "README.md" }).click();
   await expect(page.getByRole("region", { name: "Rendered side-by-side diff" })).toBeVisible();
 
-  await page.keyboard.press("ControlOrMeta+f");
+  await page.keyboard.press(`${modKey}+f`);
   const searchBar = page.locator(".dl-diff-search");
   await expect(searchBar).toBeVisible();
 
