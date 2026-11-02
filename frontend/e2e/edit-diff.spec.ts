@@ -44,6 +44,11 @@ test("in Local Changes, right pane is editable, deletes with backspace, types, u
     .poll(() => readFileSync(filePath, "utf8"))
     .toBe("export const message = 'updated';\n");
 
+  const revertBtn = page.getByRole("button", { name: "Revert this change" });
+  await expect(revertBtn).toBeVisible();
+  await revertBtn.click();
+  await expect.poll(() => readFileSync(filePath, "utf8")).toBe("export const message = 'world';\n");
+
   await page.getByRole("tab", { name: "Commit history" }).click();
   await page.getByRole("option", { name: "Commit with sample" }).click();
   await expect(page.locator(".is-right .cm-content")).toHaveAttribute("contenteditable", "false");

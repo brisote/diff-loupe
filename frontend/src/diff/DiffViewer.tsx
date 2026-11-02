@@ -16,6 +16,8 @@ import type { Backend } from "../api";
 import type { Block } from "../api/generated/Block";
 import type { FileDiff } from "../api/generated/FileDiff";
 import type { Highlight } from "../api/generated/Highlight";
+import { Icon } from "../lib/icon";
+import { lineOffsets, offsetOf, sliceLines } from "../merge/model";
 import { StoreContext } from "../state/context";
 import { CodePane, type Decorate } from "./CodePane";
 import { diffDecorations } from "./decorations";
@@ -420,6 +422,23 @@ export function DiffViewer({
     const state = painted ? states[side][line] : null;
     return state ? ` is-${state.kind}${state.words ? " has-words" : ""}` : "";
   };
+  const revertBlock = useCallback(
+    (block: Block) => {
+      const rightView = views.current.right;
+      if (!rightView) return;
+      const rightText = rightView.state.doc.toString();
+      const rightOffsets = lineOffsets(rightText);
+      const from = offsetOf(rightOffsets, rightText, block.rightStart);
+      const to = offsetOf(rightOffsets, rightText, block.rightEnd);
+      const insert = sliceLines(diff.left.text, block.leftStart, block.leftEnd);
+      rightView.dispatch({
+        changes: { from, to, insert },
+        userEvent: "undo.revert",
+      });
+      flushSave();
+    },
+    [diff.left.text, flushSave],
+  );
   return (
     <section
       ref={containerRef}
@@ -488,6 +507,25 @@ export function DiffViewer({
               />
             ))}
         </svg>
+        {isEditable &&
+          diff.left.exists &&
+          shown.map((block) => {
+            const top = y("left", block.leftStart) + 2;
+            if (top < -lineHeight || (scroll.height > 0 && top > scroll.height)) return null;
+            return (
+              <button
+                key={`revert-${block.leftStart}-${block.rightStart}`}
+                className="dl-chev"
+                type="button"
+                aria-label="Revert this change"
+                title="Revert"
+                style={{ left: 4, top }}
+                onClick={() => revertBlock(block)}
+              >
+                <Icon name="diff-gutter-arrowRight" />
+              </button>
+            );
+          })}
       </div>
       <LineNumbers
         map={maps.right}
