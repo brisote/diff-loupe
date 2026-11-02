@@ -34,7 +34,38 @@ export { isApiError, toApiError } from "./transport";
 
 export type CallArgs<C extends Command> = ArgsOf<C> extends null ? [] : [ArgsOf<C>];
 
-export type Outcome = { command: string; ms: number; error: ApiError | null };
+export type Outcome = {
+  command: string;
+  tag: string | null;
+  ms: number;
+  error: ApiError | null;
+};
+
+export function commandTag(command: string, arg: unknown): string | null {
+  if (!arg || typeof arg !== "object") return null;
+  const record = arg as Record<string, unknown>;
+  if (command === "get_ui_value" || command === "set_ui_value") {
+    if (typeof record.key === "string") return record.key.split(":")[0] ?? null;
+  }
+  if (command === "diff" || command === "prepare_diffs") {
+    if (typeof record.area === "string") return record.area;
+    if (typeof record.commit === "string") return "commit";
+    return "unstaged";
+  }
+  if (command === "switch_branch" && typeof record.branch === "string") {
+    return record.branch;
+  }
+  if (command === "accept_side" && typeof record.side === "string") {
+    return record.side;
+  }
+  if (command === "set_target") {
+    return record.target ? "target" : "clear";
+  }
+  if (command === "rollback" && typeof record.mode === "string") {
+    return record.mode;
+  }
+  return null;
+}
 
 export class Backend {
   private readonly watchers = new Set<Listener<Outcome>>();
@@ -50,12 +81,16 @@ export class Backend {
     return () => this.watchers.delete(listener);
   }
 
-  private async run<T>(command: string, action: () => Promise<T>): Promise<T> {
+  private async run<T>(
+    command: string,
+    action: () => Promise<T>,
+    tag: string | null = null,
+  ): Promise<T> {
     const started = performance.now();
     const done = (error: ApiError | null) => {
       for (const watcher of this.watchers) {
         try {
-          watcher({ command, ms: performance.now() - started, error });
+          watcher({ command, tag, ms: performance.now() - started, error });
         } catch {}
       }
     };
@@ -75,6 +110,7 @@ export class Backend {
     return this.run(
       cmd,
       async () => (await this.transport.send(cmd, args[0] ?? null)) as ResultOf<C>,
+      commandTag(cmd, args[0]),
     );
   }
 
@@ -91,7 +127,7 @@ export class Backend {
   }
 
   windowControl(action: WindowAction): Promise<void> {
-    return this.run("window_control", () => this.transport.windowControl(action));
+    return this.run("window_control", () => this.transport.windowControl(action), action);
   }
 
   windowMaximized(): Promise<boolean> {
