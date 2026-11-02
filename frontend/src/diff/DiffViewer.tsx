@@ -111,7 +111,7 @@ export function DiffViewer({
       }
       saveTimer.current = setTimeout(() => {
         flushSave();
-      }, 500);
+      }, 250);
     },
     [flushSave],
   );
