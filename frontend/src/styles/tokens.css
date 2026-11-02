@@ -53,6 +53,8 @@
   --editor-line-number-current: #78798b;
   --editor-caret-row: #f5f8ff;
   --editor-selection: #aad1ff;
+  --editor-search-match: #ffe680;
+  --editor-search-match-current: #ffc800;
   --editor-indent-guide: #ebecf2;
   --diff-inserted: #b7e7c1;
   --diff-modified: #c4d7f5;
@@ -139,6 +141,8 @@
   --editor-line-number-current: #a2a3ab;
   --editor-caret-row: #1f2025;
   --editor-selection: #2b3f87;
+  --editor-search-match: #433a22;
+  --editor-search-match-current: #786228;
   --editor-indent-guide: #323439;
   --diff-inserted: #254438;
   --diff-modified: #3a5473;

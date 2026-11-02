@@ -434,6 +434,14 @@ button {
   height: 16px;
 }
 
+.app-viewer-host {
+  position: relative;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
 .app-diff {
   position: relative;
   display: grid;

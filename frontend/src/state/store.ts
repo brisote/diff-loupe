@@ -335,6 +335,16 @@ export type AppState = {
   dropTerminal: (id: string) => void;
   selectTerminal: (id: string) => void;
   focusTerminal: () => void;
+  searchOpen: boolean;
+  searchQuery: string;
+  searchCase: boolean;
+  searchMatch: { current: number; total: number };
+  openSearch: () => void;
+  closeSearch: () => void;
+  toggleSearch: () => void;
+  setSearchQuery: (query: string) => void;
+  toggleSearchCase: () => void;
+  setSearchMatch: (match: { current: number; total: number }) => void;
 };
 
 export type AppStore = ReturnType<typeof createAppStore>;
@@ -646,6 +656,9 @@ export function createAppStore(backend: Backend) {
               diffError: null,
               ...emptyLog,
               notice: null,
+              searchOpen: false,
+              searchQuery: "",
+              searchMatch: { current: 0, total: 0 },
             });
             commitRequest += 1;
             commitDiffRequest += 1;
@@ -776,6 +789,7 @@ export function createAppStore(backend: Backend) {
           selectedStaged: staged,
           diff: null,
           diffError: null,
+          searchMatch: { current: 0, total: 0 },
         });
         void get().loadDiff();
         void backend
@@ -829,7 +843,12 @@ export function createAppStore(backend: Backend) {
       selectLogFile: (logFile) => {
         if (get().logFile === logFile) return;
         performance.mark(selectMark);
-        set({ logFile, commitDiff: null, commitDiffError: null });
+        set({
+          logFile,
+          commitDiff: null,
+          commitDiffError: null,
+          searchMatch: { current: 0, total: 0 },
+        });
         void loadCommitDiff();
       },
 
@@ -1267,6 +1286,17 @@ export function createAppStore(backend: Backend) {
           terminalFocus: focusOn(id),
         });
       },
+
+      searchOpen: false,
+      searchQuery: "",
+      searchCase: false,
+      searchMatch: { current: 0, total: 0 },
+      openSearch: () => set({ searchOpen: true }),
+      closeSearch: () => set({ searchOpen: false }),
+      toggleSearch: () => set((state) => ({ searchOpen: !state.searchOpen })),
+      setSearchQuery: (searchQuery) => set({ searchQuery }),
+      toggleSearchCase: () => set((state) => ({ searchCase: !state.searchCase })),
+      setSearchMatch: (searchMatch) => set({ searchMatch }),
     };
   });
   store.subscribe((state) => {

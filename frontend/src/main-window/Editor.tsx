@@ -4,9 +4,17 @@ import type { ChangeKind } from "../api/generated/ChangeKind";
 import type { MarkdownView } from "../api/generated/MarkdownView";
 import { fileIcon } from "../changes/fileIcons";
 import { buildRows, selectionKey } from "../changes/rows";
+import { DiffSearchBar } from "../diff/DiffSearchBar";
 import { DiffToolbar } from "../diff/DiffToolbar";
 import { DiffViewer } from "../diff/DiffViewer";
+import {
+  findMarkdownMatches,
+  findMatches,
+  searchDecorations,
+  sortSplitMatches,
+} from "../diff/search";
 import { UnifiedViewer } from "../diff/UnifiedViewer";
+import { buildUnified } from "../diff/unified";
 import { Icon } from "../lib/icon";
 import { splitPath } from "../lib/paths";
 import { usePlatform } from "../lib/platform";
@@ -102,7 +110,16 @@ export function Editor() {
   const { selection, files, diff, diffError, select } = source;
   const diffSettings = useApp((state) => state.settings?.diff ?? defaultDiffSettings);
   const setDiffSettings = useApp((state) => state.setDiffSettings);
+  const searchOpen = useApp((state) => state.searchOpen);
+  const searchQuery = useApp((state) => state.searchQuery);
+  const searchCase = useApp((state) => state.searchCase);
+  const searchMatch = useApp((state) => state.searchMatch);
+  const setSearchQuery = useApp((state) => state.setSearchQuery);
+  const toggleSearchCase = useApp((state) => state.toggleSearchCase);
+  const closeSearch = useApp((state) => state.closeSearch);
+  const setSearchMatch = useApp((state) => state.setSearchMatch);
   const [current, setCurrent] = useState(-1);
+  const [searchIndex, setSearchIndex] = useState(0);
   const [views, setViews] = useState<Record<string, MarkdownView>>({});
   const resolving = useApp(
     (state) =>
@@ -141,6 +158,108 @@ export function Editor() {
       performance.clearMarks(selectMark);
     }
   }, [shown]);
+
+  const unified = useMemo(
+    () =>
+      shown && shown.content === "text" && diffSettings.viewer === "unified"
+        ? buildUnified(shown)
+        : null,
+    [shown, diffSettings.viewer],
+  );
+
+  const leftMatches = useMemo(
+    () =>
+      searchOpen &&
+      searchQuery &&
+      shown &&
+      shown.content === "text" &&
+      !rows &&
+      diffSettings.viewer !== "unified"
+        ? findMatches(shown.left.text, searchQuery, searchCase, "left")
+        : [],
+    [searchOpen, searchQuery, searchCase, shown, rows, diffSettings.viewer],
+  );
+  const rightMatches = useMemo(
+    () =>
+      searchOpen &&
+      searchQuery &&
+      shown &&
+      shown.content === "text" &&
+      !rows &&
+      diffSettings.viewer !== "unified"
+        ? findMatches(shown.right.text, searchQuery, searchCase, "right")
+        : [],
+    [searchOpen, searchQuery, searchCase, shown, rows, diffSettings.viewer],
+  );
+  const splitMatches = useMemo(
+    () => sortSplitMatches(leftMatches, rightMatches),
+    [leftMatches, rightMatches],
+  );
+
+  const unifiedMatches = useMemo(
+    () =>
+      searchOpen && searchQuery && unified && !rows
+        ? findMatches(unified.text, searchQuery, searchCase, "unified")
+        : [],
+    [searchOpen, searchQuery, searchCase, unified, rows],
+  );
+
+  const markdownMatches = useMemo(
+    () =>
+      searchOpen && searchQuery && rows
+        ? findMarkdownMatches(rows.rows, searchQuery, searchCase)
+        : [],
+    [searchOpen, searchQuery, searchCase, rows],
+  );
+
+  const totalMatches = rows
+    ? markdownMatches.length
+    : diffSettings.viewer === "unified"
+      ? unifiedMatches.length
+      : splitMatches.length;
+
+  const viewerMode = rows ? "markdown" : diffSettings.viewer;
+  const searchResetKey = `${shownPath ?? ""}:${viewerMode}:${searchCase}:${searchQuery}`;
+  useEffect(() => {
+    if (searchResetKey !== undefined) setSearchIndex(0);
+  }, [searchResetKey]);
+
+  const activeIndex = totalMatches > 0 ? Math.min(searchIndex, totalMatches - 1) : 0;
+
+  useEffect(() => {
+    if (!searchOpen || !searchQuery) {
+      setSearchMatch({ current: 0, total: 0 });
+      return;
+    }
+    setSearchMatch({
+      current: totalMatches > 0 ? activeIndex + 1 : 0,
+      total: totalMatches,
+    });
+  }, [searchOpen, searchQuery, activeIndex, totalMatches, setSearchMatch]);
+
+  const onNext = () => {
+    setSearchIndex(totalMatches > 0 ? (activeIndex + 1) % totalMatches : 0);
+  };
+  const onPrevious = () => {
+    setSearchIndex(totalMatches > 0 ? (activeIndex - 1 + totalMatches) % totalMatches : 0);
+  };
+
+  const activeSplitMatch = splitMatches[activeIndex] ?? null;
+  const activeUnifiedMatch = unifiedMatches[activeIndex] ?? null;
+  const activeMarkdownRow = markdownMatches[activeIndex]?.row ?? null;
+
+  const searchLeftDecorations = useMemo(
+    () => searchDecorations(leftMatches, activeSplitMatch),
+    [leftMatches, activeSplitMatch],
+  );
+  const searchRightDecorations = useMemo(
+    () => searchDecorations(rightMatches, activeSplitMatch),
+    [rightMatches, activeSplitMatch],
+  );
+  const unifiedSearchDecorations = useMemo(
+    () => searchDecorations(unifiedMatches, activeUnifiedMatch),
+    [unifiedMatches, activeUnifiedMatch],
+  );
 
   if (resolving && selection !== null) {
     return (
@@ -215,41 +334,63 @@ export function Editor() {
           <span className="dl-empty-title">Preparing the diff</span>
           <span>{name} shows here as soon as it is ready.</span>
         </div>
-      ) : rows ? (
-        <MarkdownDiff
-          key={`markdown-${shownPath}`}
-          diff={shown}
-          rows={rows}
-          inline={view === "renderedInline"}
-          collapse={diffSettings.collapseUnchanged}
-          current={current}
-          onCurrent={setCurrent}
-        />
-      ) : shown.content === "text" ? (
-        diffSettings.viewer === "unified" ? (
-          <UnifiedViewer
-            key={`unified-${shownPath}`}
-            diff={shown}
-            current={current}
-            collapse={diffSettings.collapseUnchanged}
-            highlight={diffSettings.highlight}
-            onCurrent={setCurrent}
-          />
-        ) : (
-          <DiffViewer
-            key={`split-${shownPath}`}
-            diff={shown}
-            current={current}
-            collapse={diffSettings.collapseUnchanged}
-            sync={diffSettings.syncScroll}
-            highlight={diffSettings.highlight}
-            onCurrent={setCurrent}
-          />
-        )
       ) : (
-        <div className="dl-empty app-fill">
-          <span className="dl-empty-title">No visual diff for this file type</span>
-          <span>{noDiffReason(name, shown.content)}</span>
+        <div className="app-viewer-host">
+          {searchOpen && (
+            <DiffSearchBar
+              query={searchQuery}
+              match={searchMatch}
+              caseSensitive={searchCase}
+              onQueryChange={setSearchQuery}
+              onPrevious={onPrevious}
+              onNext={onNext}
+              onToggleCase={toggleSearchCase}
+              onClose={closeSearch}
+            />
+          )}
+          {rows ? (
+            <MarkdownDiff
+              key={`markdown-${shownPath}`}
+              diff={shown}
+              rows={rows}
+              inline={view === "renderedInline"}
+              collapse={diffSettings.collapseUnchanged}
+              current={current}
+              activeSearchRow={activeMarkdownRow}
+              onCurrent={setCurrent}
+            />
+          ) : shown.content === "text" ? (
+            diffSettings.viewer === "unified" ? (
+              <UnifiedViewer
+                key={`unified-${shownPath}`}
+                diff={shown}
+                current={current}
+                collapse={diffSettings.collapseUnchanged}
+                highlight={diffSettings.highlight}
+                searchDecorations={unifiedSearchDecorations}
+                activeSearchMatch={activeUnifiedMatch}
+                onCurrent={setCurrent}
+              />
+            ) : (
+              <DiffViewer
+                key={`split-${shownPath}`}
+                diff={shown}
+                current={current}
+                collapse={diffSettings.collapseUnchanged}
+                sync={diffSettings.syncScroll}
+                highlight={diffSettings.highlight}
+                searchLeftDecorations={searchLeftDecorations}
+                searchRightDecorations={searchRightDecorations}
+                activeSearchMatch={activeSplitMatch}
+                onCurrent={setCurrent}
+              />
+            )
+          ) : (
+            <div className="dl-empty app-fill">
+              <span className="dl-empty-title">No visual diff for this file type</span>
+              <span>{noDiffReason(name, shown.content)}</span>
+            </div>
+          )}
         </div>
       )}
     </section>

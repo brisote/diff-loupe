@@ -54,6 +54,14 @@ export function App() {
   const activeTerminal = useApp((state) =>
     state.repo ? (state.terminals[state.repo.path]?.active ?? null) : null,
   );
+  const searchOpen = useApp((state) => state.searchOpen);
+  const toggleSearch = useApp((state) => state.toggleSearch);
+  const closeSearch = useApp((state) => state.closeSearch);
+  const hasDiff = useApp(
+    (state) =>
+      state.repo !== null &&
+      (state.repo.lastTab === "log" ? Boolean(state.logFile) : Boolean(state.repo.lastSelection)),
+  );
 
   useEffect(
     () =>
@@ -93,6 +101,26 @@ export function App() {
         event.preventDefault();
         event.stopPropagation();
         hideTerminal();
+      } else if (
+        event.key === "Escape" &&
+        searchOpen &&
+        !dialog &&
+        !inTerminal(event.target) &&
+        !document.querySelector(".dl-popup")
+      ) {
+        event.preventDefault();
+        event.stopPropagation();
+        closeSearch();
+      } else if (
+        mod &&
+        event.key.toLowerCase() === "f" &&
+        hasDiff &&
+        !dialog &&
+        !inTerminal(event.target)
+      ) {
+        event.preventDefault();
+        event.stopPropagation();
+        toggleSearch();
       } else if (mod && event.key.toLowerCase() === "k" && hasRepo && !dialog) {
         event.preventDefault();
         if (event.shiftKey) void push();
@@ -112,6 +140,10 @@ export function App() {
     terminalOpen,
     focusTerminal,
     activeTerminal,
+    hasDiff,
+    searchOpen,
+    toggleSearch,
+    closeSearch,
   ]);
 
   if (startError) {

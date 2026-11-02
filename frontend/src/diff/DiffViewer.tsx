@@ -1,4 +1,5 @@
-import type { EditorView } from "@codemirror/view";
+import type { Range as Ranged } from "@codemirror/state";
+import { type Decoration, EditorView } from "@codemirror/view";
 import {
   memo,
   type PointerEvent,
@@ -40,6 +41,7 @@ import {
   stripeRuns,
 } from "./geometry";
 import { LineNumbers } from "./LineNumbers";
+import type { PaneMatch } from "./search";
 
 const sides: Side[] = ["left", "right"];
 
@@ -49,6 +51,9 @@ type Props = {
   collapse: boolean;
   sync: boolean;
   highlight: Highlight;
+  searchLeftDecorations?: Ranged<Decoration>[];
+  searchRightDecorations?: Ranged<Decoration>[];
+  activeSearchMatch?: PaneMatch | null;
   backend?: Backend;
   onCurrent: (index: number) => void;
 };
@@ -61,6 +66,9 @@ export function DiffViewer({
   collapse,
   sync,
   highlight,
+  searchLeftDecorations,
+  searchRightDecorations,
+  activeSearchMatch,
   backend: explicitBackend,
   onCurrent,
 }: Props) {
@@ -284,6 +292,22 @@ export function DiffViewer({
   }, [current]);
 
   useEffect(() => {
+    if (!activeSearchMatch) return;
+    const side = activeSearchMatch.side;
+    if (side !== "left" && side !== "right") return;
+    const line = activeSearchMatch.line;
+    const fold = active.find((f) => line >= f[side][0] && line < f[side][1]);
+    if (fold) {
+      setExpanded((set) => new Set(set).add(fold.left[0]));
+    }
+    const targetView = views.current[side];
+    if (!targetView) return;
+    targetView.dispatch({
+      effects: EditorView.scrollIntoView(activeSearchMatch.from, { y: "center" }),
+    });
+  }, [activeSearchMatch, active]);
+
+  useEffect(() => {
     const resize = new ResizeObserver(measure);
     const right = views.current.right?.scrollDOM;
     if (right) resize.observe(right);
@@ -351,6 +375,7 @@ export function DiffViewer({
         path={diff.oldPath ?? diff.path}
         label="Before"
         decorate={decorateLeft}
+        searchDecorations={searchLeftDecorations}
         hidden={hidden.left}
         onView={onView}
         onScroll={onScroll}
@@ -412,6 +437,7 @@ export function DiffViewer({
           path={diff.path}
           label="After"
           decorate={decorateRight}
+          searchDecorations={searchRightDecorations}
           hidden={hidden.right}
           onView={onView}
           onScroll={onScroll}

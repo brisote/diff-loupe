@@ -19,6 +19,7 @@ type Props = {
   path: string;
   label: string;
   decorate: Decorate;
+  searchDecorations?: Ranged<Decoration>[];
   hidden: Range[];
   onView: (id: string, view: EditorView | null) => void;
   onScroll: (id: string) => void;
@@ -74,6 +75,20 @@ function foldRanges(
 }
 
 const setFolds = StateEffect.define<{ hidden: Range[]; onExpand: (index: number) => void }>();
+const setSearchDecorations = StateEffect.define<Ranged<Decoration>[]>();
+
+const searchField = StateField.define<DecorationSet>({
+  create: () => Decoration.none,
+  update: (value, transaction) => {
+    for (const effect of transaction.effects) {
+      if (effect.is(setSearchDecorations)) {
+        return Decoration.set(effect.value, true);
+      }
+    }
+    return value;
+  },
+  provide: (self) => EditorView.decorations.from(self),
+});
 
 const foldField = StateField.define<DecorationSet>({
   create: () => Decoration.none,
@@ -97,6 +112,7 @@ export function CodePane({
   path,
   label,
   decorate,
+  searchDecorations,
   hidden,
   onView,
   onScroll,
@@ -105,8 +121,8 @@ export function CodePane({
   const host = useRef<HTMLDivElement>(null);
   const view = useRef<EditorView | null>(null);
   const language = useRef(new Compartment());
-  const latest = useRef({ hidden, onExpand });
-  latest.current = { hidden, onExpand };
+  const latest = useRef({ hidden, onExpand, searchDecorations });
+  latest.current = { hidden, onExpand, searchDecorations };
   const applied = useRef<Range[] | null>(null);
 
   useEffect(() => {
@@ -146,13 +162,18 @@ export function CodePane({
         syntaxClasses,
         compartment.of([]),
         field,
+        searchField,
         foldField,
       ],
     });
     const snapshot = current.scrollSnapshot();
     current.setState(state);
     applied.current = latest.current.hidden;
-    current.dispatch({ effects: [snapshot, setFolds.of(latest.current)] });
+    const initialEffects: StateEffect<unknown>[] = [snapshot, setFolds.of(latest.current)];
+    if (latest.current.searchDecorations && latest.current.searchDecorations.length > 0) {
+      initialEffects.push(setSearchDecorations.of(latest.current.searchDecorations));
+    }
+    current.dispatch({ effects: initialEffects });
     let cancelled = false;
     void loadLanguage(path).then((extension) => {
       if (!cancelled && extension && view.current === current) {
@@ -171,6 +192,12 @@ export function CodePane({
     const snapshot = current.scrollSnapshot();
     current.dispatch({ effects: [setFolds.of({ hidden, onExpand }), snapshot] });
   }, [hidden, onExpand]);
+
+  useEffect(() => {
+    const current = view.current;
+    if (!current) return;
+    current.dispatch({ effects: setSearchDecorations.of(searchDecorations ?? []) });
+  }, [searchDecorations]);
 
   return <div ref={host} className={`app-cm is-${id}`} />;
 }
