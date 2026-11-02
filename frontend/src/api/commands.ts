@@ -24,6 +24,7 @@ import type { RepoInfo } from "./generated/RepoInfo";
 import type { ReportEnv } from "./generated/ReportEnv";
 import type { RepoViewArgs } from "./generated/RepoViewArgs";
 import type { RollbackArgs } from "./generated/RollbackArgs";
+import type { SaveFileArgs } from "./generated/SaveFileArgs";
 import type { Settings } from "./generated/Settings";
 import type { SettingsArgs } from "./generated/SettingsArgs";
 import type { StatusArgs } from "./generated/StatusArgs";
@@ -71,6 +72,7 @@ export type Commands = {
   abort_merge: [PathArgs, null];
   merge_file: [MergeFileArgs, MergeFile];
   apply_merge: [ApplyMergeArgs, null];
+  save_file: [SaveFileArgs, null];
   cancel: [TaskArgs, boolean];
   read_image: [ImageArgs, string | null];
   terminal_open: [TerminalOpenArgs, TerminalSession];

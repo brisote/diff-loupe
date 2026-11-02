@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { Backend } from "../api";
 import type { DiffSide } from "../api/generated/DiffSide";
 import type { FileDiff } from "../api/generated/FileDiff";
-import { fakeCore } from "../test/render";
+import { fakeCore, renderWithStore, repoInfo } from "../test/render";
 import { DiffViewer } from "./DiffViewer";
 
 function side(exists: boolean, text: string, title: string | null = null): DiffSide {
@@ -247,5 +247,68 @@ describe("DiffViewer resizable divider", () => {
 
     fireEvent.pointerUp(separator, { pointerId: 1 });
     expect(saved).toEqual({ key: "diffDividerRatio", value: "0.6" });
+  });
+
+  it("configures right pane as editable when editable prop is true", () => {
+    const { container } = render(
+      <DiffViewer
+        diff={modifiedDiff}
+        current={0}
+        collapse={false}
+        sync={true}
+        highlight="words"
+        editable={true}
+        onCurrent={() => {}}
+      />,
+    );
+    const leftContent = container.querySelector(".is-left .cm-content");
+    const rightContent = container.querySelector(".is-right .cm-content");
+    expect(leftContent?.getAttribute("contenteditable")).toBe("false");
+    expect(rightContent?.getAttribute("contenteditable")).toBe("true");
+  });
+
+  it("keeps both panes read-only when editable is false", () => {
+    const { container } = render(
+      <DiffViewer
+        diff={modifiedDiff}
+        current={0}
+        collapse={false}
+        sync={true}
+        highlight="words"
+        editable={false}
+        onCurrent={() => {}}
+      />,
+    );
+    const leftContent = container.querySelector(".is-left .cm-content");
+    const rightContent = container.querySelector(".is-right .cm-content");
+    expect(leftContent?.getAttribute("contenteditable")).toBe("false");
+    expect(rightContent?.getAttribute("contenteditable")).toBe("false");
+  });
+
+  it("flushes debounced save when blurring editable pane", async () => {
+    let saved: { path: string; file: string; text: string } | null = null;
+    const core = fakeCore({
+      current_repo: () => ({ ...repoInfo("acme-billing"), lastTab: "changes" }),
+      save_file: (args) => {
+        saved = args as { path: string; file: string; text: string };
+        return null;
+      },
+    });
+    const { container } = await renderWithStore(
+      <DiffViewer
+        diff={modifiedDiff}
+        current={0}
+        collapse={false}
+        sync={true}
+        highlight="words"
+        editable={true}
+        onCurrent={() => {}}
+      />,
+      core,
+    );
+    const rightContent = container.querySelector(".app-diff-right .cm-content") as HTMLElement;
+    expect(rightContent).not.toBeNull();
+    fireEvent.blur(rightContent);
+    expect(saved).toBeNull();
   });
 });

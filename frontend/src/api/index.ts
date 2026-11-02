@@ -25,6 +25,7 @@ export type { PushResult } from "./generated/PushResult";
 export type { RecentRepo } from "./generated/RecentRepo";
 export type { RepoInfo } from "./generated/RepoInfo";
 export type { ReportEnv } from "./generated/ReportEnv";
+export type { SaveFileArgs } from "./generated/SaveFileArgs";
 export type { Settings } from "./generated/Settings";
 export type { ToolTab } from "./generated/ToolTab";
 export type { UpdateCheck } from "./generated/UpdateCheck";
