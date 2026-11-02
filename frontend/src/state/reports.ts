@@ -30,7 +30,12 @@ export type Failure = {
   detail: string | null;
   count: number;
 };
-export type Context = { screen: string; build: string };
+export type Context = {
+  screen: string;
+  build: string;
+  state?: string | null;
+  repo?: string | null;
+};
 
 export function unhandled(error: ApiError): boolean {
   return !handled.has(error.code);
@@ -96,12 +101,28 @@ export function cleanMessage(code: string, message: string): string {
   return code === "invalidArgs" ? flat.replace(/"[^"]*"/g, '"…"').replace(/`[^`]*`/g, "`…`") : flat;
 }
 
+const noisyFrame = /(?:node_modules\/(?:\.vite\/deps\/)?react(?:-dom)?|@\[native code\])/;
+
+export function cleanStack(stack: string, limit = 15): string {
+  const lines = stack.split("\n");
+  const filtered = lines.filter((line) => !noisyFrame.test(line));
+  const chosen = filtered.length > 0 ? filtered : lines;
+  return chosen.slice(0, limit).join("\n");
+}
+
+const noisyComponent =
+  /^\s*(?:[a-z0-9-]+@(unknown:0:0|native)|at [a-z0-9-]+(?:\s*\(unknown|\s*$|\s*\(native))/;
+
+export function cleanComponentStack(componentStack: string, limit = 10): string {
+  const lines = componentStack.trim().split("\n");
+  const filtered = lines.filter((line) => !noisyComponent.test(line));
+  const chosen = filtered.length > 0 ? filtered : lines;
+  return chosen.slice(0, limit).join("\n");
+}
+
 export function stackOf(error: unknown, componentStack?: string | null): string | null {
-  const stack =
-    error instanceof Error && error.stack ? error.stack.split("\n").slice(0, 15).join("\n") : "";
-  const components = componentStack
-    ? componentStack.trim().split("\n").slice(0, 10).join("\n")
-    : "";
+  const stack = error instanceof Error && error.stack ? cleanStack(error.stack) : "";
+  const components = componentStack ? cleanComponentStack(componentStack) : "";
   const detail = [stack, components].filter(Boolean).join("\n");
   return detail || null;
 }
@@ -134,6 +155,8 @@ export function reportText(
     `- Build: ${context.build}`,
     `- Screen: ${context.screen}`,
   ];
+  if (context.state) lines.push(`- State: ${context.state}`);
+  if (context.repo) lines.push(`- Repo: ${context.repo}`);
   for (const failure of failures) {
     const times = failure.count > 1 ? ` (${failure.count} times)` : "";
     lines.push(

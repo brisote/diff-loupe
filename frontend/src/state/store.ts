@@ -557,7 +557,7 @@ export function createAppStore(backend: Backend) {
           if (recorded(outcome.command))
             history = remember(history, {
               at: Date.now(),
-              command: outcome.command,
+              command: outcome.tag ? `${outcome.command} (${outcome.tag})` : outcome.command,
               result: outcome.error?.code ?? "ok",
               ms: outcome.ms,
             });
@@ -1320,12 +1320,54 @@ export function createAppStore(backend: Backend) {
         ]
           .filter(Boolean)
           .join(", ");
+        const stateSummary = [
+          state.settings?.diff?.viewer ? `${state.settings.diff.viewer} diff` : null,
+          state.settings?.diff?.whitespace && state.settings.diff.whitespace !== "doNotIgnore"
+            ? `${state.settings.diff.whitespace} whitespace`
+            : null,
+          state.openTabs.length > 0
+            ? `${state.openTabs.length} tab${state.openTabs.length === 1 ? "" : "s"} open`
+            : null,
+          state.activeTab ? `active: ${hide(state.activeTab)}` : null,
+          state.selectedStaged ? "staged" : null,
+        ]
+          .filter(Boolean)
+          .join(", ");
+        const repoSummary = state.repo
+          ? [
+              state.changes !== null
+                ? `${state.changes.length} changed file${state.changes.length === 1 ? "" : "s"}`
+                : null,
+              state.uncommitted !== null &&
+              state.uncommitted.length !== (state.changes?.length ?? 0)
+                ? `${state.uncommitted.length} uncommitted`
+                : null,
+              state.merge
+                ? state.merge.conflicts.length > 0
+                  ? `${state.merge.conflicts.length} conflict${state.merge.conflicts.length === 1 ? "" : "s"}`
+                  : "merging"
+                : "merge: clean",
+              state.branches?.current
+                ? `branch: ${state.branches.current}`
+                : state.repo.branch
+                  ? `branch: ${state.repo.branch}`
+                  : null,
+              state.repo.target ? `target: ${state.repo.target}` : null,
+            ]
+              .filter(Boolean)
+              .join(", ")
+          : null;
         set({
           errorReport: {
             failures: addFailure(open?.failures ?? [], failure),
             env: open?.env ?? null,
             calls: history,
-            context: open?.context ?? { screen, build: `${backend.kind}, ${import.meta.env.MODE}` },
+            context: open?.context ?? {
+              screen,
+              build: `${backend.kind}, ${import.meta.env.MODE}`,
+              state: stateSummary || null,
+              repo: repoSummary || null,
+            },
           },
         });
         environment ??= backend.call("report_env").catch(() => null);

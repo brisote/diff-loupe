@@ -1,13 +1,17 @@
 import { describe, expect, it } from "vitest";
+import { commandTag } from "../api";
 import {
   addFailure,
+  cleanComponentStack,
   cleanMessage,
+  cleanStack,
   failureLimit,
   hidePaths,
   historySize,
   recorded,
   remember,
   reportText,
+  stackOf,
   unhandled,
 } from "./reports";
 
@@ -80,18 +84,84 @@ describe("error reports", () => {
   it("writes the versions, the build, the screen, the error and the recent commands", () => {
     const text = reportText(
       env,
-      { screen: "Changes, terminal open", build: "tauri, production" },
+      {
+        screen: "Changes, terminal open",
+        build: "tauri, production",
+        state: "split diff, 2 tabs open",
+        repo: "3 changed files, branch: main",
+      },
       [{ ...failure("storage failed"), count: 3, detail: "TypeError: x\n    at render" }],
-      [{ at, command: "set_ui_value", result: "store", ms: 5002.4 }],
+      [{ at, command: "set_ui_value (repo.tabs)", result: "store", ms: 5002.4 }],
     );
     expect(text).toContain("- Diffloupe 0.2.0 on macOS 26.1 (aarch64), git 2.50.1");
     expect(text).toContain("- Build: tauri, production");
     expect(text).toContain("- Screen: Changes, terminal open");
+    expect(text).toContain("- State: split diff, 2 tabs open");
+    expect(text).toContain("- Repo: 3 changed files, branch: main");
     expect(text).toContain(
       "- Error: `store` in `set_ui_value` at 14:12:05.042 on 2026-10-24 (3 times)",
     );
     expect(text).toContain("TypeError: x");
-    expect(text).toContain("| 14:12:05.042 | set_ui_value | store | 5002 |");
+    expect(text).toContain("| 14:12:05.042 | set_ui_value (repo.tabs) | store | 5002 |");
+  });
+
+  it("cleans internal react and runtime noise from stack traces", () => {
+    const raw = [
+      "Editor@http://localhost:1420/src/main-window/Editor.tsx:327:38",
+      "react_stack_bottom_frame@http://localhost:1420/node_modules/.vite/deps/react-dom_client.js:14142:21",
+      "renderWithHooks@http://localhost:1420/node_modules/.vite/deps/react-dom_client.js:4400:37",
+      "forEach@[native code]",
+      "App@http://localhost:1420/src/App.tsx:26:30",
+    ].join("\n");
+    const cleaned = cleanStack(raw);
+    expect(cleaned).toContain("Editor@http://localhost:1420/src/main-window/Editor.tsx:327:38");
+    expect(cleaned).toContain("App@http://localhost:1420/src/App.tsx:26:30");
+    expect(cleaned).not.toContain("react-dom_client.js");
+    expect(cleaned).not.toContain("[native code]");
+  });
+
+  it("falls back to full stack when all frames are internal", () => {
+    const raw = "at node_modules/react-dom/index.js:1:1\nat node_modules/react/index.js:2:2";
+    expect(cleanStack(raw)).toBe(raw);
+  });
+
+  it("cleans anonymous DOM elements from component stacks", () => {
+    const raw = [
+      "Editor@http://localhost:1420/src/main-window/Editor.tsx:107:30",
+      "div@unknown:0:0",
+      "span@unknown:0:0",
+      "MainWindow@http://localhost:1420/src/screens/MainWindow.tsx:23:24",
+    ].join("\n");
+    const cleaned = cleanComponentStack(raw);
+    expect(cleaned).toContain("Editor");
+    expect(cleaned).toContain("MainWindow");
+    expect(cleaned).not.toContain("div@unknown");
+    expect(cleaned).not.toContain("span@unknown");
+  });
+
+  it("combines cleaned stack and component stack in stackOf", () => {
+    const err = new Error("failed");
+    err.stack = "Editor@http://localhost:1420/src/main-window/Editor.tsx:10:1";
+    const component =
+      "Editor@http://localhost:1420/src/main-window/Editor.tsx:10:1\ndiv@unknown:0:0";
+    const detail = stackOf(err, component);
+    expect(detail).toContain("Editor@http://localhost:1420/src/main-window/Editor.tsx:10:1");
+    expect(detail).not.toContain("div@unknown");
+  });
+
+  it("tags commands with non-sensitive identifiers", () => {
+    expect(commandTag("get_ui_value", { key: "repo.tabs:/path/to/repo" })).toBe("repo.tabs");
+    expect(commandTag("set_ui_value", { key: "editor.unified", value: "true" })).toBe(
+      "editor.unified",
+    );
+    expect(commandTag("diff", { path: "p", file: "f", area: "staged" })).toBe("staged");
+    expect(commandTag("diff", { path: "p", file: "f", commit: "abc" })).toBe("commit");
+    expect(commandTag("diff", { path: "p", file: "f" })).toBe("unstaged");
+    expect(commandTag("switch_branch", { path: "p", branch: "feat" })).toBe("feat");
+    expect(commandTag("accept_side", { path: "p", files: [], side: "theirs" })).toBe("theirs");
+    expect(commandTag("set_target", { path: "p", target: "main" })).toBe("target");
+    expect(commandTag("set_target", { path: "p", target: null })).toBe("clear");
+    expect(commandTag("status", { path: "p" })).toBeNull();
   });
 });
 
