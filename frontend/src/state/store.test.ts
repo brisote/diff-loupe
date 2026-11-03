@@ -159,6 +159,19 @@ describe("start", () => {
 });
 
 describe("actions", () => {
+  it("reloads recent repositories", async () => {
+    let recents = [recent("first")];
+    const core = fakeCore({
+      recent_repos: () => recents,
+    });
+    const store = createAppStore(new Backend(core));
+    await store.getState().start();
+    expect(store.getState().recent).toEqual([recent("first")]);
+    recents = [recent("first"), recent("second")];
+    await store.getState().loadRecent();
+    expect(store.getState().recent).toEqual([recent("first"), recent("second")]);
+  });
+
   it("saves a new target and reloads only the changes for it", async () => {
     const core = fakeCore({
       current_repo: () => repoInfo("acme-billing"),

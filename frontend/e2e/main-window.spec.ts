@@ -1,3 +1,4 @@
+import { rmSync } from "node:fs";
 import { expect, test } from "./fixtures";
 
 test("the project dropdown lists recent repositories and switches in place", async ({
@@ -21,6 +22,23 @@ test("the project dropdown lists recent repositories and switches in place", asy
   await expect(popup).toBeHidden();
   await expect(page.getByRole("button", { name: "Recent projects" })).toContainText("project-3");
   await expect(page.getByRole("heading", { name: "Welcome to Diffloupe" })).toHaveCount(0);
+});
+
+test("the project dropdown omits repositories whose folders were deleted", async ({
+  page,
+  workspace,
+  startApp,
+}) => {
+  const first = workspace.repo("first");
+  const second = workspace.repo("second");
+  await startApp({ open: [second, first] });
+  rmSync(second, { recursive: true, force: true });
+
+  await page.getByRole("button", { name: "Recent projects" }).click();
+  const popup = page.getByRole("dialog", { name: "Recent projects" });
+  const list = popup.getByRole("listbox", { name: "Recent projects" });
+  await expect(list.getByRole("option", { name: "first" })).toBeVisible();
+  await expect(list.getByRole("option", { name: "second" })).toHaveCount(0);
 });
 
 test("each repository remembers its tab", async ({ page, workspace, startApp }) => {
