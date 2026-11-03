@@ -904,7 +904,7 @@ button {
 .app-md-heads,
 .app-md-panes {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) var(--space-24) minmax(0, 1fr);
+  grid-template-columns: minmax(200px, 1fr) var(--space-24) minmax(200px, 1fr);
 }
 
 .app-md-panes {

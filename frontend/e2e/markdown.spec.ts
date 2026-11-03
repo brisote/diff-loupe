@@ -319,3 +319,57 @@ test("each side of the rendered diff scrolls on its own, and the rows stay level
   );
   expect(rowTops[0]).toBe(rowTops[1]);
 });
+
+test("the rendered markdown diff divider resizes panes and shares ratio with raw diff", async ({
+  page,
+  workspace,
+  startApp,
+}) => {
+  const repo = markdownRepo(workspace);
+  await startApp({ open: [repo] });
+  await page.getByRole("treeitem", { name: "README.md" }).click();
+  const rendered = page.getByRole("region", { name: "Rendered side-by-side diff" });
+  await expect(rendered).toBeVisible();
+
+  const separator = rendered.getByLabel("Resize diff panes");
+  await expect(separator).toBeVisible();
+  await expect(separator).toHaveAttribute("aria-valuenow", "50");
+
+  const beforePane = rendered.getByLabel("Before");
+  const afterPane = rendered.getByLabel("After");
+
+  const initialBefore = (await beforePane.boundingBox())?.width ?? 0;
+  const initialAfter = (await afterPane.boundingBox())?.width ?? 0;
+  expect(Math.abs(initialBefore - initialAfter)).toBeLessThan(5);
+
+  const sepBox = await separator.boundingBox();
+  expect(sepBox).not.toBeNull();
+  if (sepBox) {
+    await page.mouse.move(sepBox.x + sepBox.width / 2, sepBox.y + sepBox.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(sepBox.x + sepBox.width / 2 + 120, sepBox.y + sepBox.height / 2);
+    await page.mouse.up();
+  }
+
+  const resizedBefore = (await beforePane.boundingBox())?.width ?? 0;
+  const resizedAfter = (await afterPane.boundingBox())?.width ?? 0;
+  expect(resizedBefore).toBeGreaterThan(initialBefore + 50);
+  expect(resizedAfter).toBeLessThan(initialAfter - 50);
+
+  await page.getByRole("button", { name: "Raw", exact: true }).click();
+  const rawDiff = page.getByRole("region", { name: "Side-by-side diff" });
+  await expect(rawDiff).toBeVisible();
+  const rawSeparator = rawDiff.getByLabel("Resize diff panes");
+  await expect(rawSeparator).toBeVisible();
+  const rawRatio = Number(await rawSeparator.getAttribute("aria-valuenow"));
+  expect(rawRatio).toBeGreaterThan(55);
+
+  await page.getByRole("button", { name: "Rendered", exact: true }).click();
+  await expect(rendered).toBeVisible();
+
+  await separator.dblclick();
+  await expect(separator).toHaveAttribute("aria-valuenow", "50");
+  const resetBefore = (await beforePane.boundingBox())?.width ?? 0;
+  const resetAfter = (await afterPane.boundingBox())?.width ?? 0;
+  expect(Math.abs(resetBefore - resetAfter)).toBeLessThan(5);
+});
