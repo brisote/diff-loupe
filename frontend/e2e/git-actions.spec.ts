@@ -38,7 +38,7 @@ test("the Branch picker lists branches and switching updates Changes and the Bra
 
   const picker = await openBranches(page);
   await expect(
-    picker.getByRole("menuitem", { name: "Merge main into gs/invoice-export" }),
+    picker.getByRole("menuitem", { name: "Merge origin/main into gs/invoice-export" }),
   ).not.toHaveAttribute("aria-disabled");
   await expect(picker.getByRole("listbox", { name: "Branches" }).getByRole("option")).toHaveText([
     /gs\/invoice-export\s*current/,

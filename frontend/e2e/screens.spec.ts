@@ -228,7 +228,7 @@ test("merge screens", async ({ page, workspace, startApp }) => {
   await page.getByRole("button", { name: "Current branch" }).click();
   await page.waitForTimeout(300);
   await shoot(page, "BranchPicker");
-  await page.getByRole("menuitem", { name: "Merge main into gs/invoice-export" }).click();
+  await page.getByRole("menuitem", { name: "Merge origin/main into gs/invoice-export" }).click();
   const dialog = page.getByRole("dialog", { name: "Conflicts" });
   await dialog.waitFor();
   await page.waitForTimeout(300);
@@ -261,7 +261,7 @@ test("merge blocked screen", async ({ page, workspace, startApp }) => {
   workspace.write(repo, "billing/src/main/kotlin/acme/billing/TotalsCalculator.kt", "local\n");
   await startApp({ open: [repo] });
   await page.getByRole("button", { name: "Current branch" }).click();
-  await page.getByRole("menuitem", { name: "Merge main into gs/invoice-export" }).click();
+  await page.getByRole("menuitem", { name: "Merge origin/main into gs/invoice-export" }).click();
   await page.locator(".app-editor-notice").getByRole("button", { name: "Show files" }).click();
   await page.waitForTimeout(300);
   await shoot(page, "MergeBlocked");

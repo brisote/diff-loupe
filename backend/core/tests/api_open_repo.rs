@@ -195,7 +195,15 @@ fn target_prefers_the_remote_default_branch() {
     let (_data, core) = core();
     let info = call(&core, "open_repo", json!({"path": repo.path()}));
     assert_eq!(info["branch"], "develop");
-    assert_eq!(info["target"], "main");
+    assert_eq!(info["target"], "origin/main");
+
+    call(
+        &core,
+        "set_target",
+        json!({"path": repo.path(), "target": "develop"}),
+    );
+    let info = call(&core, "open_repo", json!({"path": repo.path()}));
+    assert_eq!(info["target"], "develop");
 }
 
 #[test]

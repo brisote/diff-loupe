@@ -68,6 +68,7 @@ pub fn target_tips(repo: &gix::Repository, target: &str) -> Vec<gix::ObjectId> {
     let mut tips: Vec<gix::ObjectId> = [
         format!("refs/remotes/origin/{target}"),
         format!("refs/heads/{target}"),
+        format!("refs/remotes/{target}"),
     ]
     .iter()
     .filter_map(|name| commit(name))

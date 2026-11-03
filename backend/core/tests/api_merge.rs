@@ -256,7 +256,7 @@ fn the_target_is_fetched_before_it_is_merged() {
     let (_data, core, path) = open(&repo);
     assert_eq!(
         call(&core, "merge_target", json!({ "path": path })),
-        json!({ "status": "merged", "from": "main" })
+        json!({ "status": "merged", "from": "origin/main" })
     );
     assert!(repo.path().join("theirs.txt").exists());
     assert!(
@@ -265,7 +265,7 @@ fn the_target_is_fetched_before_it_is_merged() {
     );
     assert_eq!(
         call(&core, "merge_target", json!({ "path": path })),
-        json!({ "status": "upToDate", "from": "main" })
+        json!({ "status": "upToDate", "from": "origin/main" })
     );
 }
 
@@ -336,7 +336,7 @@ fn a_target_that_exists_only_on_the_remote_is_fetched_and_merged() {
     let (_data, core, path) = open(&repo);
     assert_eq!(
         call(&core, "merge_target", json!({ "path": path })),
-        json!({ "status": "merged", "from": "main" })
+        json!({ "status": "merged", "from": "origin/main" })
     );
     assert!(repo.path().join("theirs.txt").exists());
 }
