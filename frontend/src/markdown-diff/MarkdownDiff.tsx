@@ -1,10 +1,28 @@
 import type { Root } from "hast";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import type { DiffSide, FileDiff } from "../api";
+import {
+  type PointerEvent,
+  type KeyboardEvent as ReactKeyboardEvent,
+  useCallback,
+  useContext,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import type { Backend, DiffSide, FileDiff } from "../api";
 import { Stripe } from "../diff/DiffViewer";
 import { LeftHead, RightHead } from "../diff/FileHead";
-import { foldContext, layout, type Mark, type Range, rowTop } from "../diff/geometry";
-import { useApp } from "../state/context";
+import {
+  clampRatio,
+  diffDividerRatioKey,
+  foldContext,
+  layout,
+  type Mark,
+  type Range,
+  rowTop,
+} from "../diff/geometry";
+import { StoreContext } from "../state/context";
 import { type Block, blocks, parse } from "./blocks";
 import { type Marked, markRow } from "./mark";
 import { match, type Row } from "./match";
@@ -76,9 +94,9 @@ function revisionOf(side: DiffSide): string | null | undefined {
 function useImages(
   diff: FileDiff,
   trees: { left: Root[]; right: Root[] },
+  backend?: Backend,
+  repo?: string,
 ): Record<Side | "merged", Images> {
-  const backend = useApp((state) => state.backend);
-  const repo = useApp((state) => state.repo?.path);
   const [loaded, setLoaded] = useState<Record<string, string | null>>({});
   const revisions = { left: revisionOf(diff.left), right: revisionOf(diff.right) };
   const wanted = useMemo(() => {
@@ -92,7 +110,7 @@ function useImages(
   }, [diff, trees]);
 
   useEffect(() => {
-    if (!repo) return;
+    if (!repo || !backend) return;
     let live = true;
     for (const { side, source, rev } of wanted) {
       const document = side === "left" ? (diff.oldPath ?? diff.path) : diff.path;
@@ -142,6 +160,7 @@ type Props = {
   collapse: boolean;
   current: number;
   activeSearchRow?: number | null;
+  backend?: Backend;
   onCurrent: (index: number) => void;
 };
 
@@ -152,8 +171,102 @@ export function MarkdownDiff({
   collapse,
   current,
   activeSearchRow,
+  backend: explicitBackend,
   onCurrent,
 }: Props) {
+  const store = useContext(StoreContext);
+  const backend = explicitBackend ?? store?.getState().backend;
+  const repo = store?.getState().repo?.path;
+  const [ratio, setRatio] = useState(0.5);
+  const lastRatio = useRef(0.5);
+  const drag = useRef<{ startX: number; startRatio: number; width: number } | null>(null);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!backend) return;
+    let active = true;
+    void backend
+      .call("get_ui_value", { key: diffDividerRatioKey })
+      .then((saved) => {
+        if (!active || !saved) return;
+        const num = Number(saved);
+        if (Number.isFinite(num)) {
+          const next = clampRatio(num, 0.2, 0.8, containerRef.current?.clientWidth, 200, 24);
+          lastRatio.current = next;
+          setRatio(next);
+        }
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, [backend]);
+
+  const saveRatio = useCallback(
+    (next: number) => {
+      if (!backend) return;
+      void backend
+        .call("set_ui_value", { key: diffDividerRatioKey, value: String(next) })
+        .catch(() => undefined);
+    },
+    [backend],
+  );
+
+  const onDoubleClick = useCallback(() => {
+    lastRatio.current = 0.5;
+    setRatio(0.5);
+    saveRatio(0.5);
+  }, [saveRatio]);
+
+  const onPointerDown = (event: PointerEvent<HTMLHRElement>) => {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    const container = containerRef.current;
+    const width = container ? container.clientWidth - 24 : 0;
+    drag.current = {
+      startX: event.clientX,
+      startRatio: ratio,
+      width,
+    };
+  };
+
+  const onPointerMove = (event: PointerEvent<HTMLHRElement>) => {
+    if (!drag.current) return;
+    const { startX, startRatio, width } = drag.current;
+    const delta = event.clientX - startX;
+    const container = containerRef.current;
+    const next = clampRatio(
+      startRatio + (width > 0 ? delta / width : 0),
+      0.2,
+      0.8,
+      container?.clientWidth,
+      200,
+      24,
+    );
+    lastRatio.current = next;
+    setRatio(next);
+  };
+
+  const onPointerUp = (event: PointerEvent<HTMLHRElement>) => {
+    if (!drag.current) return;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    drag.current = null;
+    saveRatio(lastRatio.current);
+  };
+
+  const onKeyDown = (event: ReactKeyboardEvent<HTMLHRElement>) => {
+    const step = event.key === "ArrowLeft" ? -0.05 : event.key === "ArrowRight" ? 0.05 : 0;
+    if (!step) return;
+    event.preventDefault();
+    const next = clampRatio(ratio + step, 0.2, 0.8, containerRef.current?.clientWidth, 200, 24);
+    lastRatio.current = next;
+    setRatio(next);
+    saveRatio(next);
+  };
+
   const scroller = useRef<HTMLElement>(null);
   const left = useRef<HTMLElement>(null);
   const strips = useRef<HTMLDivElement>(null);
@@ -202,7 +315,7 @@ export function MarkdownDiff({
     }),
     [rows],
   );
-  const images = useImages(diff, trees);
+  const images = useImages(diff, trees, backend, repo);
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== "F7" || document.querySelector(".app-modal")) return;
@@ -317,7 +430,12 @@ export function MarkdownDiff({
           <RightHead diff={diff} />
         </div>
       ) : (
-        <div className="app-md-heads">
+        <div
+          className="app-md-heads"
+          style={{
+            gridTemplateColumns: `minmax(200px, ${ratio}fr) var(--space-24) minmax(200px, ${1 - ratio}fr)`,
+          }}
+        >
           <div className="dl-filehead">
             <LeftHead diff={diff} />
           </div>
@@ -361,7 +479,13 @@ export function MarkdownDiff({
           <Stripe marks={marks} rows={totalRows} />
         </div>
       ) : (
-        <div className="app-md-panes">
+        <div
+          ref={containerRef}
+          className="app-md-panes"
+          style={{
+            gridTemplateColumns: `minmax(200px, ${ratio}fr) var(--space-24) minmax(200px, ${1 - ratio}fr)`,
+          }}
+        >
           <section
             ref={left}
             className="app-md-scroll"
@@ -392,8 +516,8 @@ export function MarkdownDiff({
               })}
             </div>
           </section>
-          <div ref={strips} className="app-md-strips" aria-hidden="true">
-            <div className="app-md-grid">
+          <div ref={strips} className="app-md-strips dl-divider app-diff-divider">
+            <div className="app-md-grid" aria-hidden="true">
               {rows.rows.map((row, index) => {
                 const folded = fold(index);
                 const key = `${index}-${row.kind}`;
@@ -403,6 +527,20 @@ export function MarkdownDiff({
                 return <div key={key} className={`app-md-strip is-${row.kind}`} />;
               })}
             </div>
+            <hr
+              className="app-diff-handle"
+              aria-orientation="vertical"
+              aria-label="Resize diff panes"
+              aria-valuenow={Math.round(ratio * 100)}
+              aria-valuemin={20}
+              aria-valuemax={80}
+              tabIndex={0}
+              onPointerDown={onPointerDown}
+              onPointerMove={onPointerMove}
+              onPointerUp={onPointerUp}
+              onDoubleClick={onDoubleClick}
+              onKeyDown={onKeyDown}
+            />
           </div>
           <div className="app-md-right">
             <section
