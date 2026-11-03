@@ -2,6 +2,22 @@
 
 Each release lists what changed for the person who uses Diffloupe, and every change to stored data with its migration.
 
+## 0.6.0
+
+In-diff file editing in Local Changes and a draggable pane divider across Raw and Rendered views.
+
+### Review
+
+- Edit files directly in the right-hand pane of the Raw diff view when inspecting Local Changes.
+- Edits save automatically to disk with full undo and redo support.
+- Revert individual changed blocks in the gutter to restore the previous version.
+- Drag the divider between diff panes to resize Before and After sides in Raw and Rendered Markdown views.
+- Double-click the divider to reset to an equal split; divider positions persist across files and app restarts.
+
+### Install
+
+- Nothing in your stored data changes.
+
 ## 0.5.0
 
 Multiple diff tabs across the editor island, context menu actions in the Changes list, and diagnostic error reports.
