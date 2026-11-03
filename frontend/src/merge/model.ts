@@ -25,7 +25,7 @@ export function lineOffsets(text: string): number[] {
   return offsets;
 }
 
-function offsetOf(offsets: number[], text: string, line: number): number {
+export function offsetOf(offsets: number[], text: string, line: number): number {
   return offsets[line] ?? text.length;
 }
 

@@ -16,6 +16,8 @@ import type { Backend } from "../api";
 import type { Block } from "../api/generated/Block";
 import type { FileDiff } from "../api/generated/FileDiff";
 import type { Highlight } from "../api/generated/Highlight";
+import { Icon } from "../lib/icon";
+import { lineOffsets, offsetOf, sliceLines } from "../merge/model";
 import { StoreContext } from "../state/context";
 import { CodePane, type Decorate } from "./CodePane";
 import { diffDecorations } from "./decorations";
@@ -55,6 +57,7 @@ type Props = {
   searchRightDecorations?: Ranged<Decoration>[];
   activeSearchMatch?: PaneMatch | null;
   backend?: Backend;
+  editable?: boolean;
   onCurrent: (index: number) => void;
 };
 
@@ -70,10 +73,76 @@ export function DiffViewer({
   searchRightDecorations,
   activeSearchMatch,
   backend: explicitBackend,
+  editable: explicitEditable,
   onCurrent,
 }: Props) {
   const store = useContext(StoreContext);
   const backend = explicitBackend ?? store?.getState().backend;
+  const tab = store?.getState().repo?.lastTab;
+  const isEditable = (explicitEditable ?? tab === "changes") && diff.right.exists;
+
+  const pendingText = useRef<string | null>(null);
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const diffPathRef = useRef(diff.path);
+  diffPathRef.current = diff.path;
+
+  const flushSave = useCallback(() => {
+    if (saveTimer.current) {
+      clearTimeout(saveTimer.current);
+      saveTimer.current = null;
+    }
+    if (pendingText.current === null) return;
+    const text = pendingText.current;
+    pendingText.current = null;
+    const repoPath = store?.getState().repo?.path;
+    if (!backend || !repoPath) return;
+    void backend
+      .call("save_file", {
+        path: repoPath,
+        file: diffPathRef.current,
+        text,
+      })
+      .catch(() => undefined);
+  }, [backend, store]);
+
+  const onRightChange = useCallback(
+    (text: string) => {
+      pendingText.current = text;
+      if (saveTimer.current) {
+        clearTimeout(saveTimer.current);
+      }
+      saveTimer.current = setTimeout(() => {
+        flushSave();
+      }, 250);
+    },
+    [flushSave],
+  );
+
+  useEffect(() => {
+    return () => {
+      flushSave();
+    };
+  }, [flushSave]);
+
+  const prevPath = useRef(diff.path);
+  useEffect(() => {
+    if (prevPath.current !== diff.path) {
+      flushSave();
+      prevPath.current = diff.path;
+    }
+  }, [diff.path, flushSave]);
+
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key === "s") {
+        event.preventDefault();
+        flushSave();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [flushSave]);
+
   const [ratio, setRatio] = useState(0.5);
   const lastRatio = useRef(0.5);
   const drag = useRef<{ startX: number; startRatio: number; width: number } | null>(null);
@@ -353,6 +422,23 @@ export function DiffViewer({
     const state = painted ? states[side][line] : null;
     return state ? ` is-${state.kind}${state.words ? " has-words" : ""}` : "";
   };
+  const revertBlock = useCallback(
+    (block: Block) => {
+      const rightView = views.current.right;
+      if (!rightView) return;
+      const rightText = rightView.state.doc.toString();
+      const rightOffsets = lineOffsets(rightText);
+      const from = offsetOf(rightOffsets, rightText, block.rightStart);
+      const to = offsetOf(rightOffsets, rightText, block.rightEnd);
+      const insert = sliceLines(diff.left.text, block.leftStart, block.leftEnd);
+      rightView.dispatch({
+        changes: { from, to, insert },
+        userEvent: "undo.revert",
+      });
+      flushSave();
+    },
+    [diff.left.text, flushSave],
+  );
   return (
     <section
       ref={containerRef}
@@ -421,6 +507,25 @@ export function DiffViewer({
               />
             ))}
         </svg>
+        {isEditable &&
+          diff.left.exists &&
+          shown.map((block) => {
+            const top = y("left", block.leftStart) + 2;
+            if (top < -lineHeight || (scroll.height > 0 && top > scroll.height)) return null;
+            return (
+              <button
+                key={`revert-${block.leftStart}-${block.rightStart}`}
+                className="dl-chev"
+                type="button"
+                aria-label="Revert this change"
+                title="Revert"
+                style={{ left: 4, top }}
+                onClick={() => revertBlock(block)}
+              >
+                <Icon name="diff-gutter-arrowRight" />
+              </button>
+            );
+          })}
       </div>
       <LineNumbers
         map={maps.right}
@@ -436,6 +541,10 @@ export function DiffViewer({
           text={diff.right.text}
           path={diff.path}
           label="After"
+          editable={isEditable}
+          onChange={onRightChange}
+          onSave={flushSave}
+          onBlur={flushSave}
           decorate={decorateRight}
           searchDecorations={searchRightDecorations}
           hidden={hidden.right}

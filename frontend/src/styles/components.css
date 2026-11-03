@@ -87,7 +87,7 @@ body{margin:0;font-family:var(--font-ui);font-size:13px;line-height:16px;color:v
 .dl-filehead{display:flex;align-items:center;gap:var(--space-6);height:var(--size-row);padding:0 var(--space-8);background:var(--panel-bg-inline);border-bottom:1px solid var(--border);color:var(--text-muted);white-space:nowrap;overflow:hidden}
 .dl-filehead-hash{color:var(--text);font-family:var(--font-mono);font-size:12px}
 .dl-filehead-title{color:var(--text)}
-.dl-diff{position:relative;display:grid;background:var(--editor-bg);font-family:var(--font-mono);font-size:13px;line-height:20px;color:var(--editor-text)}
+.dl-diff{position:relative;display:grid;background:var(--editor-bg);font-family:var(--font-mono);font-size:13px;line-height:20px;color:var(--editor-text);font-variant-ligatures:none;font-feature-settings:"liga" 0,"calt" 0}
 .dl-diff-2{grid-template-columns:minmax(0,1fr) var(--size-divider) minmax(0,1fr)}
 .dl-diff-3{grid-template-columns:minmax(0,1fr) var(--size-divider) minmax(0,1fr) var(--size-divider) minmax(0,1fr)}
 .dl-pane{min-width:0;overflow:hidden}

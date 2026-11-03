@@ -468,6 +468,7 @@ export function Editor() {
                 searchLeftDecorations={searchLeftDecorations}
                 searchRightDecorations={searchRightDecorations}
                 activeSearchMatch={activeSplitMatch}
+                editable={tab === "changes"}
                 onCurrent={setCurrent}
               />
             )

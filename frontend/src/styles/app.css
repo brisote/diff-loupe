@@ -517,6 +517,10 @@ button {
   font-family: var(--font-mono);
   font-size: 13px;
   line-height: 20px;
+  font-variant-ligatures: none;
+  font-feature-settings:
+    "liga" 0,
+    "calt" 0;
 }
 
 .app-cm .cm-editor .cm-content {

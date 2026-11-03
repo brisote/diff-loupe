@@ -207,13 +207,13 @@
 .ui-text { font-family: var(--font-ui); font-size: 13px; line-height: 20px; font-weight: 400; }
 .ui-small { font-family: var(--font-ui); font-size: 12px; line-height: 16px; font-weight: 400; }
 .ui-mini { font-family: var(--font-ui); font-size: 11px; line-height: 14px; font-weight: 400; }
-.code { font-family: var(--font-mono); font-size: 13px; line-height: 20px; font-weight: 400; }
-.code-small { font-family: var(--font-mono); font-size: 12px; line-height: 16px; font-weight: 400; }
+.code { font-family: var(--font-mono); font-size: 13px; line-height: 20px; font-weight: 400; font-variant-ligatures: none; font-feature-settings: "liga" 0, "calt" 0; }
+.code-small { font-family: var(--font-mono); font-size: 12px; line-height: 16px; font-weight: 400; font-variant-ligatures: none; font-feature-settings: "liga" 0, "calt" 0; }
 .md-h1 { font-family: var(--font-ui); font-size: 24px; line-height: 32px; font-weight: 600; }
 .md-h2 { font-family: var(--font-ui); font-size: 20px; line-height: 28px; font-weight: 600; }
 .md-h3 { font-family: var(--font-ui); font-size: 16px; line-height: 24px; font-weight: 600; }
 .md-body { font-family: var(--font-ui); font-size: 14px; line-height: 22px; font-weight: 400; }
-.md-code { font-family: var(--font-mono); font-size: 13px; line-height: 20px; font-weight: 400; }
+.md-code { font-family: var(--font-mono); font-size: 13px; line-height: 20px; font-weight: 400; font-variant-ligatures: none; font-feature-settings: "liga" 0, "calt" 0; }
 @font-face { font-family: "Inter"; src: url("fonts/InterVariable.woff2") format("woff2"); font-weight: 100 900; font-style: normal; font-display: swap; }
 @font-face { font-family: "JetBrains Mono"; src: url("fonts/JetBrainsMono-Regular.woff2") format("woff2"); font-weight: 400; font-style: normal; font-display: swap; }
 @font-face { font-family: "JetBrains Mono"; src: url("fonts/JetBrainsMono-Italic.woff2") format("woff2"); font-weight: 400; font-style: italic; font-display: swap; }
