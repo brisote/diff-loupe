@@ -263,6 +263,7 @@ export type AppState = {
   open: (path: string) => Promise<void>;
   openPicked: () => Promise<void>;
   removeRecent: (path: string) => Promise<void>;
+  loadRecent: () => Promise<void>;
   dismissError: () => void;
   setTab: (tab: ToolTab) => void;
   setTarget: (target: string | null) => Promise<void>;
@@ -392,6 +393,7 @@ export function createAppStore(backend: Backend) {
   let reading: Promise<void> | null = null;
   let readAgain = false;
   let opening: Promise<void> = Promise.resolve();
+  let recentRequest = 0;
   let diffRequest = 0;
   let loggingAgain = false;
   let logging = false;
@@ -727,6 +729,7 @@ export function createAppStore(backend: Backend) {
               .catch(() => undefined);
             commitRequest += 1;
             commitDiffRequest += 1;
+            recentRequest += 1;
             void get().loadStatus();
             void get().loadLog();
             set({ recent: await backend.call("recent_repos") });
@@ -744,7 +747,16 @@ export function createAppStore(backend: Backend) {
       },
 
       removeRecent: async (path) => {
+        recentRequest += 1;
         set({ recent: await backend.call("remove_recent", { path }) });
+      },
+
+      loadRecent: async () => {
+        const request = ++recentRequest;
+        try {
+          const recent = await backend.call("recent_repos");
+          if (request === recentRequest) set({ recent });
+        } catch {}
       },
 
       dismissError: () => set({ openError: null }),
@@ -1079,6 +1091,7 @@ export function createAppStore(backend: Backend) {
           set({ repo: { ...info, lastTab: repo.lastTab }, notice: null, ...emptyLog });
           commitRequest += 1;
           commitDiffRequest += 1;
+          recentRequest += 1;
           void get().loadStatus();
           void get().loadLog();
           set({ recent: await backend.call("recent_repos") });

@@ -48,6 +48,24 @@ describe("MainToolbar", () => {
     expect(store.getState().repo?.name).toBe("payments-api");
   });
 
+  it("omits projects that no longer exist and refreshes on open", async () => {
+    const user = userEvent.setup();
+    let recents = [
+      recent("acme-billing", "gs/invoice-export"),
+      recent("payments-api", "main", true),
+    ];
+    const transport = fakeCore({
+      current_repo: () => repoInfo("acme-billing", "gs/invoice-export"),
+      recent_repos: () => recents,
+    });
+    await renderWithStore(<MainToolbar />, transport);
+    recents = [recent("acme-billing", "gs/invoice-export"), recent("payments-api", "main", false)];
+    await user.click(screen.getByRole("button", { name: "Recent projects" }));
+    const popup = screen.getByRole("dialog", { name: "Recent projects" });
+    expect(within(popup).getByRole("option", { name: "acme-billing" })).toBeInTheDocument();
+    expect(within(popup).queryByRole("option", { name: "payments-api" })).toBeNull();
+  });
+
   it("does not reopen the current project", async () => {
     const user = userEvent.setup();
     const transport = core();

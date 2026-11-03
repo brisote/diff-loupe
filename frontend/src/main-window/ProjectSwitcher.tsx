@@ -1,4 +1,4 @@
-import type { RefObject } from "react";
+import { type RefObject, useEffect } from "react";
 import { Icon } from "../lib/icon";
 import { Row } from "../lib/list";
 import { displayPath } from "../lib/paths";
@@ -9,15 +9,22 @@ type Props = { anchor: RefObject<HTMLElement | null>; onClose: () => void };
 
 export function ProjectSwitcher({ anchor, onClose }: Props) {
   const recent = useApp((state) => state.recent);
+  const loadRecent = useApp((state) => state.loadRecent);
   const current = useApp((state) => state.repo?.path);
   const home = useApp((state) => state.info?.home);
   const open = useApp((state) => state.open);
   const openPicked = useApp((state) => state.openPicked);
 
+  useEffect(() => {
+    void loadRecent();
+  }, [loadRecent]);
+
   const choose = (path: string) => {
     onClose();
     if (path !== current) void open(path);
   };
+
+  const shown = recent.filter((repo) => repo.exists);
 
   return (
     <Popup
@@ -29,7 +36,7 @@ export function ProjectSwitcher({ anchor, onClose }: Props) {
     >
       <div className="dl-popup-section">Recent projects</div>
       <div className="dl-popup-scroll" role="listbox" aria-label="Recent projects">
-        {recent.map((repo) => (
+        {shown.map((repo) => (
           <Row
             key={repo.path}
             className="dl-project"
