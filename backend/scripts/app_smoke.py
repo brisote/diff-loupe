@@ -316,10 +316,12 @@ def main() -> int:
         results.append(check("the welcome screen shows", "Welcome to Diffloupe" in welcome["text"], welcome["text"][:200]))
         results += page_checks(welcome)
 
-        repo = demo_repos.create_repo(Path(tmp) / "repos", "acme-billing", "gs/invoice-export")
+        repo = demo_repos.create_repo(Path(tmp) / "repos", "acme-billing", "main")
         (repo / "Billing.kt").write_text("val total = 1\n")
         demo_repos.git(repo, "add", "Billing.kt")
         demo_repos.git(repo, "commit", "-q", "-m", "Add billing")
+        demo_repos.git(repo, "push", "-q", "origin", "main")
+        demo_repos.git(repo, "switch", "-q", "-c", "gs/invoice-export")
         (repo / "Billing.kt").write_text("val total = 2\nval note = \"" + "wide " * 80 + "\"\n")
         seed(home, repo)
         main_window = report(home, lambda: (repo / "draft.txt").write_text("new\n"))
