@@ -90,4 +90,26 @@ impl Repo {
         }
         None
     }
+
+    pub fn default_target_branch(&self) -> Option<String> {
+        let repo = self.gix();
+        if let Ok(Some(reference)) = repo.try_find_reference("refs/remotes/origin/main") {
+            return Some(reference.name().shorten().to_string());
+        }
+        if let Ok(Some(reference)) = repo.try_find_reference("refs/remotes/origin/HEAD")
+            && let Some(target) = reference.target().try_name()
+        {
+            return Some(target.shorten().to_string());
+        }
+        for candidate in [
+            "refs/remotes/origin/master",
+            "refs/heads/main",
+            "refs/heads/master",
+        ] {
+            if let Ok(Some(reference)) = repo.try_find_reference(candidate) {
+                return Some(reference.name().shorten().to_string());
+            }
+        }
+        self.default_branch()
+    }
 }

@@ -30,7 +30,7 @@ function conflicting(workspace: Workspace): { repo: string; remote: string } {
 
 async function mergeMain(page: Page) {
   await page.getByRole("button", { name: "Current branch" }).click();
-  await page.getByRole("menuitem", { name: "Merge main into gs/invoice-export" }).click();
+  await page.getByRole("menuitem", { name: "Merge origin/main into gs/invoice-export" }).click();
 }
 
 const banner = (page: Page) => page.locator(".app-editor-notice .dl-banner");
@@ -123,9 +123,9 @@ test("local changes that the merge would overwrite block it and are shown", asyn
   workspace.write(repo, "notes.md", "my local notes\n");
   await startApp({ open: [repo] });
   await page.getByRole("button", { name: "Current branch" }).click();
-  await page.getByRole("menuitem", { name: "Merge main into gs/notes" }).click();
+  await page.getByRole("menuitem", { name: "Merge origin/main into gs/notes" }).click();
   await expect(banner(page)).toHaveText(
-    /Merge blocked: merging main would overwrite your local changes to notes\.md\. Commit them first, then merge again\./,
+    /Merge blocked: merging origin\/main would overwrite your local changes to notes\.md\. Commit them first, then merge again\./,
   );
   await banner(page).getByRole("button", { name: "Show files" }).click();
   await expect(
@@ -143,8 +143,8 @@ test("a clean merge offers to push", async ({ page, workspace, startApp }) => {
   git(repo, "commit", "-q", "-m", "Clean");
   await startApp({ open: [repo] });
   await page.getByRole("button", { name: "Current branch" }).click();
-  await page.getByRole("menuitem", { name: "Merge main into gs/clean" }).click();
-  await expect(banner(page)).toHaveText(/Merged main into gs\/clean\./);
+  await page.getByRole("menuitem", { name: "Merge origin/main into gs/clean" }).click();
+  await expect(banner(page)).toHaveText(/Merged origin\/main into gs\/clean\./);
   await banner(page).getByRole("button", { name: "Push…" }).click();
   await expect(banner(page)).toHaveText(/Pushed 2 commits to origin\/gs\/clean/);
 });

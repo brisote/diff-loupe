@@ -273,7 +273,7 @@ test("markdown", async ({ page, workspace, startApp }) => {
 test("merge", async ({ page, workspace, startApp }) => {
   await startApp({ open: [mergeRepo(workspace)] });
   await page.getByRole("button", { name: "Current branch" }).click();
-  await page.getByRole("menuitem", { name: "Merge main into gs/invoice-export" }).click();
+  await page.getByRole("menuitem", { name: "Merge origin/main into gs/invoice-export" }).click();
   const dialog = page.getByRole("dialog", { name: "Conflicts" });
   await dialog.waitFor();
   await dialog.getByRole("button", { name: "Merge…" }).click();

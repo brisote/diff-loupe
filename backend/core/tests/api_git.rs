@@ -24,7 +24,7 @@ fn call(core: &Core, cmd: &str, args: Value) -> Value {
 }
 
 fn changed(core: &Core, path: &Value) -> Vec<String> {
-    call(core, "status", json!({ "path": path }))
+    call(core, "status", json!({ "path": path, "target": false }))
         .as_array()
         .unwrap()
         .iter()

@@ -675,7 +675,7 @@ impl Core {
         Ok(slot
             .as_ref()
             .filter(|open| platform::same_path(open.repo.root(), root))
-            .and_then(|open| open.repo.default_branch()))
+            .and_then(|open| open.repo.default_target_branch()))
     }
 
     fn switch_branch(&self, args: BranchArgs) -> Result<RepoInfo> {
@@ -898,10 +898,11 @@ impl Core {
             _ => ToolTab::Review,
         };
         let default_branch = repo.default_branch();
+        let default_target = repo.default_target_branch();
         Ok(RepoInfo {
             name: repo.name(),
             branch: repo.branch(),
-            target: state.target_branch.or_else(|| default_branch.clone()),
+            target: state.target_branch.or(default_target),
             default_branch,
             watch_error: open.watcher.as_ref().err().cloned(),
             watch_polling: open.watcher.as_ref().is_ok_and(RepoWatcher::polling),
