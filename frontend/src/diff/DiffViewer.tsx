@@ -145,8 +145,18 @@ export function DiffViewer({
 
   const [ratio, setRatio] = useState(0.5);
   const lastRatio = useRef(0.5);
-  const drag = useRef<{ startX: number; startRatio: number; width: number } | null>(null);
   const containerRef = useRef<HTMLElement | null>(null);
+  const activeDrag = useRef<{
+    pointerId: number;
+    move: (clientX: number) => void;
+  } | null>(null);
+  const dragCleanup = useRef<(() => void) | null>(null);
+
+  useEffect(() => {
+    return () => {
+      dragCleanup.current?.();
+    };
+  }, []);
 
   useEffect(() => {
     if (!backend) return;
@@ -187,38 +197,82 @@ export function DiffViewer({
   const onPointerDown = (event: PointerEvent<HTMLHRElement>) => {
     if (event.button !== 0) return;
     event.preventDefault();
-    event.currentTarget.setPointerCapture(event.pointerId);
+    dragCleanup.current?.();
+
+    const target = event.currentTarget;
+    const pointerId = event.pointerId;
+    try {
+      target.setPointerCapture(pointerId);
+    } catch {}
+
     const container = containerRef.current;
-    const width = container ? container.clientWidth - 104 : 0;
-    drag.current = {
-      startX: event.clientX,
-      startRatio: ratio,
-      width,
+    const containerWidth = container?.clientWidth ?? 0;
+    const width = Math.max(containerWidth - 104, 1);
+    const startX = event.clientX;
+    const startRatio = lastRatio.current;
+
+    const move = (clientX: number) => {
+      const delta = clientX - startX;
+      const currentContainer = containerRef.current;
+      const next = clampRatio(startRatio + delta / width, 0.2, 0.8, currentContainer?.clientWidth);
+      lastRatio.current = next;
+      setRatio(next);
     };
+
+    activeDrag.current = { pointerId, move };
+
+    let cleaned = false;
+    const cleanup = () => {
+      if (cleaned) return;
+      cleaned = true;
+      activeDrag.current = null;
+      dragCleanup.current = null;
+      try {
+        if (target.hasPointerCapture(pointerId)) {
+          target.releasePointerCapture(pointerId);
+        }
+      } catch {}
+      window.removeEventListener("pointermove", onWindowPointerMove);
+      window.removeEventListener("pointerup", onWindowPointerEnd);
+      window.removeEventListener("pointercancel", onWindowPointerEnd);
+      window.removeEventListener("blur", onWindowPointerEnd);
+      saveRatio(lastRatio.current);
+    };
+
+    const onWindowPointerMove = (e: globalThis.PointerEvent) => {
+      if (e.pointerId === pointerId) {
+        move(e.clientX);
+      }
+    };
+
+    const onWindowPointerEnd = (e: Event) => {
+      if ("pointerId" in e && (e as globalThis.PointerEvent).pointerId !== pointerId) return;
+      cleanup();
+    };
+
+    dragCleanup.current = cleanup;
+    window.addEventListener("pointermove", onWindowPointerMove);
+    window.addEventListener("pointerup", onWindowPointerEnd);
+    window.addEventListener("pointercancel", onWindowPointerEnd);
+    window.addEventListener("blur", onWindowPointerEnd);
   };
 
   const onPointerMove = (event: PointerEvent<HTMLHRElement>) => {
-    if (!drag.current) return;
-    const { startX, startRatio, width } = drag.current;
-    const delta = event.clientX - startX;
-    const container = containerRef.current;
-    const next = clampRatio(
-      startRatio + (width > 0 ? delta / width : 0),
-      0.2,
-      0.8,
-      container?.clientWidth,
-    );
-    lastRatio.current = next;
-    setRatio(next);
+    if (activeDrag.current && event.pointerId === activeDrag.current.pointerId) {
+      activeDrag.current.move(event.clientX);
+    }
   };
 
   const onPointerUp = (event: PointerEvent<HTMLHRElement>) => {
-    if (!drag.current) return;
-    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-      event.currentTarget.releasePointerCapture(event.pointerId);
+    if (activeDrag.current && event.pointerId === activeDrag.current.pointerId) {
+      dragCleanup.current?.();
     }
-    drag.current = null;
-    saveRatio(lastRatio.current);
+  };
+
+  const onPointerCancel = (event: PointerEvent<HTMLHRElement>) => {
+    if (activeDrag.current && event.pointerId === activeDrag.current.pointerId) {
+      dragCleanup.current?.();
+    }
   };
 
   const onKeyDown = (event: ReactKeyboardEvent<HTMLHRElement>) => {
@@ -487,6 +541,8 @@ export function DiffViewer({
           onPointerDown={onPointerDown}
           onPointerMove={onPointerMove}
           onPointerUp={onPointerUp}
+          onPointerCancel={onPointerCancel}
+          onLostPointerCapture={onPointerCancel}
           onDoubleClick={onDoubleClick}
           onKeyDown={onKeyDown}
         />
