@@ -172,6 +172,9 @@ export function clampRatio(
   minPaneWidth = 200,
   fixedWidth = 104,
 ): number {
+  if (!Number.isFinite(ratio)) {
+    return 0.5;
+  }
   let lower = min;
   let upper = max;
   if (containerWidth !== undefined && containerWidth > 0) {

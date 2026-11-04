@@ -151,5 +151,8 @@ describe("stripeRuns", () => {
     expect(clampRatio(0.2, 0.2, 0.8, 1000)).toBe(0.2232);
     expect(clampRatio(0.8, 0.2, 0.8, 1000)).toBe(0.7768);
     expect(clampRatio(0.2, 0.2, 0.8, 300)).toBe(0.5);
+    expect(clampRatio(Number.NaN)).toBe(0.5);
+    expect(clampRatio(Number.POSITIVE_INFINITY)).toBe(0.5);
+    expect(clampRatio(Number.NEGATIVE_INFINITY)).toBe(0.5);
   });
 });
