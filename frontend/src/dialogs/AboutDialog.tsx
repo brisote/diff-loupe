@@ -19,9 +19,9 @@ export function AboutDialog() {
         </span>
       </div>
       <p className="dl-dialog-text">
-        Diffloupe aims to give you the best possible experience for reviewing a diff. It is open
-        source, and the only network call it makes on its own is a check for a new version on
-        diffloupe.com, which you can turn off in Settings.
+        Diffloupe makes reviewing Markdown and git changes easy, with rendered Markdown diffs and
+        side-by-side code diffs. It is open source, and the only network call it makes on its own is
+        a check for a new version on diffloupe.com, which you can turn off in Settings.
       </p>
       <div className="app-about-note">
         <div className="dl-banner is-info">

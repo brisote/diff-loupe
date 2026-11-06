@@ -1,8 +1,8 @@
 {
   "bundle": {
     "targets": ["deb", "rpm"],
-    "shortDescription": "Review git changes",
-    "longDescription": "Diffloupe is an app for reading git changes: side-by-side diffs, the branch log, rendered Markdown and a 3-pane merge window. Your code stays on your computer.",
+    "shortDescription": "Review Markdown and git changes",
+    "longDescription": "Diffloupe makes reviewing Markdown and git changes easy: rendered Markdown diffs, side-by-side code diffs, the branch log and a 3-pane merge window. Your code stays on your computer.",
     "linux": {
       "deb": {
         "section": "devel",
