@@ -238,4 +238,26 @@ describe("ChangesView", () => {
     await user.keyboard("{Shift>}{F10}{/Shift}");
     expect(await screen.findByRole("menu", { name: "File actions" })).toBeInTheDocument();
   });
+
+  it("filters changed files by typing into the filter input", async () => {
+    const user = userEvent.setup();
+    await view();
+    const filterInput = screen.getByRole("textbox", { name: "Filter files" });
+
+    await user.type(filterInput, "button");
+    expect(screen.getByRole("treeitem", { name: "web/src/exportButton.tsx" })).toBeInTheDocument();
+    expect(screen.queryByRole("treeitem", { name: "billing/src/InvoiceExporter.kt" })).toBeNull();
+
+    await user.clear(filterInput);
+    await user.type(filterInput, "export");
+    expect(
+      screen.getByRole("treeitem", { name: "billing/src/InvoiceExporter.kt" }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("treeitem", { name: "web/src/exportButton.tsx" })).toBeInTheDocument();
+
+    await user.clear(filterInput);
+    await user.type(filterInput, "nonexistent");
+    expect(screen.getByText("No matching files")).toBeInTheDocument();
+    expect(screen.getByText("Change the filter to see more.")).toBeInTheDocument();
+  });
 });

@@ -9,7 +9,11 @@ export type ListRow =
   | { type: "group"; id: GroupId; label: string; count: number; expanded: boolean }
   | { type: "file"; id: string; group: GroupId; change: FileChange; name: string; folder: string };
 
-export type RowOptions = { collapsed: ReadonlySet<GroupId>; isReview?: boolean };
+export type RowOptions = {
+  collapsed: ReadonlySet<GroupId>;
+  isReview?: boolean;
+  filter?: string;
+};
 
 const groupLabels: Record<GroupId, string> = {
   conflicts: "Merge Conflicts",
@@ -80,14 +84,25 @@ export function statusClass(kind: ChangeKind): string {
   }
 }
 
+export function matchesFile(path: string, query: string): boolean {
+  const needle = query.trim().toLowerCase();
+  if (!needle) return true;
+  const { name } = splitPath(path);
+  const target = (needle.includes("/") ? path : name).toLowerCase();
+  return target.includes(needle);
+}
+
 export function buildRows(changes: FileChange[], options: RowOptions): ListRow[] {
   const byPath = (a: FileChange, b: FileChange) =>
     a.path.localeCompare(b.path, undefined, { sensitivity: "base" });
+  const matching = options.filter
+    ? changes.filter((c) => matchesFile(c.path, options.filter ?? ""))
+    : changes;
   const groups: [GroupId, FileChange[]][] = [
-    ["conflicts", changes.filter((c) => c.kind === "conflicted").sort(byPath)],
-    ["staged", changes.filter(inStaged).sort(byPath)],
-    ["changes", changes.filter(inChanges).sort(byPath)],
-    ["unversioned", changes.filter((c) => c.kind === "untracked").sort(byPath)],
+    ["conflicts", matching.filter((c) => c.kind === "conflicted").sort(byPath)],
+    ["staged", matching.filter(inStaged).sort(byPath)],
+    ["changes", matching.filter(inChanges).sort(byPath)],
+    ["unversioned", matching.filter((c) => c.kind === "untracked").sort(byPath)],
   ];
   const rows: ListRow[] = [];
   for (const [id, files] of groups) {
