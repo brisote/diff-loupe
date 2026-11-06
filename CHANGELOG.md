@@ -2,6 +2,20 @@
 
 Each release lists what changed for the person who uses Diffloupe, and every change to stored data with its migration.
 
+## 0.6.2
+
+Kotlin backtick identifiers in syntax highlighting, and product copy refreshed around rendered Markdown diff review.
+
+### Review
+
+- Support backtick function and test names with single quotes in Kotlin syntax highlighting.
+- Confine unclosed single-quote characters in Kotlin files to a single line.
+- Present rendered Markdown diff review as the primary capability on the Welcome screen and About dialog.
+
+### Install
+
+- Nothing in your stored data changes.
+
 ## 0.6.1
 
 Fixes for diff divider resizing and recent projects switcher freshness.
