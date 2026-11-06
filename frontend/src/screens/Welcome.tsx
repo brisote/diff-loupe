@@ -49,7 +49,10 @@ export function Welcome() {
           {openError && <OpenErrorBanner />}
           <div className="welcome-intro">
             <h1 className="ui-title">Welcome to Diffloupe</h1>
-            <p>Open a git repository to read its changes, its branch history and its conflicts.</p>
+            <p>
+              Open a git repository to review rendered Markdown diffs, branch changes, commit
+              history and conflicts.
+            </p>
           </div>
           <div className="welcome-actions">
             <label className="dl-field welcome-search" htmlFor="repo-search">

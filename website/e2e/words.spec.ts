@@ -25,5 +25,8 @@ for (const path of [...pages.map((target) => target.path), missing.path]) {
     expect(words).not.toMatch(
       /offline|network call|\bgit remotes?\b|(?<!pull )\brequests?\b|\bservers?\b/i,
     );
+    if (path === "/") {
+      expect(words).toMatch(/Review Markdown changes as a page/);
+    }
   });
 }

@@ -22,7 +22,7 @@ export function appData(site: URL, release: Release): Record<string, unknown> {
     "@type": "SoftwareApplication",
     name: "Diffloupe",
     description:
-      "An app for reviewing git changes on macOS, Windows and Linux: side-by-side diffs, the branch log, rendered Markdown and a 3-pane merge window.",
+      "An app for reviewing Markdown and git changes on macOS, Windows and Linux: rendered Markdown diffs, side-by-side code diffs, the branch log and a 3-pane merge window.",
     url: site.href,
     image: new URL("/og.jpg", site).href,
     applicationCategory: "DeveloperApplication",
