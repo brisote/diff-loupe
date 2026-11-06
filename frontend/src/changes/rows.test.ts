@@ -142,7 +142,7 @@ describe("staged files", () => {
 });
 
 describe("matchesFile and filtering", () => {
-  it("matches by filename substring without case sensitivity by default", () => {
+  it("matches by filename substring without case sensitivity", () => {
     expect(matchesFile("billing/Invoice.kt", "inv")).toBe(true);
     expect(matchesFile("billing/Invoice.kt", "OIC")).toBe(true);
     expect(matchesFile("billing/Invoice.kt", ".kt")).toBe(true);
@@ -151,19 +151,9 @@ describe("matchesFile and filtering", () => {
     expect(matchesFile("billing/Invoice.kt", "   ")).toBe(true);
   });
 
-  it("matches by filename prefix when exact is true", () => {
-    expect(matchesFile("package.json", "p", true)).toBe(true);
-    expect(matchesFile("package.json", "P", true)).toBe(true);
-    expect(matchesFile("package.json", "pack", true)).toBe(true);
-    expect(matchesFile("web/package.json", "pack", true)).toBe(true);
-    expect(matchesFile("tauri.conf.json", "p", true)).toBe(false);
-    expect(matchesFile("exportButton.tsx", "p", true)).toBe(false);
-  });
-
   it("matches full path when query contains slashes", () => {
     expect(matchesFile("billing/src/Invoice.kt", "billing/src")).toBe(true);
-    expect(matchesFile("billing/src/Invoice.kt", "billing/src", true)).toBe(true);
-    expect(matchesFile("billing/src/Invoice.kt", "src/Invoice", true)).toBe(false);
+    expect(matchesFile("billing/src/Invoice.kt", "src/Invoice")).toBe(true);
   });
 
   it("filters buildRows and omits empty groups", () => {
@@ -171,12 +161,5 @@ describe("matchesFile and filtering", () => {
     expect(
       rows.map((row) => (row.type === "group" ? `# ${row.label} ${row.count}` : row.id)),
     ).toEqual(["# Unversioned Files 1", "web/src/exportButton.tsx"]);
-  });
-
-  it("filters buildRows with exact prefix matching", () => {
-    const rows = buildRows(changes, { collapsed: new Set(), filter: "read", exact: true });
-    expect(
-      rows.map((row) => (row.type === "group" ? `# ${row.label} ${row.count}` : row.id)),
-    ).toEqual(["# Changes 1", "README.md"]);
   });
 });

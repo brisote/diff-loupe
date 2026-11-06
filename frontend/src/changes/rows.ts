@@ -13,7 +13,6 @@ export type RowOptions = {
   collapsed: ReadonlySet<GroupId>;
   isReview?: boolean;
   filter?: string;
-  exact?: boolean;
 };
 
 const groupLabels: Record<GroupId, string> = {
@@ -85,19 +84,19 @@ export function statusClass(kind: ChangeKind): string {
   }
 }
 
-export function matchesFile(path: string, query: string, exact?: boolean): boolean {
+export function matchesFile(path: string, query: string): boolean {
   const needle = query.trim().toLowerCase();
   if (!needle) return true;
   const { name } = splitPath(path);
   const target = (needle.includes("/") ? path : name).toLowerCase();
-  return exact ? target.startsWith(needle) : target.includes(needle);
+  return target.includes(needle);
 }
 
 export function buildRows(changes: FileChange[], options: RowOptions): ListRow[] {
   const byPath = (a: FileChange, b: FileChange) =>
     a.path.localeCompare(b.path, undefined, { sensitivity: "base" });
   const matching = options.filter
-    ? changes.filter((c) => matchesFile(c.path, options.filter ?? "", options.exact))
+    ? changes.filter((c) => matchesFile(c.path, options.filter ?? ""))
     : changes;
   const groups: [GroupId, FileChange[]][] = [
     ["conflicts", matching.filter((c) => c.kind === "conflicted").sort(byPath)],

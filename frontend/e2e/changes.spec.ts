@@ -116,16 +116,11 @@ test("opening a fresh repository with no commits shows untracked files with clea
   await expect(page.locator(".dl-conn")).toHaveCount(0);
 });
 
-test("filtering changed files by substring and starts with prefix", async ({
-  page,
-  workspace,
-  startApp,
-}) => {
+test("filtering changed files by substring", async ({ page, workspace, startApp }) => {
   const repo = changedRepo(workspace);
   await startApp({ open: [repo] });
   const tree = page.getByRole("tree", { name: "Changed files" });
   const filter = page.getByRole("textbox", { name: "Filter files" });
-  const startsWith = page.getByRole("button", { name: "starts with" });
 
   await filter.fill("button");
   await expect(
@@ -138,13 +133,6 @@ test("filtering changed files by substring and starts with prefix", async ({
   await expect(
     tree.getByRole("treeitem", { name: "web/src/exportButton.tsx, staged" }),
   ).toBeVisible();
-
-  await startsWith.click();
-  await expect(startsWith).toHaveAttribute("aria-pressed", "true");
-  await expect(
-    tree.getByRole("treeitem", { name: "web/src/exportButton.tsx, staged" }),
-  ).toBeVisible();
-  await expect(tree.getByRole("treeitem", { name: "billing/InvoiceExporter.kt" })).toHaveCount(0);
 
   await filter.fill("nonexistent");
   await expect(page.getByText("No matching files")).toBeVisible();

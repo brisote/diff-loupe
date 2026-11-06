@@ -16,9 +16,6 @@ body{margin:0;font-family:var(--font-ui);font-size:13px;line-height:16px;color:v
 .dl-tbtn:hover{background:var(--hover-bg)}
 .dl-tbtn:active,.dl-tbtn.is-pressed{background:var(--pressed-bg)}
 .dl-tbtn.is-toggled{background:var(--toggled-bg)}
-.dl-tbtn.dl-tbtn-starts-with{width:auto;height:var(--size-control);padding:0 var(--space-6);font-size:11px;color:var(--text-muted);white-space:nowrap}
-.dl-tbtn.dl-tbtn-starts-with:hover{color:var(--text)}
-.dl-tbtn.dl-tbtn-starts-with.is-toggled{color:var(--text)}
 .dl-winctl{display:flex;align-self:stretch;flex:none;margin-left:var(--space-4)}
 .dl-wbtn{display:inline-flex;align-items:center;justify-content:center;flex:none;width:46px;padding:0;border:0;background:none;color:var(--text);cursor:default}
 .dl-wbtn:hover{background:var(--hover-bg)}

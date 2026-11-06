@@ -36,7 +36,6 @@ export function ChangesView({ isReview }: { isReview?: boolean } = {}) {
   const merging = useApp((state) => Boolean(state.merge?.operation));
   const [collapsed, setCollapsed] = useState<ReadonlySet<GroupId>>(new Set());
   const [filter, setFilter] = useState("");
-  const [exact, setExact] = useState(false);
   const loaded = changes !== null;
 
   useEffect(() => {
@@ -47,8 +46,8 @@ export function ChangesView({ isReview }: { isReview?: boolean } = {}) {
   }, [loaded]);
 
   const rows = useMemo(
-    () => buildRows(changes ?? [], { collapsed, isReview, filter, exact }),
-    [changes, collapsed, isReview, filter, exact],
+    () => buildRows(changes ?? [], { collapsed, isReview, filter }),
+    [changes, collapsed, isReview, filter],
   );
   const toggle = (id: GroupId) =>
     setCollapsed((current) => {
@@ -100,16 +99,6 @@ export function ChangesView({ isReview }: { isReview?: boolean } = {}) {
             onChange={(event) => setFilter(event.target.value)}
           />
         </label>
-        <button
-          className={`dl-tbtn dl-tbtn-starts-with${exact ? " is-toggled" : ""}`}
-          type="button"
-          aria-label="starts with"
-          title="Filter files starting with query"
-          aria-pressed={exact}
-          onClick={() => setExact((v) => !v)}
-        >
-          starts with
-        </button>
       </div>
       {statusError ? (
         <div className="dl-empty app-fill" role="alert">
