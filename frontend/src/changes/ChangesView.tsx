@@ -35,6 +35,8 @@ export function ChangesView({ isReview }: { isReview?: boolean } = {}) {
   const showDialog = useApp((state) => state.showDialog);
   const merging = useApp((state) => Boolean(state.merge?.operation));
   const [collapsed, setCollapsed] = useState<ReadonlySet<GroupId>>(new Set());
+  const [filter, setFilter] = useState("");
+  const [exact, setExact] = useState(false);
   const loaded = changes !== null;
 
   useEffect(() => {
@@ -45,8 +47,8 @@ export function ChangesView({ isReview }: { isReview?: boolean } = {}) {
   }, [loaded]);
 
   const rows = useMemo(
-    () => buildRows(changes ?? [], { collapsed, isReview }),
-    [changes, collapsed, isReview],
+    () => buildRows(changes ?? [], { collapsed, isReview, filter, exact }),
+    [changes, collapsed, isReview, filter, exact],
   );
   const toggle = (id: GroupId) =>
     setCollapsed((current) => {
@@ -88,6 +90,26 @@ export function ChangesView({ isReview }: { isReview?: boolean } = {}) {
         >
           <Icon name="vcs-revert" />
         </button>
+        <label className="dl-field app-file-filter" htmlFor="file-filter">
+          <Icon name="general-search" />
+          <input
+            id="file-filter"
+            placeholder="Filter files"
+            aria-label="Filter files"
+            value={filter}
+            onChange={(event) => setFilter(event.target.value)}
+          />
+        </label>
+        <button
+          className={`dl-tbtn dl-tbtn-starts-with${exact ? " is-toggled" : ""}`}
+          type="button"
+          aria-label="starts with"
+          title="Filter files starting with query"
+          aria-pressed={exact}
+          onClick={() => setExact((v) => !v)}
+        >
+          starts with
+        </button>
       </div>
       {statusError ? (
         <div className="dl-empty app-fill" role="alert">
@@ -96,7 +118,12 @@ export function ChangesView({ isReview }: { isReview?: boolean } = {}) {
         </div>
       ) : changes === null ? null : rows.length === 0 ? (
         <div className="dl-empty app-fill">
-          {isReview && !target ? (
+          {filter.trim().length > 0 ? (
+            <>
+              <span className="dl-empty-title">No matching files</span>
+              <span>Change the filter to see more.</span>
+            </>
+          ) : isReview && !target ? (
             <>
               <span className="dl-empty-title">No target branch</span>
               <span>Pick a target branch above to review changes on this branch.</span>

@@ -684,6 +684,7 @@ button {
   background: var(--diff-deleted-line);
 }
 
+.app-file-filter,
 .app-log-filter {
   flex: 1;
   height: 24px;

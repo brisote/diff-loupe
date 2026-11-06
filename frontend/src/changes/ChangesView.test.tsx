@@ -102,14 +102,14 @@ describe("ChangesView", () => {
     expect(screen.getByRole("treeitem", { name: "docs/export-notes.md" })).toBeInTheDocument();
   });
 
-  it("keeps only Refresh, Commit and Rollback in the toolbar", async () => {
+  it("renders Refresh, Commit, Rollback and starts with in the toolbar", async () => {
     await view();
     const toolbar = screen.getByRole("toolbar", { name: "Changes actions" });
     expect(
       within(toolbar)
         .getAllByRole("button")
         .map((button) => button.title),
-    ).toEqual(["Refresh", "Commit… ⌘K", "Rollback…"]);
+    ).toEqual(["Refresh", "Commit… ⌘K", "Rollback…", "Filter files starting with query"]);
   });
 
   it("says when the working tree has no changes", async () => {
@@ -237,5 +237,33 @@ describe("ChangesView", () => {
     screen.getByRole("tree", { name: "Changed files" }).focus();
     await user.keyboard("{Shift>}{F10}{/Shift}");
     expect(await screen.findByRole("menu", { name: "File actions" })).toBeInTheDocument();
+  });
+
+  it("filters changed files by typing into the filter input and toggling starts with", async () => {
+    const user = userEvent.setup();
+    await view();
+    const filterInput = screen.getByRole("textbox", { name: "Filter files" });
+    const startsWithToggle = screen.getByRole("button", { name: "starts with" });
+
+    await user.type(filterInput, "button");
+    expect(screen.getByRole("treeitem", { name: "web/src/exportButton.tsx" })).toBeInTheDocument();
+    expect(screen.queryByRole("treeitem", { name: "billing/src/InvoiceExporter.kt" })).toBeNull();
+
+    await user.clear(filterInput);
+    await user.type(filterInput, "export");
+    expect(
+      screen.getByRole("treeitem", { name: "billing/src/InvoiceExporter.kt" }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("treeitem", { name: "web/src/exportButton.tsx" })).toBeInTheDocument();
+
+    await user.click(startsWithToggle);
+    expect(startsWithToggle).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("treeitem", { name: "web/src/exportButton.tsx" })).toBeInTheDocument();
+    expect(screen.queryByRole("treeitem", { name: "billing/src/InvoiceExporter.kt" })).toBeNull();
+
+    await user.clear(filterInput);
+    await user.type(filterInput, "nonexistent");
+    expect(screen.getByText("No matching files")).toBeInTheDocument();
+    expect(screen.getByText("Change the filter to see more.")).toBeInTheDocument();
   });
 });
