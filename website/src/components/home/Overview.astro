@@ -3,12 +3,20 @@ import Shot from "../Shot.astro";
 
 const tiles = [
   {
+    scene: "markdown",
+    crop: "crop-words",
+    sizes: "874px",
+    title: "Rendered Markdown",
+    alt: "Rendered Markdown diff with changed words and table cells marked",
+    text: "Read Markdown changes as a page, with every changed word and table cell marked.",
+  },
+  {
     scene: "changes",
     crop: "crop-list",
     sizes: "1224px",
     title: "Changes list",
-    alt: "The Changes list with staged, changed and unversioned files",
-    text: "Staged, changed and new files in one list that refreshes as you edit.",
+    alt: "Changes list with files staged and unstaged",
+    text: "Every changed file at a glance, with file status badges and line change counts.",
   },
   {
     scene: "changes",
@@ -17,14 +25,6 @@ const tiles = [
     title: "Word highlights",
     alt: "Changed words highlighted inside a line of Kotlin",
     text: "Changed words stand out inside each line, and unchanged code folds away.",
-  },
-  {
-    scene: "branch-log",
-    crop: "crop-list",
-    sizes: "1224px",
-    title: "Branch log",
-    alt: "The branch log with the branch's commits and the files of one commit",
-    text: "Your branch's commits, newest first, with the files each one changed.",
   },
   {
     scene: "merge",
@@ -40,8 +40,8 @@ const tiles = [
   <div class="wrap">
     <div class="band-head">
       <span class="chip chip-section">macOS · Windows · Linux · Open source</span>
-      <h2 class="h2" id="overview">Every change in one window</h2>
-      <p class="sub">Pick any two branches: the one you work on and a target to compare it with. Diffloupe shows every change between them, and keeps the view current while you work.</p>
+      <h2 class="h2" id="overview">Markdown and code in one window</h2>
+      <p class="sub">Read Markdown changes rendered as a page instead of raw syntax. Pick your branch and a target branch, and Diffloupe shows every Markdown and code change between them live while you work.</p>
     </div>
     <div class="grid4">
       {tiles.map((tile) => (

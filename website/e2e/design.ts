@@ -10,8 +10,9 @@ export const designDir = resolve(
   process.env.DIFFLOUPE_DESIGN_DIR ?? join(root, "../diffloupe-design"),
 );
 const design = join(designDir, "website");
-export const designPresent = existsSync(join(design, "assets.json"));
-const assets: Record<string, string> = designPresent
+export const designPresent =
+  existsSync(join(design, "canvas.json")) || existsSync(join(design, "assets.json"));
+const assets: Record<string, string> = existsSync(join(design, "assets.json"))
   ? JSON.parse(readFileSync(join(design, "assets.json"), "utf8"))
   : {};
 const diffs = join(root, "website/target/design-diff");
@@ -44,6 +45,7 @@ export async function openBoard(page: Page, board: string, theme: "light" | "dar
       });
     }
     if (path === "site.css") return route.fulfill({ path: join(design, "site.css") });
+    if (path.startsWith("assets/")) return route.fulfill({ path: join(design, path) });
     const id = path.replace("files/", "");
     const file = assets[id];
     return file ? route.fulfill({ path: join(designDir, file) }) : route.fulfill({ status: 404 });
