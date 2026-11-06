@@ -8,16 +8,25 @@ import "../styles/site.css";
 interface Props {
   title: string;
   description: string;
+  keywords?: string;
   current?: "home" | "download" | "changelog" | "privacy";
   indexed?: boolean;
   data?: Record<string, unknown>;
 }
 
-const { title, description, current, indexed = true, data } = Astro.props;
+const {
+  title,
+  description,
+  keywords = "code review, markdown, markdown diff",
+  current,
+  indexed = true,
+  data,
+} = Astro.props;
 const site = Astro.site ?? siteUrl;
 const canonical = new URL(Astro.url.pathname, site).href;
 const image = new URL("/og.jpg", site).href;
-const imageAlt = "Diffloupe showing a README rendered side by side with its changes marked";
+const imageAlt =
+  "Diffloupe code review showing a Markdown README rendered side by side with its markdown diff highlighted";
 const policy =
   "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'";
 ---
@@ -29,6 +38,7 @@ const policy =
     {import.meta.env.PROD && <meta http-equiv="Content-Security-Policy" content={policy} />}
     <meta name="color-scheme" content="light dark" />
     <meta name="description" content={description} />
+    <meta name="keywords" content={keywords} />
     <meta name="referrer" content="no-referrer" />
     <title>{title}</title>
     {indexed ? <link rel="canonical" href={canonical} /> : <meta name="robots" content="noindex" />}

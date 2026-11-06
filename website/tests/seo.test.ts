@@ -36,6 +36,7 @@ describe("seo", () => {
       offers: { price: "0" },
       downloadUrl: "https://example.com",
       sameAs: "https://github.com/brisote/diff-loupe",
+      keywords: "code review, markdown, markdown diff",
     });
   });
 });

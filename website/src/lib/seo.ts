@@ -22,7 +22,8 @@ export function appData(site: URL, release: Release): Record<string, unknown> {
     "@type": "SoftwareApplication",
     name: "Diffloupe",
     description:
-      "An app for reviewing Markdown and git changes on macOS, Windows and Linux: rendered Markdown diffs, side-by-side code diffs, the branch log and a 3-pane merge window.",
+      "Fast, private code review for Git and Markdown on macOS, Windows and Linux: rendered markdown diffs, side-by-side code diffs, the branch log and a 3-pane merge window.",
+    keywords: "code review, markdown, markdown diff",
     url: site.href,
     image: new URL("/og.jpg", site).href,
     applicationCategory: "DeveloperApplication",

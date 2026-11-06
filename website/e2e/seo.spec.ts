@@ -35,6 +35,10 @@ for (const target of pages) {
       "content",
       "https://diffloupe.com/og.jpg",
     );
+    await expect(head.locator(meta("keywords"))).toHaveAttribute(
+      "content",
+      "code review, markdown, markdown diff",
+    );
   });
 }
 
@@ -67,4 +71,5 @@ test("the home page describes the app as structured data", async ({ page }) => {
   );
   expect(data["@type"]).toBe("SoftwareApplication");
   expect(data.softwareVersion).toMatch(/^\d+\.\d+\.\d+$/);
+  expect(data.keywords).toBe("code review, markdown, markdown diff");
 });

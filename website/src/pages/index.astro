@@ -14,7 +14,13 @@ import "../styles/home.css";
 
 const data = appData(Astro.site ?? siteUrl, await latestRelease());
 ---
-<Base title="Diffloupe · Review Markdown and git changes on your computer" description="Diffloupe makes reviewing Markdown and git changes easy on macOS, Windows and Linux: rendered Markdown diffs with changed words and tables marked, side-by-side code diffs, the branch log and a 3-pane merge window. Your code stays on your computer." current="home" data={data}>
+<Base
+  title="Diffloupe · Code review, Markdown & Markdown diff tool"
+  description="Fast, private code review for Git and Markdown. Inspect every markdown diff as a rendered page with changed words marked, review branches, and merge locally."
+  keywords="code review, markdown, markdown diff"
+  current="home"
+  data={data}
+>
   <Hero />
   <How />
   <Overview />
