@@ -2,46 +2,63 @@ import {
   HighlightStyle,
   type LanguageSupport,
   StreamLanguage,
+  type StreamParser,
+  type StringStream,
   syntaxHighlighting,
 } from "@codemirror/language";
 import type { Extension } from "@codemirror/state";
 import { tags } from "@lezer/highlight";
 import { fileExtension } from "../lib/fileTypes";
 
-export const syntaxClasses = syntaxHighlighting(
-  HighlightStyle.define([
-    {
-      tag: [
-        tags.keyword,
-        tags.modifier,
-        tags.controlKeyword,
-        tags.definitionKeyword,
-        tags.operatorKeyword,
-        tags.moduleKeyword,
-      ],
-      class: "syn-kw",
+export const syntaxHighlightStyle = HighlightStyle.define([
+  {
+    tag: [
+      tags.keyword,
+      tags.modifier,
+      tags.controlKeyword,
+      tags.definitionKeyword,
+      tags.operatorKeyword,
+      tags.moduleKeyword,
+    ],
+    class: "syn-kw",
+  },
+  {
+    tag: [tags.string, tags.special(tags.string), tags.regexp, tags.character, tags.escape],
+    class: "syn-str",
+  },
+  { tag: [tags.number, tags.bool, tags.null, tags.atom], class: "syn-num" },
+  { tag: [tags.comment, tags.lineComment, tags.blockComment, tags.docComment], class: "syn-com" },
+  {
+    tag: [
+      tags.function(tags.variableName),
+      tags.function(tags.definition(tags.variableName)),
+      tags.function(tags.propertyName),
+    ],
+    class: "syn-fn",
+  },
+  { tag: [tags.propertyName, tags.attributeName], class: "syn-fld" },
+  {
+    tag: [tags.meta, tags.annotation, tags.processingInstruction, tags.heading],
+    class: "syn-meta",
+  },
+]);
+
+export const syntaxClasses = syntaxHighlighting(syntaxHighlightStyle);
+
+function patchKotlin<State>(parser: StreamParser<State>): StreamParser<State> {
+  return {
+    ...parser,
+    token(stream: StringStream, state: State): string | null {
+      if (stream.match(/^`[^`\r\n]*`?/)) {
+        return "variable";
+      }
+      if (stream.match(/^'(?:[^'\\\r\n]|\\.)*'?/)) {
+        return "string";
+      }
+      return parser.token(stream, state);
     },
-    {
-      tag: [tags.string, tags.special(tags.string), tags.regexp, tags.character, tags.escape],
-      class: "syn-str",
-    },
-    { tag: [tags.number, tags.bool, tags.null, tags.atom], class: "syn-num" },
-    { tag: [tags.comment, tags.lineComment, tags.blockComment, tags.docComment], class: "syn-com" },
-    {
-      tag: [
-        tags.function(tags.variableName),
-        tags.function(tags.definition(tags.variableName)),
-        tags.function(tags.propertyName),
-      ],
-      class: "syn-fn",
-    },
-    { tag: [tags.propertyName, tags.attributeName], class: "syn-fld" },
-    {
-      tag: [tags.meta, tags.annotation, tags.processingInstruction, tags.heading],
-      class: "syn-meta",
-    },
-  ]),
-);
+  };
+}
 
 type Loader = () => Promise<Extension>;
 
@@ -69,7 +86,7 @@ const loaders: Record<string, Loader> = {
   java: support(async () => (await import("@codemirror/lang-java")).java()),
   sql: support(async () => (await import("@codemirror/lang-sql")).sql()),
   yaml: support(async () => (await import("@codemirror/lang-yaml")).yaml()),
-  kt: legacy(async () => (await import("@codemirror/legacy-modes/mode/clike")).kotlin),
+  kt: legacy(async () => patchKotlin((await import("@codemirror/legacy-modes/mode/clike")).kotlin)),
   go: legacy(async () => (await import("@codemirror/legacy-modes/mode/go")).go),
   rb: legacy(async () => (await import("@codemirror/legacy-modes/mode/ruby")).ruby),
   sh: legacy(async () => (await import("@codemirror/legacy-modes/mode/shell")).shell),
