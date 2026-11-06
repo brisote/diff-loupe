@@ -6,6 +6,7 @@ import {
   buildRows,
   fileCount,
   type ListRow,
+  matchesFile,
   nextFile,
   parseKey,
   rowKey,
@@ -137,5 +138,45 @@ describe("staged files", () => {
     expect(selectionKey(files, "plain.md", true)).toBe("plain.md");
     expect(parseKey(rowKey("staged", "a b.md"))).toEqual({ path: "a b.md", staged: true });
     expect(parseKey("a b.md")).toEqual({ path: "a b.md", staged: false });
+  });
+});
+
+describe("matchesFile and filtering", () => {
+  it("matches by filename substring without case sensitivity by default", () => {
+    expect(matchesFile("billing/Invoice.kt", "inv")).toBe(true);
+    expect(matchesFile("billing/Invoice.kt", "OIC")).toBe(true);
+    expect(matchesFile("billing/Invoice.kt", ".kt")).toBe(true);
+    expect(matchesFile("billing/Invoice.kt", "xyz")).toBe(false);
+    expect(matchesFile("billing/Invoice.kt", "")).toBe(true);
+    expect(matchesFile("billing/Invoice.kt", "   ")).toBe(true);
+  });
+
+  it("matches by filename prefix when exact is true", () => {
+    expect(matchesFile("package.json", "p", true)).toBe(true);
+    expect(matchesFile("package.json", "P", true)).toBe(true);
+    expect(matchesFile("package.json", "pack", true)).toBe(true);
+    expect(matchesFile("web/package.json", "pack", true)).toBe(true);
+    expect(matchesFile("tauri.conf.json", "p", true)).toBe(false);
+    expect(matchesFile("exportButton.tsx", "p", true)).toBe(false);
+  });
+
+  it("matches full path when query contains slashes", () => {
+    expect(matchesFile("billing/src/Invoice.kt", "billing/src")).toBe(true);
+    expect(matchesFile("billing/src/Invoice.kt", "billing/src", true)).toBe(true);
+    expect(matchesFile("billing/src/Invoice.kt", "src/Invoice", true)).toBe(false);
+  });
+
+  it("filters buildRows and omits empty groups", () => {
+    const rows = buildRows(changes, { collapsed: new Set(), filter: "button" });
+    expect(
+      rows.map((row) => (row.type === "group" ? `# ${row.label} ${row.count}` : row.id)),
+    ).toEqual(["# Unversioned Files 1", "web/src/exportButton.tsx"]);
+  });
+
+  it("filters buildRows with exact prefix matching", () => {
+    const rows = buildRows(changes, { collapsed: new Set(), filter: "read", exact: true });
+    expect(
+      rows.map((row) => (row.type === "group" ? `# ${row.label} ${row.count}` : row.id)),
+    ).toEqual(["# Changes 1", "README.md"]);
   });
 });
