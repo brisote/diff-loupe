@@ -2,6 +2,19 @@
 
 Each release lists what changed for the person who uses Diffloupe, and every change to stored data with its migration.
 
+## 0.6.1
+
+Fixes for diff divider resizing and recent projects switcher freshness.
+
+### Fixed
+
+- Prevent pointer drag freezing when resizing the diff divider in Raw and Rendered views.
+- Omit deleted repository folders from the recent projects switcher and refresh the list on open.
+
+### Install
+
+- Nothing in your stored data changes.
+
 ## 0.6.0
 
 In-diff file editing in Local Changes and a draggable pane divider across Raw and Rendered views.
