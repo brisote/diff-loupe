@@ -83,7 +83,9 @@ test("a page outside the repository is never opened", async ({
     "https://github.com/brisote/diff-loupe-fork",
     "https://github.com/brisote/diff-loupe/../../attacker/repo",
   ])
-    await expect(app.bridge.call("open_link", { url })).rejects.toThrow(/not a page/);
+    await expect(app.bridge.call("open_link", { url })).rejects.toThrow(
+      /not an allowed link|not a page/,
+    );
   expect(await app.bridge.call("devbridge_opened")).toEqual([]);
 });
 

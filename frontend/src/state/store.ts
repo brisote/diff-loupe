@@ -364,6 +364,8 @@ export type AppState = {
   reportMarkdown: string | null;
   reviewCostUsd: string | null;
   chatMessages: StoredAiChatMessage[];
+  streamingChat: string | null;
+  quotedSelection: { text: string; heading?: string } | null;
   inlineError: string | null;
   isChatOpen: boolean;
   loadAiState: () => Promise<void>;
@@ -376,6 +378,14 @@ export type AppState = {
   startAiReview: () => Promise<void>;
   cancelAiReview: () => void;
   toggleAiChat: () => void;
+  setAiChatOpen: (open: boolean) => void;
+  setQuotedSelection: (quote: { text: string; heading?: string } | null) => void;
+  aiSendFollowup: (args: {
+    prompt: string;
+    quotedText?: string;
+    sectionHeading?: string;
+  }) => Promise<void>;
+  aiClearThread: () => Promise<void>;
 };
 
 export type AppStore = ReturnType<typeof createAppStore>;
@@ -586,6 +596,8 @@ export function createAppStore(backend: Backend) {
       reportMarkdown: null,
       reviewCostUsd: null,
       chatMessages: [],
+      streamingChat: null,
+      quotedSelection: null,
       inlineError: null,
       isChatOpen: false,
 
@@ -642,6 +654,10 @@ export function createAppStore(backend: Backend) {
               }));
             } else if (payload.kind === "reportUpdate") {
               set({ reportMarkdown: payload.reportMarkdown });
+            } else if (payload.kind === "chatDelta") {
+              set((s) => ({
+                streamingChat: (s.streamingChat ?? "") + payload.delta,
+              }));
             } else if (payload.kind === "billing") {
               set((s) => ({
                 account: s.account ? { ...s.account, balanceUsd: payload.balanceUsd } : s.account,
@@ -650,13 +666,16 @@ export function createAppStore(backend: Backend) {
             } else if (payload.kind === "done") {
               set((s) => ({
                 activeRun: null,
+                streamingChat: null,
                 reportMarkdown: payload.reportMarkdown || s.reportMarkdown,
                 reviewCostUsd: payload.costUsd || s.reviewCostUsd,
                 account: s.account ? { ...s.account, balanceUsd: payload.balanceUsd } : s.account,
               }));
+              void get().loadAiState();
             } else if (payload.kind === "error") {
               set({
                 activeRun: null,
+                streamingChat: null,
                 inlineError: payload.message,
               });
             }
@@ -1771,6 +1790,75 @@ export function createAppStore(backend: Backend) {
 
       toggleAiChat: () => {
         set((s) => ({ isChatOpen: !s.isChatOpen }));
+      },
+
+      setAiChatOpen: (open: boolean) => {
+        set({ isChatOpen: open });
+      },
+
+      setQuotedSelection: (quote) => {
+        set({ quotedSelection: quote });
+      },
+
+      aiSendFollowup: async ({ prompt, quotedText, sectionHeading }) => {
+        const repo = get().repo;
+        if (!repo?.target) return;
+        set({
+          inlineError: null,
+          streamingChat: "",
+          activeRun: {
+            runId: "ai_followup",
+            stage: "followup",
+            message: "Analyzing follow-up question…",
+            cancellable: true,
+          },
+          chatMessages: [
+            ...get().chatMessages,
+            {
+              id: Date.now(),
+              repo: repo.path,
+              branch: repo.branch ?? "",
+              targetBranch: repo.target,
+              role: "user",
+              content: prompt,
+              quotedText: quotedText ?? null,
+              costUsd: null,
+              createdAt: Date.now(),
+            },
+          ],
+        });
+        try {
+          await backend.call("ai_send_followup", {
+            repo: repo.path,
+            branch: repo.branch ?? undefined,
+            targetBranch: repo.target,
+            prompt,
+            quotedText,
+            sectionHeading,
+          });
+          await get().loadAiState();
+        } catch (err) {
+          const apiError = toApiError(err);
+          set({ inlineError: apiError.message, activeRun: null, streamingChat: null });
+        } finally {
+          set({ streamingChat: null });
+        }
+      },
+
+      aiClearThread: async () => {
+        const repo = get().repo;
+        if (!repo?.target || !repo.branch) return;
+        try {
+          await backend.call("ai_clear_thread", {
+            repo: repo.path,
+            branch: repo.branch,
+            targetBranch: repo.target,
+          });
+          set({ chatMessages: [] });
+        } catch (err) {
+          const apiError = toApiError(err);
+          set({ inlineError: apiError.message });
+        }
       },
     };
   });

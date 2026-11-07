@@ -1,4 +1,5 @@
 import { rmSync } from "node:fs";
+import { createServer } from "node:http";
 import { join } from "node:path";
 import type { Page } from "@playwright/test";
 import { designRepo, mergeRepo, withBranches } from "./designRepo";
@@ -304,6 +305,194 @@ test("error report screen", async ({ page, workspace, startApp }) => {
   await page.getByRole("dialog", { name: "Diffloupe ran into a problem" }).waitFor();
   await page.waitForTimeout(300);
   await shoot(page, "ErrorReport");
+});
+
+test("ai review screens", async ({ page, workspace, startApp }) => {
+  let currentBalance = "0.00";
+  let releaseStream: (() => void) | null = null;
+  const server = createServer(async (req, res) => {
+    const url = new URL(req.url ?? "/", `http://${req.headers.host}`);
+    const method = req.method ?? "GET";
+
+    if (method === "POST" && url.pathname === "/v1/auth/device") {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(
+        JSON.stringify({
+          device_code: "dc_test",
+          user_code: "CODE-1234",
+          verification_url: `http://${req.headers.host}/verify`,
+          expires_in: 300,
+          poll_interval_ms: 50,
+        }),
+      );
+      return;
+    }
+
+    if (method === "POST" && url.pathname === "/v1/auth/token") {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(
+        JSON.stringify({
+          status: "authorized",
+          access_token: "tok_test_access",
+          account: {
+            id: "usr_ada",
+            email: "ada@example.com",
+            balance_usd: currentBalance,
+          },
+        }),
+      );
+      return;
+    }
+
+    if (method === "GET" && url.pathname === "/v1/account") {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(
+        JSON.stringify({
+          id: "usr_ada",
+          email: "ada@example.com",
+          balance_usd: currentBalance,
+        }),
+      );
+      return;
+    }
+
+    if (
+      method === "POST" &&
+      (url.pathname === "/v1/billing/checkout-session" || url.pathname === "/v1/billing/checkout")
+    ) {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(
+        JSON.stringify({
+          checkout_url: `http://${req.headers.host}/checkout`,
+        }),
+      );
+      return;
+    }
+
+    if (method === "POST" && url.pathname === "/v1/reviews/stream") {
+      res.writeHead(200, {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache",
+        Connection: "close",
+      });
+      res.write(
+        'event: stage\ndata: {"stage":"analyzing","message":"Analyzing branch changes…"}\n\n',
+      );
+      const partial =
+        "## Branch review: invoice export currency support\n\nAudited 4 changed files against repository conventions. Found 1 potential contract regression and 1 missing test case.";
+      res.write(`event: report_delta\ndata: ${JSON.stringify({ delta: partial })}\n\n`);
+
+      await new Promise<void>((resolve) => {
+        releaseStream = resolve;
+      });
+
+      const fullReport = `## Branch review: invoice export currency support\n\nAudited 4 changed files against repository conventions. Found 1 potential contract regression and 1 missing test case.\n\n| File | Severity | Summary |\n| --- | --- | --- |\n| \`InvoiceExporter.kt:41\` | <span class="dl-chip" style="color: var(--text-warning); border-color: var(--feedback-warning-border);">Warning</span> | ISO-4217 currency code validation missing in CSV header |\n| \`InvoiceExporterTest.kt:28\` | <span class="dl-chip">Suggestion</span> | Update assertions for 4-column export headers |\n\n### Findings\n\n#### 1. Unvalidated currency serialization\n\n\`billing/src/main/kotlin/acme/billing/InvoiceExporter.kt:41\`\n\nInvoiceExporter.kt adds currency to the exported header without validating ISO-4217 codes. Downstream billing parsers assume standard three-letter uppercase currency symbols.\n\n\`\`\`kotlin\ncompanion object {\n    val HEADER = listOf("number", "customer", "amount", "currency")\n}\n\`\`\`\n\n#### 2. Missing test for currency column export\n\n\`billing/src/test/kotlin/acme/billing/InvoiceExporterTest.kt:28\`\n\nUnit tests assert header length 3 instead of 4, leaving empty or invalid currency parameters uncovered in export pipelines.`;
+      res.write(
+        `event: report_update\ndata: ${JSON.stringify({ report_markdown: fullReport })}\n\n`,
+      );
+      res.write('event: billing\ndata: {"cost_usd":"0.14","balance_usd":"9.86"}\n\n');
+      res.write(
+        `event: done\ndata: ${JSON.stringify({ cost_usd: "0.14", balance_usd: "9.86", report_markdown: fullReport })}\n\n`,
+      );
+      res.end();
+      return;
+    }
+
+    if (method === "POST" && url.pathname === "/v1/reviews/followup") {
+      res.writeHead(200, {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache",
+        Connection: "close",
+      });
+      const chatDelta =
+        "Currency validation is implemented in CurrencyCode.kt via CurrencyCode.isValid(raw). Call this before header serialization.";
+      res.write(`event: chat_delta\ndata: ${JSON.stringify({ delta: chatDelta })}\n\n`);
+      const updated = `## Branch review: invoice export currency support\n\nAudited 4 changed files against repository conventions. Found 1 potential contract regression and 1 missing test case.\n\n<div class="dl-banner is-info" style="margin: 12px 0;">\n<span class="dl-i dl-i-status-info" aria-hidden="true"></span>\n<span class="dl-banner-text"><strong>Live update:</strong> Added recommendation to validate currency via <code>CurrencyCode.isValid(raw)</code> before CSV export.</span>\n</div>\n\n### Findings\n\n#### 1. Unvalidated currency serialization\n\n\`billing/src/main/kotlin/acme/billing/InvoiceExporter.kt:41\`\n\nInvoiceExporter.kt adds currency to the exported header without validating ISO-4217 codes. Downstream billing parsers assume standard three-letter uppercase currency symbols.\n\n\`\`\`kotlin\ncompanion object {\n    val HEADER = listOf("number", "customer", "amount", "currency")\n}\n\`\`\`\n`;
+      res.write(`event: report_update\ndata: ${JSON.stringify({ report_markdown: updated })}\n\n`);
+      res.write('event: billing\ndata: {"cost_usd":"0.0034","balance_usd":"9.85"}\n\n');
+      res.write(
+        `event: done\ndata: ${JSON.stringify({ cost_usd: "0.0034", balance_usd: "9.85", chat_message: chatDelta, report_markdown: updated })}\n\n`,
+      );
+      res.end();
+      return;
+    }
+
+    res.writeHead(404);
+    res.end();
+  });
+
+  await new Promise<void>((done) => server.listen(0, "127.0.0.1", () => done()));
+  const port = (server.address() as { port: number }).port;
+  const cloudUrl = `http://127.0.0.1:${port}`;
+
+  try {
+    const billing = designRepo(workspace);
+    const app = await startApp({ open: [billing], cloudUrl });
+
+    await page.getByRole("button", { name: "Recent projects" }).waitFor();
+    await page.getByRole("button", { name: "AI review" }).click();
+    await page.getByText("AI code review disclosure").waitFor();
+    await page.waitForTimeout(300);
+    await shoot(page, "AiReviewConsent");
+
+    await page.getByRole("button", { name: "Allow AI review" }).click();
+    await page.getByText("Sign in to Diffloupe").waitFor();
+    await page.waitForTimeout(300);
+    await shoot(page, "AiReviewAuth");
+
+    await page.getByRole("button", { name: "Sign in with browser" }).click();
+    await page.getByText("Add review balance").waitFor();
+    await page.waitForTimeout(300);
+    await shoot(page, "AiReviewBalance");
+
+    currentBalance = "9.86";
+    await app.bridge.call("ai_refresh_account");
+    await page.getByRole("button", { name: "Manual review" }).click();
+    await page.getByRole("button", { name: "AI review" }).click();
+    await page.getByText("Balance $9.86").waitFor();
+
+    await page.getByRole("button", { name: "Run review" }).first().click();
+    await page.getByText("Review in progress").waitFor();
+    await page.waitForTimeout(300);
+    await shoot(page, "AiReviewRunning");
+
+    (releaseStream as (() => void) | null)?.();
+
+    await page.getByText("Unvalidated currency serialization").waitFor();
+    await page.waitForTimeout(300);
+    await shoot(page, "AiReviewReport");
+
+    await page.evaluate(() => {
+      const p = Array.from(document.querySelectorAll("p")).find((el) =>
+        el.textContent?.includes("InvoiceExporter.kt adds currency"),
+      );
+      if (!p) return;
+      const range = document.createRange();
+      range.selectNodeContents(p);
+      const sel = window.getSelection();
+      sel?.removeAllRanges();
+      sel?.addRange(range);
+      document.dispatchEvent(new Event("selectionchange"));
+    });
+
+    await page.getByRole("button", { name: "Ask about selection" }).waitFor();
+    await page.waitForTimeout(300);
+    await shoot(page, "AiReviewSelection");
+
+    await page.getByRole("button", { name: "Ask about selection" }).click();
+    const chatRegion = page.getByRole("region", { name: "Interactive chat" });
+    await chatRegion.waitFor();
+
+    const composer = page.getByPlaceholder("Ask about this review or request changes…");
+    await composer.fill("Where is ISO-4217 validation handled in the rest of the billing module?");
+    await page.keyboard.press("Enter");
+
+    await chatRegion.getByText("Currency validation is implemented in CurrencyCode.kt").waitFor();
+    await page.waitForTimeout(300);
+    await shoot(page, "AiReviewChat");
+  } finally {
+    await new Promise<void>((done) => server.close(() => done()));
+  }
 });
 
 for (const platform of ["windows", "linux"] as const) {

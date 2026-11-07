@@ -158,4 +158,90 @@ describe("AiReviewIsland", () => {
       expect(reviewStarted).toBe(true);
     });
   });
+
+  it("renders interactive chat panel, turn cost, and handles sending followups", async () => {
+    let followupSent: { prompt: string; quotedText?: string } | null = null;
+    let threadCleared = false;
+    const core = fakeCore({
+      current_repo: () => repoInfo("acme-billing", "gs/invoice-export"),
+      ai_get_state: () => ({
+        consentAccepted: true,
+        account: { id: "u1", email: "user@example.com", balanceUsd: "9.86" },
+        review: {
+          repo: "/Users/ada/Workspace/acme-billing",
+          branch: "gs/invoice-export",
+          targetBranch: "main",
+          reportMarkdown: "## Branch review\n\nIssue with currency serialization.",
+          costUsd: "0.14",
+          headOid: "abc",
+          baseOid: "def",
+          updatedAt: 1000,
+        },
+        chatMessages: [
+          {
+            id: 1,
+            repo: "/Users/ada/Workspace/acme-billing",
+            branch: "gs/invoice-export",
+            targetBranch: "main",
+            role: "user",
+            content: "Where is currency validation defined?",
+            quotedText: "Issue with currency serialization.",
+            costUsd: null,
+            createdAt: 1000,
+          },
+          {
+            id: 2,
+            repo: "/Users/ada/Workspace/acme-billing",
+            branch: "gs/invoice-export",
+            targetBranch: "main",
+            role: "assistant",
+            content: "Validation is in CurrencyCode.kt.",
+            quotedText: null,
+            costUsd: "0.0034",
+            createdAt: 1001,
+          },
+        ],
+      }),
+      ai_send_followup: (args: unknown) => {
+        followupSent = args as { prompt: string; quotedText?: string };
+        return null;
+      },
+      ai_clear_thread: () => {
+        threadCleared = true;
+        return null;
+      },
+    });
+
+    const { store } = await renderWithStore(<AiReviewIsland />, core);
+    await store.getState().loadAiState();
+    store.setState({ isChatOpen: true });
+
+    expect(await screen.findByRole("region", { name: "Interactive chat" })).toBeInTheDocument();
+    expect(screen.getByText("Where is currency validation defined?")).toBeInTheDocument();
+    expect(screen.getByText("Validation is in CurrencyCode.kt.")).toBeInTheDocument();
+    expect(screen.getByText("Cost <$0.01")).toBeInTheDocument();
+
+    const composer = screen.getByPlaceholderText("Ask about this review or request changes…");
+    fireEvent.change(composer, { target: { value: "Can you show sample code?" } });
+    const sendButton = screen.getByRole("button", { name: "Send" });
+    fireEvent.click(sendButton);
+
+    await waitFor(() => {
+      expect(followupSent).toEqual({
+        repo: "/Users/ada/Workspace/acme-billing",
+        branch: "gs/invoice-export",
+        targetBranch: "main",
+        prompt: "Can you show sample code?",
+        quotedText: undefined,
+        sectionHeading: undefined,
+      });
+    });
+
+    const clearButton = screen.getByRole("button", { name: "Clear thread" });
+    fireEvent.click(clearButton);
+    await waitFor(() => {
+      expect(threadCleared).toBe(true);
+      expect(store.getState().chatMessages).toHaveLength(0);
+    });
+  });
 });
