@@ -1,9 +1,20 @@
 import type { AcceptArgs } from "./generated/AcceptArgs";
+import type { AiAddFundsArgs } from "./generated/AiAddFundsArgs";
+import type { AiAddFundsResult } from "./generated/AiAddFundsResult";
+import type { AiClearThreadArgs } from "./generated/AiClearThreadArgs";
+import type { AiGetStateArgs } from "./generated/AiGetStateArgs";
+import type { AiSendFollowupArgs } from "./generated/AiSendFollowupArgs";
+import type { AiSetConsentArgs } from "./generated/AiSetConsentArgs";
+import type { AiSignInArgs } from "./generated/AiSignInArgs";
+import type { AiSignInResult } from "./generated/AiSignInResult";
+import type { AiStartReviewArgs } from "./generated/AiStartReviewArgs";
+import type { AiState } from "./generated/AiState";
 import type { AppInfo } from "./generated/AppInfo";
 import type { ApplyMergeArgs } from "./generated/ApplyMergeArgs";
 import type { BranchArgs } from "./generated/BranchArgs";
 import type { Branches } from "./generated/Branches";
 import type { BranchLog } from "./generated/BranchLog";
+import type { CloudAccount } from "./generated/CloudAccount";
 import type { CommitArgs } from "./generated/CommitArgs";
 import type { CommitDetails } from "./generated/CommitDetails";
 import type { CommitIdArgs } from "./generated/CommitIdArgs";
@@ -89,6 +100,15 @@ export type Commands = {
   dismiss_update: [null, null];
   get_ui_value: [UiKeyArgs, string | null];
   set_ui_value: [UiValueArgs, null];
+  ai_get_state: [AiGetStateArgs, AiState];
+  ai_set_consent: [AiSetConsentArgs, null];
+  ai_sign_in: [AiSignInArgs, AiSignInResult];
+  ai_sign_out: [null, null];
+  ai_refresh_account: [null, CloudAccount];
+  ai_add_funds: [AiAddFundsArgs, AiAddFundsResult];
+  ai_start_review: [AiStartReviewArgs, null];
+  ai_send_followup: [AiSendFollowupArgs, null];
+  ai_clear_thread: [AiClearThreadArgs, null];
 };
 
 export type Command = keyof Commands;

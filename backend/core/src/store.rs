@@ -1,9 +1,11 @@
 use crate::error::{Error, Result};
 use crate::settings::{Settings, merge_into};
 use rusqlite::{Connection, OptionalExtension, params};
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::fs;
 use std::path::{Path, PathBuf};
+use ts_rs::TS;
 
 pub const SETTINGS_FILE: &str = "settings.json";
 pub const STATE_FILE: &str = "state.db";
@@ -40,6 +42,32 @@ const MIGRATIONS: &[&str] = &[
         key TEXT PRIMARY KEY,
         value TEXT NOT NULL
     );",
+    "CREATE TABLE ai_consent (
+        id INTEGER PRIMARY KEY CHECK (id = 1),
+        accepted_at INTEGER NOT NULL
+    );
+    CREATE TABLE ai_review (
+        repo TEXT NOT NULL COLLATE NOCASE,
+        branch TEXT NOT NULL,
+        target_branch TEXT NOT NULL,
+        report_markdown TEXT NOT NULL,
+        cost_usd TEXT,
+        head_oid TEXT,
+        base_oid TEXT,
+        updated_at INTEGER NOT NULL,
+        PRIMARY KEY (repo, branch, target_branch)
+    );
+    CREATE TABLE ai_chat_message (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        repo TEXT NOT NULL COLLATE NOCASE,
+        branch TEXT NOT NULL,
+        target_branch TEXT NOT NULL,
+        role TEXT NOT NULL,
+        content TEXT NOT NULL,
+        quoted_text TEXT,
+        cost_usd TEXT,
+        created_at INTEGER NOT NULL
+    );",
 ];
 
 pub type SettingsMigration = fn(&mut Value) -> std::result::Result<(), String>;
@@ -69,6 +97,49 @@ pub struct RepoState {
     pub target_branch: Option<String>,
     pub last_tab: Option<String>,
     pub last_selection: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct StoredAiReview {
+    pub repo: String,
+    pub branch: String,
+    pub target_branch: String,
+    pub report_markdown: String,
+    pub cost_usd: Option<String>,
+    pub head_oid: Option<String>,
+    pub base_oid: Option<String>,
+    #[ts(type = "number")]
+    pub updated_at: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct StoredAiChatMessage {
+    #[ts(type = "number")]
+    pub id: i64,
+    pub repo: String,
+    pub branch: String,
+    pub target_branch: String,
+    pub role: String,
+    pub content: String,
+    pub quoted_text: Option<String>,
+    pub cost_usd: Option<String>,
+    #[ts(type = "number")]
+    pub created_at: i64,
+}
+
+pub struct NewAiChatMessage<'a> {
+    pub repo: &'a str,
+    pub branch: &'a str,
+    pub target_branch: &'a str,
+    pub role: &'a str,
+    pub content: &'a str,
+    pub quoted_text: Option<&'a str>,
+    pub cost_usd: Option<&'a str>,
+    pub created_at: i64,
 }
 
 pub struct Store {
@@ -281,6 +352,164 @@ impl Store {
         let rows = stmt.query_map(params![repo], |r| r.get(0))?;
         rows.collect::<std::result::Result<Vec<String>, _>>()
             .map_err(Error::from)
+    }
+
+    pub fn ai_consent(&self) -> Result<bool> {
+        let row: Option<i64> = self
+            .db
+            .query_row("SELECT accepted_at FROM ai_consent WHERE id = 1", [], |r| {
+                r.get(0)
+            })
+            .optional()?;
+        Ok(row.is_some())
+    }
+
+    pub fn set_ai_consent(&self, accepted: bool) -> Result<()> {
+        if accepted {
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs() as i64)
+                .unwrap_or(0);
+            self.db.execute(
+                "INSERT INTO ai_consent (id, accepted_at) VALUES (1, ?1)
+                 ON CONFLICT(id) DO UPDATE SET accepted_at = excluded.accepted_at",
+                params![now],
+            )?;
+        } else {
+            self.db.execute("DELETE FROM ai_consent WHERE id = 1", [])?;
+        }
+        Ok(())
+    }
+
+    pub fn get_ai_review(
+        &self,
+        repo: &str,
+        branch: &str,
+        target_branch: &str,
+    ) -> Result<Option<StoredAiReview>> {
+        let repo = clean_path(repo);
+        let row = self
+            .db
+            .query_row(
+                "SELECT repo, branch, target_branch, report_markdown, cost_usd, head_oid, base_oid, updated_at
+                 FROM ai_review WHERE repo = ?1 COLLATE NOCASE AND branch = ?2 AND target_branch = ?3",
+                params![repo, branch, target_branch],
+                |r| {
+                    Ok(StoredAiReview {
+                        repo: r.get(0)?,
+                        branch: r.get(1)?,
+                        target_branch: r.get(2)?,
+                        report_markdown: r.get(3)?,
+                        cost_usd: r.get(4)?,
+                        head_oid: r.get(5)?,
+                        base_oid: r.get(6)?,
+                        updated_at: r.get(7)?,
+                    })
+                },
+            )
+            .optional()?;
+        Ok(row)
+    }
+
+    pub fn save_ai_review(&self, review: &StoredAiReview) -> Result<()> {
+        let repo = clean_path(&review.repo);
+        self.db.execute(
+            "INSERT INTO ai_review (repo, branch, target_branch, report_markdown, cost_usd, head_oid, base_oid, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+             ON CONFLICT(repo, branch, target_branch) DO UPDATE SET
+                report_markdown = excluded.report_markdown,
+                cost_usd = excluded.cost_usd,
+                head_oid = excluded.head_oid,
+                base_oid = excluded.base_oid,
+                updated_at = excluded.updated_at",
+            params![
+                repo,
+                review.branch,
+                review.target_branch,
+                review.report_markdown,
+                review.cost_usd,
+                review.head_oid,
+                review.base_oid,
+                review.updated_at
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn get_ai_chat_messages(
+        &self,
+        repo: &str,
+        branch: &str,
+        target_branch: &str,
+    ) -> Result<Vec<StoredAiChatMessage>> {
+        let repo = clean_path(repo);
+        let mut stmt = self.db.prepare(
+            "SELECT id, repo, branch, target_branch, role, content, quoted_text, cost_usd, created_at
+             FROM ai_chat_message WHERE repo = ?1 COLLATE NOCASE AND branch = ?2 AND target_branch = ?3
+             ORDER BY id ASC",
+        )?;
+        let rows = stmt.query_map(params![repo, branch, target_branch], |r| {
+            Ok(StoredAiChatMessage {
+                id: r.get(0)?,
+                repo: r.get(1)?,
+                branch: r.get(2)?,
+                target_branch: r.get(3)?,
+                role: r.get(4)?,
+                content: r.get(5)?,
+                quoted_text: r.get(6)?,
+                cost_usd: r.get(7)?,
+                created_at: r.get(8)?,
+            })
+        })?;
+        rows.collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(Error::from)
+    }
+
+    pub fn append_ai_chat_message(
+        &self,
+        msg: &NewAiChatMessage<'_>,
+    ) -> Result<StoredAiChatMessage> {
+        let repo = clean_path(msg.repo);
+        self.db.execute(
+            "INSERT INTO ai_chat_message (repo, branch, target_branch, role, content, quoted_text, cost_usd, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            params![
+                repo,
+                msg.branch,
+                msg.target_branch,
+                msg.role,
+                msg.content,
+                msg.quoted_text,
+                msg.cost_usd,
+                msg.created_at
+            ],
+        )?;
+        let id = self.db.last_insert_rowid();
+        Ok(StoredAiChatMessage {
+            id,
+            repo,
+            branch: msg.branch.to_string(),
+            target_branch: msg.target_branch.to_string(),
+            role: msg.role.to_string(),
+            content: msg.content.to_string(),
+            quoted_text: msg.quoted_text.map(|s| s.to_string()),
+            cost_usd: msg.cost_usd.map(|s| s.to_string()),
+            created_at: msg.created_at,
+        })
+    }
+
+    pub fn clear_ai_chat_thread(
+        &self,
+        repo: &str,
+        branch: &str,
+        target_branch: &str,
+    ) -> Result<()> {
+        let repo = clean_path(repo);
+        self.db.execute(
+            "DELETE FROM ai_chat_message WHERE repo = ?1 COLLATE NOCASE AND branch = ?2 AND target_branch = ?3",
+            params![repo, branch, target_branch],
+        )?;
+        Ok(())
     }
 
     pub fn schema_version(&self) -> Result<i64> {

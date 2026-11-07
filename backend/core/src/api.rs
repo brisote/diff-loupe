@@ -275,3 +275,111 @@ pub struct SaveFileArgs {
     pub file: String,
     pub text: String,
 }
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct CloudAccount {
+    pub id: String,
+    pub email: String,
+    pub balance_usd: String,
+}
+
+#[derive(Debug, Clone, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct AiGetStateArgs {
+    pub repo: String,
+    #[serde(default)]
+    #[ts(optional)]
+    pub branch: Option<String>,
+    #[serde(default)]
+    #[ts(optional)]
+    pub target_branch: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct AiState {
+    pub consent_accepted: bool,
+    pub account: Option<CloudAccount>,
+    pub review: Option<crate::store::StoredAiReview>,
+    pub chat_messages: Vec<crate::store::StoredAiChatMessage>,
+}
+
+#[derive(Debug, Clone, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct AiSetConsentArgs {
+    pub accepted: bool,
+}
+
+#[derive(Debug, Clone, Default, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct AiSignInArgs {}
+
+#[derive(Debug, Clone, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct AiSignInResult {
+    pub user_code: String,
+    pub verification_url: String,
+}
+
+#[derive(Debug, Clone, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct AiAddFundsArgs {
+    pub amount_usd: u64,
+}
+
+#[derive(Debug, Clone, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct AiAddFundsResult {
+    pub checkout_url: String,
+}
+
+#[derive(Debug, Clone, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct AiStartReviewArgs {
+    pub repo: String,
+    #[serde(default)]
+    #[ts(optional)]
+    pub branch: Option<String>,
+    #[serde(default)]
+    #[ts(optional)]
+    pub target_branch: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct AiSendFollowupArgs {
+    pub repo: String,
+    #[serde(default)]
+    #[ts(optional)]
+    pub branch: Option<String>,
+    #[serde(default)]
+    #[ts(optional)]
+    pub target_branch: Option<String>,
+    pub prompt: String,
+    #[serde(default)]
+    #[ts(optional)]
+    pub quoted_text: Option<String>,
+    #[serde(default)]
+    #[ts(optional)]
+    pub section_heading: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct AiClearThreadArgs {
+    pub repo: String,
+    pub branch: String,
+    pub target_branch: String,
+}
