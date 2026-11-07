@@ -234,7 +234,7 @@ fn removes_app() -> bool {
 
 fn touches_system() -> bool {
     #[cfg(debug_assertions)]
-    if smoke::active() {
+    if smoke::active() || std::env::var_os("DIFFLOUPE_DATA_DIR").is_some() {
         return false;
     }
     true
@@ -527,7 +527,10 @@ fn main() {
             clear_install_leftovers();
             let data_dir = footprint::app_data_dir(&home);
             #[cfg(debug_assertions)]
-            let data_dir = smoke::data_dir().unwrap_or(data_dir);
+            let data_dir = std::env::var_os("DIFFLOUPE_DATA_DIR")
+                .map(PathBuf::from)
+                .or_else(smoke::data_dir)
+                .unwrap_or(data_dir);
             match Core::new(&data_dir, ShellEnv::detect(), events) {
                 Ok(core) => {
                     app.manage(Arc::new(core));
