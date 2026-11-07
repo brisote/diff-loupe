@@ -8,6 +8,7 @@
     "dev": "tauri dev",
     "dev:bridge": "python3 backend/scripts/dev_bridge.py",
     "dev:stack": "python3 backend/scripts/dev_stack.py",
+    "reload:cloud": "python3 backend/scripts/dev_stack.py reload-cloud",
     "vite": "pnpm --dir frontend vite",
     "build": "pnpm --dir frontend build",
     "tauri": "tauri",
