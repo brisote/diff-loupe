@@ -1,5 +1,6 @@
 """Regenerates frontend/src/api/generated from the Rust types of the core."""
 
+import os
 import shutil
 import subprocess
 import sys
@@ -10,8 +11,17 @@ BACKEND = ROOT / "backend"
 
 
 def main() -> int:
-    shutil.rmtree(ROOT / "frontend/src/api/generated", ignore_errors=True)
-    result = subprocess.run(["cargo", "test", "-q", "-p", "diffloupe-core", "--lib", "export_bindings"], cwd=BACKEND)
+    target = ROOT / "frontend/src/api/generated"
+    shutil.rmtree(target, ignore_errors=True)
+    target.mkdir(parents=True, exist_ok=True)
+    env = dict(os.environ)
+    env["TS_RS_EXPORT_DIR"] = str(target)
+    result = subprocess.run(
+        ["cargo", "test", "-q", "-p", "diffloupe-core", "--lib", "export_bindings"],
+        cwd=BACKEND,
+        env=env,
+    )
+    shutil.rmtree(BACKEND / "core/bindings", ignore_errors=True)
     return result.returncode
 
 

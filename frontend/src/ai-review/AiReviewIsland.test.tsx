@@ -108,12 +108,15 @@ describe("AiReviewIsland", () => {
         runId: "run-1",
         stage: "analysis",
         message: "Auditing 4 changed files and unit tests",
+        thoughts: ["Comparing against repository conventions", "Checking type safety"],
         cancellable: true,
       },
     });
 
     expect(await screen.findByText("Review in progress")).toBeInTheDocument();
     expect(screen.getByText("Auditing 4 changed files and unit tests")).toBeInTheDocument();
+    expect(screen.getByText("Model Thinking")).toBeInTheDocument();
+    expect(screen.getByText("Comparing against repository conventions")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Cancel review" })).toBeInTheDocument();
   });
 

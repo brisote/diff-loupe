@@ -360,7 +360,13 @@ export type AppState = {
   consentAccepted: boolean;
   account: CloudAccount | null;
   authPending: { userCode: string; verificationUrl: string } | null;
-  activeRun: { runId: string; stage: string; message: string; cancellable: boolean } | null;
+  activeRun: {
+    runId: string;
+    stage: string;
+    message: string;
+    thoughts?: string[];
+    cancellable: boolean;
+  } | null;
   reportMarkdown: string | null;
   reviewCostUsd: string | null;
   chatMessages: StoredAiChatMessage[];
@@ -640,13 +646,22 @@ export function createAppStore(backend: Backend) {
             if (!repo || repo.path !== event.repo) return;
             const payload = event.event;
             if (payload.kind === "stage") {
-              set({
-                activeRun: {
-                  runId: event.runId,
-                  stage: payload.stage,
-                  message: payload.message,
-                  cancellable: true,
-                },
+              set((s) => {
+                const currentThoughts = s.activeRun?.thoughts ?? [];
+                const thought = payload.thought;
+                const newThoughts =
+                  thought && !currentThoughts.includes(thought)
+                    ? [...currentThoughts, thought]
+                    : currentThoughts;
+                return {
+                  activeRun: {
+                    runId: event.runId,
+                    stage: payload.stage,
+                    message: payload.message,
+                    thoughts: newThoughts,
+                    cancellable: true,
+                  },
+                };
               });
             } else if (payload.kind === "reportDelta") {
               set((s) => ({
@@ -1766,6 +1781,7 @@ export function createAppStore(backend: Backend) {
             runId: "starting",
             stage: "upload",
             message: "Starting review…",
+            thoughts: ["Preparing repository snapshot and diff…"],
             cancellable: true,
           },
         });
@@ -1811,6 +1827,7 @@ export function createAppStore(backend: Backend) {
             runId: "ai_followup",
             stage: "followup",
             message: "Analyzing follow-up question…",
+            thoughts: [],
             cancellable: true,
           },
           chatMessages: [

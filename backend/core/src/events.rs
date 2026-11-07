@@ -7,7 +7,12 @@ use ts_rs::TS;
 #[ts(export)]
 pub enum AiStreamPayload {
     #[serde(rename_all = "camelCase")]
-    Stage { stage: String, message: String },
+    Stage {
+        stage: String,
+        message: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        thought: Option<String>,
+    },
     #[serde(rename_all = "camelCase")]
     ReportDelta { content: String, delta: String },
     #[serde(rename_all = "camelCase")]

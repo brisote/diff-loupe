@@ -381,7 +381,7 @@ export function AiReviewIsland() {
                   style={{
                     display: "flex",
                     flexDirection: "column",
-                    gap: 10,
+                    gap: 12,
                     padding: "16px 20px",
                     border: "1px solid var(--border)",
                     borderRadius: "var(--radius-6)",
@@ -395,28 +395,91 @@ export function AiReviewIsland() {
                       justifyContent: "space-between",
                     }}
                   >
-                    <span style={{ fontWeight: 600, fontSize: 14 }}>Review in progress</span>
+                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                      <span
+                        className="dl-caret"
+                        style={{
+                          width: 10,
+                          height: 10,
+                          borderRadius: "50%",
+                          background: "var(--accent)",
+                        }}
+                      />
+                      <span style={{ fontWeight: 600, fontSize: 14 }}>Review in progress</span>
+                    </div>
                     <span style={{ fontSize: 12, color: "var(--text-muted)" }}>
                       Comparing {repo.branch} against {repo.target}
                     </span>
                   </div>
-                  <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 4 }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13 }}>
-                      <span
-                        className="dl-caret"
-                        style={{
-                          width: 8,
-                          height: 8,
-                          borderRadius: "50%",
-                          background: "var(--accent)",
-                          margin: "0 4px",
-                        }}
-                      />
-                      <span style={{ fontWeight: 600, color: "var(--text)" }}>
-                        {activeRun.message || activeRun.stage || "Analyzing branch changes…"}
-                      </span>
-                    </div>
+
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13 }}>
+                    <span style={{ fontWeight: 500, color: "var(--text)" }}>
+                      {activeRun.message || activeRun.stage || "Analyzing branch changes…"}
+                    </span>
                   </div>
+
+                  {activeRun.thoughts &&
+                    activeRun.thoughts.length > 0 &&
+                    (() => {
+                      const thoughts = activeRun.thoughts;
+                      return (
+                        <div
+                          style={{
+                            marginTop: 4,
+                            padding: "10px 12px",
+                            background: "var(--window-bg)",
+                            borderRadius: "var(--radius-4)",
+                            border: "1px solid var(--border)",
+                            display: "flex",
+                            flexDirection: "column",
+                            gap: 6,
+                            maxHeight: 180,
+                            overflowY: "auto",
+                            fontSize: 12,
+                            fontFamily: "var(--font-code, monospace)",
+                          }}
+                        >
+                          <div
+                            style={{
+                              fontSize: 11,
+                              fontWeight: 600,
+                              color: "var(--text-muted)",
+                              textTransform: "uppercase",
+                              letterSpacing: 0.5,
+                              marginBottom: 2,
+                            }}
+                          >
+                            Model Thinking
+                          </div>
+                          {thoughts.map((thought, idx) => {
+                            const isLatest = idx === thoughts.length - 1;
+                            return (
+                              <div
+                                key={thought}
+                                style={{
+                                  display: "flex",
+                                  alignItems: "center",
+                                  gap: 8,
+                                  color: isLatest ? "var(--text)" : "var(--text-muted)",
+                                  lineHeight: 1.4,
+                                }}
+                              >
+                                <span
+                                  style={{
+                                    color: isLatest ? "var(--accent)" : "var(--success, #59a869)",
+                                    fontWeight: 700,
+                                    flexShrink: 0,
+                                  }}
+                                >
+                                  {isLatest ? "●" : "✓"}
+                                </span>
+                                <span>{thought}</span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      );
+                    })()}
                 </div>
                 {reportMarkdown ? (
                   <div style={{ padding: 0 }}>

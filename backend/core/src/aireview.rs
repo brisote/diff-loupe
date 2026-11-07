@@ -240,6 +240,7 @@ struct StreamAccumulator {
     report: String,
     chat: String,
     cost_usd: Option<String>,
+    terminal_seen: bool,
 }
 
 pub fn stream_sse(
@@ -276,6 +277,19 @@ pub fn stream_sse(
         dispatch_sse_event(&ev, &data, ctx, events, task, store, &mut acc)?;
     }
 
+    if !acc.terminal_seen {
+        events.emit(CoreEvent::AiReviewStream {
+            repo: ctx.repo.to_string(),
+            branch: ctx.branch.to_string(),
+            target_branch: ctx.target_branch.to_string(),
+            run_id: ctx.run_id.to_string(),
+            event: AiStreamPayload::Error {
+                code: "aiService".to_string(),
+                message: "Review stream closed before completion".to_string(),
+            },
+        });
+    }
+
     Ok(())
 }
 
@@ -294,13 +308,18 @@ fn dispatch_sse_event(
         "stage" => {
             let stage = val["stage"].as_str().unwrap_or_default().to_string();
             let message = val["message"].as_str().unwrap_or_default().to_string();
+            let thought = val["thought"].as_str().map(|s| s.to_string());
             task.progress(message.clone(), 0.5);
             events.emit(CoreEvent::AiReviewStream {
                 repo: ctx.repo.to_string(),
                 branch: ctx.branch.to_string(),
                 target_branch: ctx.target_branch.to_string(),
                 run_id: ctx.run_id.to_string(),
-                event: AiStreamPayload::Stage { stage, message },
+                event: AiStreamPayload::Stage {
+                    stage,
+                    message,
+                    thought,
+                },
             });
         }
         "report_delta" => {
@@ -415,6 +434,7 @@ fn dispatch_sse_event(
                     created_at: now,
                 });
             }
+            acc.terminal_seen = true;
             events.emit(CoreEvent::AiReviewStream {
                 repo: ctx.repo.to_string(),
                 branch: ctx.branch.to_string(),
@@ -429,6 +449,7 @@ fn dispatch_sse_event(
             });
         }
         "error" => {
+            acc.terminal_seen = true;
             let code = val["code"].as_str().unwrap_or("aiService").to_string();
             let message = val["message"].as_str().unwrap_or_default().to_string();
             events.emit(CoreEvent::AiReviewStream {
