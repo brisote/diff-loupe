@@ -46,6 +46,9 @@ export function SettingsDialog() {
             <Row selected={page === "updates"} onActivate={() => setPage("updates")}>
               <span>Updates</span>
             </Row>
+            <Row selected={page === "ai"} onActivate={() => setPage("ai")}>
+              <span>AI review</span>
+            </Row>
           </div>
         </nav>
         {page === "updates" ? (
@@ -53,6 +56,8 @@ export function SettingsDialog() {
             check={draft.updates.check}
             onCheck={(check) => setDraft({ ...draft, updates: { ...draft.updates, check } })}
           />
+        ) : page === "ai" ? (
+          <AiReviewSettingsPage />
         ) : (
           <div className="dl-settings-page">
             <div className="dl-settings-title">Diff</div>
@@ -173,9 +178,10 @@ function UpdatesPage({ check, onCheck }: { check: boolean; onCheck: (check: bool
           />
         </span>
         <span className="dl-form-hint">
-          This is the only network call Diffloupe makes on its own. It asks diffloupe.com for the
-          latest version when it starts and once a day. The request names only the operating system,
-          with no identifier and no usage data.
+          This is the only automatic network call Diffloupe makes on its own. It asks diffloupe.com
+          for the latest version when it starts and once a day. Manual review is local; AI review
+          connects only after explicit opt-in, with zero server data retention. The update check
+          names only the operating system, with no identifier and no usage data.
         </span>
         <span>Version</span>
         <span className="app-update-version">
@@ -282,5 +288,43 @@ function UpdateResult({
         Update
       </button>
     </span>
+  );
+}
+
+function AiReviewSettingsPage() {
+  const consentAccepted = useApp((state) => state.consentAccepted);
+  const setAiConsent = useApp((state) => state.setAiConsent);
+  const account = useApp((state) => state.account);
+  const aiSignOut = useApp((state) => state.aiSignOut);
+
+  return (
+    <div className="dl-settings-page">
+      <div className="dl-settings-title">AI review</div>
+      <div className="dl-form">
+        <span />
+        <span className="app-checks">
+          <Checkbox
+            label="Allow repository upload for AI review"
+            checked={consentAccepted}
+            onChange={(checked) => void setAiConsent(checked)}
+          />
+        </span>
+        <span className="dl-form-hint">
+          When enabled, branch diffs and repository files are sent to cloud.diffloupe.com only when
+          you run an AI review. Everything is deleted immediately after analysis.
+        </span>
+        {account && (
+          <>
+            <span>Account</span>
+            <span style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              <span>{account.email}</span>
+              <button className="dl-btn" type="button" onClick={() => void aiSignOut()}>
+                Sign out
+              </button>
+            </span>
+          </>
+        )}
+      </div>
+    </div>
   );
 }

@@ -36,7 +36,17 @@ describe("error reports", () => {
       "notOpen",
       "noRepository",
     ];
-    for (const code of [...handled, "cancelled", "gitRefused", "update", "storeVersion"])
+    for (const code of [
+      ...handled,
+      "cancelled",
+      "gitRefused",
+      "update",
+      "storeVersion",
+      "consentRequired",
+      "authRequired",
+      "insufficientBalance",
+      "aiService",
+    ])
       expect(unhandled({ code, message: "", path: null } as never), code).toBe(false);
     for (const code of ["store", "io", "invalidArgs", "unknownCommand", "git", "ui"])
       expect(unhandled({ code, message: "", path: null } as never), code).toBe(true);

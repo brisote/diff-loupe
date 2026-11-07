@@ -20,8 +20,10 @@ export function AboutDialog() {
       </div>
       <p className="dl-dialog-text">
         Diffloupe makes reviewing Markdown and git changes easy, with rendered Markdown diffs and
-        side-by-side code diffs. It is open source, and the only network call it makes on its own is
-        a check for a new version on diffloupe.com, which you can turn off in Settings.
+        side-by-side code diffs. Manual review is local and open source. The only network call
+        Diffloupe makes on its own is a check for a new version on diffloupe.com, which you can turn
+        off in Settings. AI review connects only after explicit opt-in, with zero server data
+        retention.
       </p>
       <div className="app-about-note">
         <div className="dl-banner is-info">

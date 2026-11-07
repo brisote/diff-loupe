@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { AiReviewIsland } from "../ai-review/AiReviewIsland";
 import { Editor } from "../main-window/Editor";
 import { MainToolbar } from "../main-window/MainToolbar";
 import { clampWidth, Splitter } from "../main-window/Splitter";
@@ -25,6 +26,7 @@ export function MainWindow() {
   const resized = useRef(false);
   const [maxWidth, setMaxWidth] = useState(1000);
   const terminalOpen = useApp((state) => state.terminalOpen);
+  const workspaceMode = useApp((state) => state.workspaceMode);
   const [terminalHeight, setTerminalHeight] = useState(defaultTerminal);
   const [maxHeight, setMaxHeight] = useState(600);
 
@@ -84,17 +86,21 @@ export function MainWindow() {
       <div className="app-body">
         <Stripe />
         <div className="app-work">
-          <div className="app-panes" ref={body}>
-            <ToolWindow width={shown} />
-            <Splitter
-              width={shown}
-              min={minWidth}
-              max={maxWidth}
-              onResize={resize}
-              onResizeEnd={save}
-            />
-            <Editor />
-          </div>
+          {workspaceMode === "ai" ? (
+            <AiReviewIsland />
+          ) : (
+            <div className="app-panes" ref={body}>
+              <ToolWindow width={shown} />
+              <Splitter
+                width={shown}
+                min={minWidth}
+                max={maxWidth}
+                onResize={resize}
+                onResizeEnd={save}
+              />
+              <Editor />
+            </div>
+          )}
           {terminalOpen && (
             <>
               <Splitter

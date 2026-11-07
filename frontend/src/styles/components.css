@@ -247,3 +247,31 @@ body{margin:0;font-family:var(--font-ui);font-size:13px;line-height:16px;color:v
 .dl-caret{display:inline-block;width:7px;height:14px;margin-left:1px;vertical-align:-2px;background:var(--text);animation:dl-blink 1s steps(1) infinite}
 @keyframes dl-blink{50%{opacity:0}}
 @media (prefers-reduced-motion:reduce){.dl-caret{animation:none}}
+.dl-ai-pill{display:inline-flex;align-items:center;gap:var(--space-4);height:22px;padding:0 var(--space-8);border:1px solid var(--border);border-radius:var(--radius-4);background:var(--control-bg);color:var(--text);font-size:12px;white-space:nowrap;user-select:none}
+.dl-ai-pill-muted{color:var(--text-muted)}
+.dl-ai-pill-btn{cursor:default}
+.dl-ai-pill-btn:hover{background:var(--hover-bg)}
+.dl-ai-state{display:flex;flex-direction:column;align-items:center;justify-content:center;box-sizing:border-box;min-height:100%;padding:var(--space-24) var(--space-16);text-align:center;color:var(--text)}
+.dl-ai-card{display:flex;flex-direction:column;align-items:center;gap:var(--space-12);max-width:480px;padding:var(--space-20) var(--space-24);border:1px solid var(--border);border-radius:var(--radius-10);background:var(--panel-bg);box-sizing:border-box}
+.dl-ai-state-title{margin:0;font-size:16px;line-height:22px;font-weight:600}
+.dl-ai-state-desc{margin:0;max-width:440px;color:var(--text-muted);font-size:13px;line-height:20px}
+.dl-ai-state-actions{display:flex;align-items:center;gap:var(--space-8);margin-top:var(--space-8)}
+.dl-ai-packs{display:flex;gap:var(--space-8);margin-top:var(--space-4)}
+.dl-ai-pack{display:inline-flex;flex-direction:column;align-items:center;gap:var(--space-2);min-width:88px;padding:var(--space-8) var(--space-16);border:1px solid var(--control-border);border-radius:var(--radius-4);background:var(--control-bg);color:var(--text);font:inherit;cursor:default}
+.dl-ai-pack:hover{background:linear-gradient(var(--hover-bg),var(--hover-bg)),var(--control-bg)}
+.dl-ai-pack span{color:var(--text-muted);font-size:12px}
+.dl-ai-float-action{position:absolute;z-index:10;display:inline-flex;align-items:center;gap:var(--space-4);padding:var(--space-2) var(--space-4);border:1px solid var(--popup-border);border-radius:var(--radius-6);background:var(--popup-bg);box-shadow:var(--shadow-popup);white-space:nowrap}
+.dl-ai-action-btn{display:inline-flex;align-items:center;gap:var(--space-4);height:24px;padding:0 var(--space-6);border:0;border-radius:var(--radius-4);background:none;color:var(--text);font:inherit;font-size:12px;cursor:default}
+.dl-ai-action-btn:hover{background:var(--hover-bg)}
+.dl-ai-chat{flex:none;height:240px}
+.dl-ai-chat-list{flex:1;min-height:0;overflow-y:auto;padding:var(--space-8) var(--space-12);display:flex;flex-direction:column;gap:var(--space-8)}
+.dl-ai-quote-chip{display:inline-flex;align-items:center;gap:var(--space-6);max-width:100%;padding:var(--space-4) var(--space-8);border:1px solid var(--border);border-radius:var(--radius-4);background:var(--panel-bg-inline);color:var(--text-muted);font-size:12px;line-height:16px;box-sizing:border-box}
+.dl-ai-quote-text{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dl-ai-chat-msg{display:flex;flex-direction:column;gap:var(--space-2);max-width:760px}
+.dl-ai-chat-msg.is-user{align-self:flex-end;padding:var(--space-6) var(--space-8);border:1px solid var(--control-border);border-radius:var(--radius-6);background:var(--control-bg);color:var(--text);font-size:13px;line-height:18px}
+.dl-ai-chat-msg.is-assistant{align-self:flex-start;color:var(--text);font-size:13px;line-height:20px}
+.dl-ai-turn-cost{display:inline-flex;align-items:center;gap:var(--space-4);font-size:11px;color:var(--text-muted);margin-top:var(--space-2)}
+.dl-ai-composer{display:flex;flex-direction:column;gap:var(--space-4);padding:var(--space-6) var(--space-8);border-top:1px solid var(--border);background:var(--panel-bg);flex:none}
+.dl-ai-composer-row{display:flex;align-items:flex-end;gap:var(--space-6)}
+.dl-ai-composer-input{flex:1;min-height:30px;max-height:96px;padding:var(--space-6) var(--space-8);box-sizing:border-box;border:1px solid var(--control-border);border-radius:var(--radius-4);background:var(--control-bg);color:var(--text);font:inherit;font-size:13px;line-height:18px;resize:none}
+.dl-ai-composer-input:focus{outline:none;border-color:var(--focus-ring);box-shadow:0 0 0 1px var(--focus-ring)}

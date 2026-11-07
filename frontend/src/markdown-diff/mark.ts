@@ -144,7 +144,7 @@ export function inline(a: PhrasingContent[], b: PhrasingContent[]): Inline {
   return out;
 }
 
-function visible(node: unknown): unknown {
+export function visible(node: unknown): unknown {
   if (Array.isArray(node)) return node.map(visible);
   if (!node || typeof node !== "object") return node;
   const typed = node as { type?: string; value?: string; identifier?: string };
@@ -159,7 +159,7 @@ function visible(node: unknown): unknown {
   return copy;
 }
 
-function htmlAsCode(node: RootContent): RootContent {
+export function htmlAsCode(node: RootContent): RootContent {
   if (node.type === "html" || node.type === "yaml") {
     return { type: "code", lang: node.type === "yaml" ? "yaml" : null, value: node.value };
   }

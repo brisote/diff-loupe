@@ -55,6 +55,23 @@ export function fakeCore(handlers: Record<string, Handler> = {}, platform: Platf
     set_settings: (args) => (args as { settings: Settings }).settings,
     update_state: () => ({ ready: null, failure: null, page: null }),
     report_env: () => ({ version: "0.2.0", os: "macOS 26.1", arch: "aarch64", git: "2.50.1" }),
+    ai_get_state: () => ({
+      consentAccepted: false,
+      account: null,
+      review: null,
+      chatMessages: [],
+    }),
+    ai_set_consent: () => null,
+    ai_sign_in: () => ({
+      userCode: "ABCD-1234",
+      verificationUrl: "https://cloud.diffloupe.com/device",
+    }),
+    ai_sign_out: () => null,
+    ai_refresh_account: () => null,
+    ai_add_funds: () => ({ checkoutUrl: "https://checkout.stripe.com/pay" }),
+    ai_start_review: () => null,
+    ai_send_followup: () => null,
+    ai_clear_thread: () => null,
     ...handlers,
   });
 }
