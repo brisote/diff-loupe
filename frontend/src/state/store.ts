@@ -1750,6 +1750,7 @@ export function createAppStore(backend: Backend) {
             amountUsd: amount as unknown as bigint,
           });
           void backend.openLink(result.checkoutUrl).catch(() => undefined);
+          await get().aiRefreshAccount();
         } catch (err) {
           const apiError = toApiError(err);
           set({ inlineError: apiError.message });

@@ -22,6 +22,8 @@ describe("AiReviewIsland", () => {
 
     const { store } = await renderWithStore(<AiReviewIsland />, core);
     expect(screen.getByText("AI code review disclosure")).toBeInTheDocument();
+    expect(screen.getByText("What data is used")).toBeInTheDocument();
+    expect(screen.getByText("Do we delete everything")).toBeInTheDocument();
     const allowButton = screen.getByRole("button", { name: "Allow AI review" });
     expect(allowButton).toBeInTheDocument();
 

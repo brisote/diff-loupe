@@ -215,12 +215,29 @@ export function AiReviewIsland() {
                   style={{ width: 24, height: 24, backgroundSize: "24px 24px" }}
                 />
                 <h2 className="dl-ai-state-title">AI code review disclosure</h2>
-                <p className="dl-ai-state-desc">
-                  To review this branch, Diffloupe sends your repository snapshot and branch diff to
-                  cloud.diffloupe.com for analysis. The full repository is copied to the server for
-                  analysis and everything—including the report—is deleted immediately once
-                  generated.
-                </p>
+                <div
+                  className="dl-ai-state-desc"
+                  style={{ display: "flex", flexDirection: "column", gap: 12, textAlign: "left" }}
+                >
+                  <div>
+                    <div style={{ fontWeight: 600, color: "var(--text)", marginBottom: 2 }}>
+                      What data is used
+                    </div>
+                    <div>
+                      Diffloupe sends your repository snapshot and branch diff to the review server
+                      for analysis.
+                    </div>
+                  </div>
+                  <div>
+                    <div style={{ fontWeight: 600, color: "var(--text)", marginBottom: 2 }}>
+                      Do we delete everything
+                    </div>
+                    <div>
+                      The server deletes the repository copy and the generated report immediately
+                      once analysis finishes.
+                    </div>
+                  </div>
+                </div>
                 <div className="dl-ai-state-actions">
                   <button
                     className="dl-btn dl-btn-primary"
