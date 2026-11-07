@@ -99,11 +99,51 @@ impl Bridge {
                 }
                 Ok(Value::Null)
             }
-            "pick_folder" => Ok(self
-                .pick
-                .lock()
-                .map(|pick| json!(*pick))
-                .unwrap_or(Value::Null)),
+            "pick_folder" => {
+                if let Ok(pick) = self.pick.lock()
+                    && let Some(path) = pick.as_ref()
+                {
+                    return Ok(json!(path));
+                }
+                #[cfg(target_os = "macos")]
+                {
+                    let output = std::process::Command::new("osascript")
+                        .arg("-e")
+                        .arg("POSIX path of (choose folder with prompt \"Select a Git repository to open in Diffloupe\")")
+                        .output();
+                    if let Ok(output) = output
+                        && output.status.success()
+                    {
+                        let path = String::from_utf8_lossy(&output.stdout)
+                            .trim()
+                            .trim_end_matches('/')
+                            .to_string();
+                        if !path.is_empty() {
+                            return Ok(json!(path));
+                        }
+                    }
+                }
+                #[cfg(target_os = "linux")]
+                {
+                    let output = std::process::Command::new("zenity")
+                        .arg("--file-selection")
+                        .arg("--directory")
+                        .arg("--title=Select a Git repository to open in Diffloupe")
+                        .output();
+                    if let Ok(output) = output
+                        && output.status.success()
+                    {
+                        let path = String::from_utf8_lossy(&output.stdout)
+                            .trim()
+                            .trim_end_matches('/')
+                            .to_string();
+                        if !path.is_empty() {
+                            return Ok(json!(path));
+                        }
+                    }
+                }
+                Ok(Value::Null)
+            }
             "devbridge_set_pick" => {
                 let path = args.get("path").and_then(Value::as_str).map(str::to_string);
                 if let Ok(mut pick) = self.pick.lock() {
