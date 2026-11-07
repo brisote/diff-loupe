@@ -34,7 +34,7 @@ html, body {{ margin: 0; width: {WIDTH}px; height: {HEIGHT}px; overflow: hidden;
 <div class="og-text">
 <span class="brand"><img src="{ICON.as_uri()}" alt=""><span>Diffloupe</span></span>
 <h1 class="h1-hero">Review Markdown changes as a page. Stay private.</h1>
-<p class="lead">Fast, private code review for Git and Markdown with rendered markdown diffs. Your code stays on your computer.</p>
+<p class="lead">Fast, private code review for Git and Markdown with rendered markdown diffs. Manual review stays on your computer.</p>
 <span class="chip">diffloupe.com</span>
 </div>
 <div class="scene og-scene"><div class="window"><img src="{SHOT.as_uri()}" alt=""></div></div>

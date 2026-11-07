@@ -38,7 +38,10 @@ test("the privacy page says there are no trackers and that the code is open sour
   await expect(main).toContainText(
     "Diffloupe is open source, so you can read every line of what it does.",
   );
-  await expect(main).toContainText("It has no account and sends no usage data,");
+  await expect(main).toContainText("It has no account and sends no usage data for manual review,");
+  await expect(page.getByRole("heading", { level: 2, name: "The app" })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 2, name: "Your code" })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 2, name: "AI review" })).toBeVisible();
   const words = [
     await page.title(),
     await page.locator("meta[name=description]").getAttribute("content"),

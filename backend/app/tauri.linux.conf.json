@@ -2,7 +2,7 @@
   "bundle": {
     "targets": ["deb", "rpm"],
     "shortDescription": "Review Markdown and git changes",
-    "longDescription": "Diffloupe makes reviewing Markdown and git changes easy: rendered Markdown diffs, side-by-side code diffs, the branch log and a 3-pane merge window. Your code stays on your computer.",
+    "longDescription": "Diffloupe makes reviewing Markdown and git changes easy: rendered Markdown diffs, side-by-side code diffs, the branch log and a 3-pane merge window. Manual review keeps all code on the computer, while optional AI review uploads repository context over HTTPS only after explicit consent with zero server retention.",
     "linux": {
       "deb": {
         "section": "devel",

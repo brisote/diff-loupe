@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 import { missing, pages } from "./pages";
 
 for (const path of [...pages.map((target) => target.path), missing.path]) {
-  test(`${path} says nothing about AI, being offline or network calls, and promises nothing forever`, async ({
+  test(`${path} says nothing about Claude or agents, mentions no credits, and promises nothing forever`, async ({
     page,
   }) => {
     await page.goto(path);
@@ -21,10 +21,8 @@ for (const path of [...pages.map((target) => target.path), missing.path]) {
     const description = await page.locator("meta[name=description]").getAttribute("content");
     expect(description).toBeTruthy();
     expect(words).toContain(description);
-    expect(words).not.toMatch(/\bAI\b|\bClaude\b|\bagents?\b|forever/i);
-    expect(words).not.toMatch(
-      /offline|network call|\bgit remotes?\b|(?<!pull )\brequests?\b|\bservers?\b/i,
-    );
+    expect(words).not.toMatch(/\bClaude\b|\bagents?\b|forever|\bcredits?\b/i);
+    expect(words).not.toMatch(/offline|network call|\bgit remotes?\b|(?<!pull )\brequests?\b/i);
     if (path === "/") {
       expect(words).toMatch(/Review Markdown changes as a page/);
     }

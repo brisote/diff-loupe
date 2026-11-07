@@ -57,7 +57,7 @@ describe("sectionProblems", () => {
     ).toEqual([]);
   });
 
-  it("finds a section without a summary, without groups or with AI wording", () => {
+  it("finds a section without a summary, without groups or with vendor jargon or credits", () => {
     expect(sectionProblems({ version: "0.2.0", markdown: "### Git\n\n- One." })).toEqual([
       "it does not open with a summary sentence",
     ]);
@@ -65,11 +65,17 @@ describe("sectionProblems", () => {
       "it has no ### group",
     ]);
     expect(
-      sectionProblems({ version: "0.2.0", markdown: "Explain with AI.\n\n### Git\n\n- One." }),
-    ).toEqual(["it mentions AI"]);
+      sectionProblems({ version: "0.2.0", markdown: "AI review.\n\n### Git\n\n- One." }),
+    ).toEqual([]);
+    expect(
+      sectionProblems({ version: "0.2.0", markdown: "Claude model.\n\n### Git\n\n- One." }),
+    ).toEqual(["it mentions vendor jargon"]);
     expect(
       sectionProblems({ version: "0.2.0", markdown: "Agents help.\n\n### Git\n\n- One." }),
-    ).toEqual(["it mentions AI"]);
+    ).toEqual(["it mentions vendor jargon"]);
+    expect(
+      sectionProblems({ version: "0.2.0", markdown: "Buy 100 credits.\n\n### Git\n\n- One." }),
+    ).toEqual(["it mentions credits"]);
     expect(
       sectionProblems({ version: "0.2.0", markdown: "Sum.\n\n### Git\n\n- [x](javascript:void)." }),
     ).toEqual(["it has a link that is not https"]);

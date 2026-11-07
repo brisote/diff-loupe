@@ -55,7 +55,8 @@ export function sectionProblems(section: ChangelogSection): string[] {
   const [summary = ""] = section.markdown.split(/\n\s*\n/);
   if (!summary || /^[#-]/.test(summary)) problems.push("it does not open with a summary sentence");
   if (!/^### \S/m.test(section.markdown)) problems.push("it has no ### group");
-  if (/\b(AI|Claude|agents?)\b/i.test(section.markdown)) problems.push("it mentions AI");
+  if (/\b(Claude|agents?)\b/i.test(section.markdown)) problems.push("it mentions vendor jargon");
+  if (/\bcredits?\b/i.test(section.markdown)) problems.push("it mentions credits");
   if (/\]\((?!https:\/\/|\/|#)/.test(section.markdown))
     problems.push("it has a link that is not https");
   return problems;

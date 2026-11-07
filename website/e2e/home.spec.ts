@@ -6,7 +6,8 @@ test("every Download link on the home page leads to the Download page", async ({
   const links = {
     header: page.locator("header.header").getByRole("link", { name: "Download" }),
     hero: page.locator(".hero").getByRole("link", { name: "Download" }),
-    pricing: page.locator(".plan").getByRole("link", { name: "Download free" }),
+    pricingManual: page.locator(".plan").getByRole("link", { name: "Download free" }),
+    pricingAi: page.locator(".plan").getByRole("link", { name: "Try in Diffloupe" }),
     closing: page.locator(".closing").getByRole("link", { name: "Download" }),
     footer: page.locator("footer.footer").getByRole("link", { name: "Download" }),
   };
