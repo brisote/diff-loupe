@@ -37,6 +37,12 @@ Run `pnpm` commands from the top level. Run `cargo` commands from `backend/`, an
 pnpm install
 pnpm dev          # Tauri app with hot reload
 pnpm dev:bridge   # dev bridge + Vite, open the printed URL in a browser
+pnpm dev:stack    # zero-maintenance isolated full stack (cloud + devbridge + UI on dynamic free ports)
+python3 backend/scripts/dev_stack.py list       # list running/paused stacks with timestamps
+python3 backend/scripts/dev_stack.py pause <id> # pause stack processes without deleting files
+python3 backend/scripts/dev_stack.py resume <id># resume paused stack
+python3 backend/scripts/dev_stack.py stop <id>  # stop processes and delete stack files by default
+python3 backend/scripts/dev_stack.py stop-all   # stop all running stacks and clean up all stack files
 pnpm build        # UI build into frontend/dist/
 pnpm test         # cargo test --workspace, then Vitest
 pnpm e2e          # Playwright through the dev bridge
