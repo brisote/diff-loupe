@@ -39,6 +39,8 @@ pnpm dev          # Tauri app with hot reload
 pnpm dev:bridge   # dev bridge + Vite, open the printed URL in a browser
 pnpm dev:stack    # zero-maintenance isolated full stack (cloud + devbridge + UI on dynamic free ports)
 python3 backend/scripts/dev_stack.py list       # list running/paused stacks with timestamps
+python3 backend/scripts/dev_stack.py app <id>   # launch native desktop app window for this stack
+python3 backend/scripts/dev_stack.py open <id>  # open browser UI for this stack
 python3 backend/scripts/dev_stack.py pause <id> # pause stack processes without deleting files
 python3 backend/scripts/dev_stack.py resume <id># resume paused stack
 python3 backend/scripts/dev_stack.py stop <id>  # stop processes and delete stack files by default
