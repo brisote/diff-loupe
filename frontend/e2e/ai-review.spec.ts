@@ -74,10 +74,11 @@ function createMockCloud(): Promise<MockCloudServer> {
       method === "POST" &&
       (url.pathname === "/v1/billing/checkout-session" || url.pathname === "/v1/billing/checkout")
     ) {
+      currentBalance = "10.00";
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(
         JSON.stringify({
-          checkout_url: `http://${req.headers.host}/checkout`,
+          checkout_url: `http://${req.headers.host}/billing/dev-success?amount=10`,
         }),
       );
       return;
@@ -180,6 +181,11 @@ test("full AI review workflow, selection quoting, live chat dual streaming, and 
 
     await aiBtn.click();
     await expect(page.getByText("AI code review disclosure")).toBeVisible();
+    await expect(page.getByText("What data is used")).toBeVisible();
+    await expect(page.getByText("Do we delete everything")).toBeVisible();
+    const disclosureText = await page.textContent("body");
+    expect(disclosureText).not.toContain("—");
+
     await page.getByRole("button", { name: "Cancel" }).click();
     await expect(page.getByRole("region", { name: "Side-by-side diff" })).toBeVisible();
     expect(cloud.requests).toHaveLength(0);
@@ -203,13 +209,8 @@ test("full AI review workflow, selection quoting, live chat dual streaming, and 
     await page.getByRole("button", { name: /\$10/ }).click();
     await expect(async () => {
       const opened = (await app.bridge.call("devbridge_opened")) as string[];
-      expect(opened).toEqual(expect.arrayContaining([expect.stringContaining("/checkout")]));
+      expect(opened).toEqual(expect.arrayContaining([expect.stringContaining("dev-success")]));
     }).toPass();
-
-    cloud.setBalance("10.00");
-    await app.bridge.call("ai_refresh_account");
-    await page.getByRole("button", { name: "Manual review" }).click();
-    await page.getByRole("button", { name: "AI review" }).click();
 
     await expect(page.getByText("Balance $10.00")).toBeVisible();
     await expect(page.getByRole("button", { name: "Run review" }).first()).toBeEnabled();
