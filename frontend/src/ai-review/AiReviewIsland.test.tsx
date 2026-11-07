@@ -249,4 +249,58 @@ describe("AiReviewIsland", () => {
       expect(store.getState().chatMessages).toHaveLength(0);
     });
   });
+
+  it("selects model and effort from pickers and passes to review start", async () => {
+    let reviewArgs: unknown = null;
+    const core = fakeCore({
+      current_repo: () => repoInfo("acme-billing", "gs/invoice-export"),
+      ai_get_state: () => ({
+        consentAccepted: true,
+        account: { id: "u1", email: "user@example.com", balanceUsd: "10.00" },
+        review: null,
+        chatMessages: [],
+      }),
+      ai_start_review: (args: unknown) => {
+        reviewArgs = args;
+        return null;
+      },
+    });
+
+    const { store } = await renderWithStore(<AiReviewIsland />, core);
+    await store.getState().loadAiState();
+    await store.getState().loadAiModels();
+
+    const modelButton = screen.getByTitle("Model");
+    expect(modelButton).toBeInTheDocument();
+    fireEvent.click(modelButton);
+
+    const bestModelOption = await screen.findByRole("button", { name: /Claude 3.7 Sonnet/i });
+    fireEvent.click(bestModelOption);
+
+    expect(store.getState().selectedModel).toBe("claude-3-7-sonnet");
+
+    const effortButton = screen.getByTitle("Reasoning effort");
+    expect(effortButton).toBeInTheDocument();
+    fireEvent.click(effortButton);
+
+    const highEffortOption = await screen.findByRole("button", { name: /High/i });
+    fireEvent.click(highEffortOption);
+
+    expect(store.getState().selectedEffort).toBe("high");
+
+    const [runReviewButton] = screen.getAllByRole("button", { name: "Run review" });
+    expect(runReviewButton).toBeDefined();
+    if (!runReviewButton) throw new Error("Run review button not found");
+    fireEvent.click(runReviewButton);
+
+    await waitFor(() => {
+      expect(reviewArgs).toEqual({
+        repo: "/Users/ada/Workspace/acme-billing",
+        branch: "gs/invoice-export",
+        targetBranch: "main",
+        model: "claude-3-7-sonnet",
+        effort: "high",
+      });
+    });
+  });
 });

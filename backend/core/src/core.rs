@@ -3,8 +3,8 @@ use crate::api::{
     AcceptArgs, AiAddFundsArgs, AiAddFundsResult, AiClearThreadArgs, AiGetStateArgs,
     AiSendFollowupArgs, AiSetConsentArgs, AiSignInArgs, AiSignInResult, AiStartReviewArgs, AiState,
     AppInfo, ApplyMergeArgs, BranchArgs, CloudAccount, CommitArgs, CommitIdArgs, DiffArgs,
-    ImageArgs, PathArgs, PrepareArgs, RecentRepo, RepoInfo, RepoViewArgs, ReportEnv, RollbackArgs,
-    SaveFileArgs, SettingsArgs, StatusArgs, TargetArgs, TaskArgs, TerminalAckArgs,
+    ImageArgs, ModelsCatalog, PathArgs, PrepareArgs, RecentRepo, RepoInfo, RepoViewArgs, ReportEnv,
+    RollbackArgs, SaveFileArgs, SettingsArgs, StatusArgs, TargetArgs, TaskArgs, TerminalAckArgs,
     TerminalOpenArgs, TerminalResizeArgs, TerminalWriteArgs, ToolTab, UiKeyArgs, UiValueArgs,
     VersionArgs,
 };
@@ -497,6 +497,7 @@ impl Core {
                 let a: AiAddFundsArgs = parse(args)?;
                 reply(self.ai_add_funds(a)?)
             }
+            "ai_get_models" => reply(self.ai_get_models()?),
             "ai_start_review" => {
                 let a: AiStartReviewArgs = parse(args)?;
                 self.ai_start_review(a)?;
@@ -1264,6 +1265,22 @@ impl Core {
         Ok(AiAddFundsResult { checkout_url })
     }
 
+    fn ai_get_models(&self) -> Result<ModelsCatalog> {
+        let store = self.store()?;
+        if !store.ai_consent()? {
+            return Err(Error::ConsentRequired);
+        }
+        drop(store);
+        let cloud_url = self.cloud_url();
+        let resp = ureq::get(&format!("{cloud_url}/v1/models"))
+            .call()
+            .map_err(aireview::map_ureq_error)?;
+        let catalog: ModelsCatalog = resp
+            .into_json()
+            .map_err(|e| Error::AiService(e.to_string()))?;
+        Ok(catalog)
+    }
+
     fn ai_start_review(&self, a: AiStartReviewArgs) -> Result<()> {
         let store = self.store()?;
         if !store.ai_consent()? {
@@ -1335,6 +1352,22 @@ impl Core {
         }
         if let Some(ref h) = head_oid {
             body.extend_from_slice(format!("--{boundary}\r\nContent-Disposition: form-data; name=\"head_oid\"\r\n\r\n{h}\r\n").as_bytes());
+        }
+        if let Some(ref m) = a.model {
+            body.extend_from_slice(
+                format!(
+                    "--{boundary}\r\nContent-Disposition: form-data; name=\"model\"\r\n\r\n{m}\r\n"
+                )
+                .as_bytes(),
+            );
+        }
+        if let Some(ref e) = a.effort {
+            body.extend_from_slice(
+                format!(
+                    "--{boundary}\r\nContent-Disposition: form-data; name=\"effort\"\r\n\r\n{e}\r\n"
+                )
+                .as_bytes(),
+            );
         }
         body.extend_from_slice(format!("--{boundary}\r\nContent-Disposition: form-data; name=\"unified_diff\"\r\n\r\n{unified_diff}\r\n").as_bytes());
         body.extend_from_slice(format!("--{boundary}\r\nContent-Disposition: form-data; name=\"changed_files\"\r\n\r\n{changed_files}\r\n").as_bytes());

@@ -69,6 +69,20 @@ export function fakeCore(handlers: Record<string, Handler> = {}, platform: Platf
     ai_sign_out: () => null,
     ai_refresh_account: () => null,
     ai_add_funds: () => ({ checkoutUrl: "https://checkout.stripe.com/pay" }),
+    ai_get_models: () => ({
+      models: [
+        { id: "claude-3-7-sonnet", name: "Claude 3.7 Sonnet", description: "Best" },
+        { id: "claude-3-5-sonnet", name: "Claude 3.5 Sonnet", description: "Balanced" },
+        { id: "claude-3-5-haiku", name: "Claude 3.5 Haiku", description: "Fast" },
+      ],
+      efforts: [
+        { id: "low", name: "Low" },
+        { id: "medium", name: "Medium" },
+        { id: "high", name: "High" },
+      ],
+      defaultModel: "claude-3-5-sonnet",
+      defaultEffort: "medium",
+    }),
     ai_start_review: () => null,
     ai_send_followup: () => null,
     ai_clear_thread: () => null,

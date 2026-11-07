@@ -610,3 +610,84 @@ fn ai_add_funds_amount_validation() {
 
     drop(data);
 }
+
+#[test]
+fn models_catalog_and_start_review_parameters() {
+    let repo = TempRepo::new();
+    repo.write("initial.txt", "initial");
+    repo.commit_all("initial");
+
+    let (data, core, _, repo_path) = open_repo_core(&repo);
+
+    aireview::write_auth(
+        data.path(),
+        &StoredCloudAuth {
+            access_token: "tok_test_models".into(),
+            account: CloudAccount {
+                id: "acc_models".into(),
+                email: "models@example.com".into(),
+                balance_usd: "50.00".into(),
+            },
+        },
+    )
+    .unwrap();
+    core.dispatch("ai_set_consent", json!({ "accepted": true }))
+        .unwrap();
+
+    let uploaded_body = Arc::new(Mutex::new(Vec::new()));
+    let body_capture = Arc::clone(&uploaded_body);
+
+    let server = spawn_server(move |_, path, body, stream| {
+        if path == "/v1/models" {
+            let resp_body = json!({
+                "models": [
+                    { "id": "claude-3-7-sonnet", "name": "Claude 3.7 Sonnet" },
+                    { "id": "claude-3-5-sonnet", "name": "Claude 3.5 Sonnet" }
+                ],
+                "efforts": [
+                    { "id": "low", "name": "Low" },
+                    { "id": "medium", "name": "Medium" }
+                ],
+                "default_model": "claude-3-5-sonnet",
+                "default_effort": "medium"
+            })
+            .to_string();
+            let resp = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{resp_body}",
+                resp_body.len()
+            );
+            let _ = stream.write_all(resp.as_bytes());
+        } else if path == "/v1/reviews/stream" {
+            body_capture.lock().unwrap().extend_from_slice(body);
+            let sse = "event: stage\ndata: {\"stage\":\"review\",\"message\":\"Reviewing\"}\n\nevent: done\ndata: {}\n\n";
+            let resp = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nConnection: close\r\n\r\n{sse}"
+            );
+            let _ = stream.write_all(resp.as_bytes());
+        }
+    });
+    core.set_cloud_url(&server.url);
+
+    let catalog = core.dispatch("ai_get_models", Value::Null).unwrap();
+    assert_eq!(catalog["defaultModel"], "claude-3-5-sonnet");
+    assert_eq!(catalog["defaultEffort"], "medium");
+    assert_eq!(catalog["models"].as_array().unwrap().len(), 2);
+
+    core.dispatch(
+        "ai_start_review",
+        json!({
+            "repo": repo_path,
+            "branch": "main",
+            "targetBranch": "main",
+            "model": "claude-3-7-sonnet",
+            "effort": "medium"
+        }),
+    )
+    .unwrap();
+
+    let captured = String::from_utf8_lossy(&uploaded_body.lock().unwrap()).to_string();
+    assert!(captured.contains("name=\"model\"\r\n\r\nclaude-3-7-sonnet"));
+    assert!(captured.contains("name=\"effort\"\r\n\r\nmedium"));
+
+    drop(data);
+}

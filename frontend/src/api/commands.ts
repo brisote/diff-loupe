@@ -27,6 +27,7 @@ import type { MergeFile } from "./generated/MergeFile";
 import type { MergeFileArgs } from "./generated/MergeFileArgs";
 import type { MergeOutcome } from "./generated/MergeOutcome";
 import type { MergeState } from "./generated/MergeState";
+import type { ModelsCatalog } from "./generated/ModelsCatalog";
 import type { PathArgs } from "./generated/PathArgs";
 import type { PrepareArgs } from "./generated/PrepareArgs";
 import type { PushResult } from "./generated/PushResult";
@@ -106,6 +107,7 @@ export type Commands = {
   ai_sign_out: [null, null];
   ai_refresh_account: [null, CloudAccount];
   ai_add_funds: [AiAddFundsArgs, AiAddFundsResult];
+  ai_get_models: [null, ModelsCatalog];
   ai_start_review: [AiStartReviewArgs, null];
   ai_send_followup: [AiSendFollowupArgs, null];
   ai_clear_thread: [AiClearThreadArgs, null];

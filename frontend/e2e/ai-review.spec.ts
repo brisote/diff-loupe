@@ -70,6 +70,27 @@ function createMockCloud(): Promise<MockCloudServer> {
       return;
     }
 
+    if (method === "GET" && url.pathname === "/v1/models") {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(
+        JSON.stringify({
+          models: [
+            { id: "claude-3-7-sonnet", name: "Claude 3.7 Sonnet" },
+            { id: "claude-3-5-sonnet", name: "Claude 3.5 Sonnet" },
+            { id: "claude-3-5-haiku", name: "Claude 3.5 Haiku" },
+          ],
+          efforts: [
+            { id: "low", name: "Low" },
+            { id: "medium", name: "Medium" },
+            { id: "high", name: "High" },
+          ],
+          default_model: "claude-3-5-sonnet",
+          default_effort: "medium",
+        }),
+      );
+      return;
+    }
+
     if (
       method === "POST" &&
       (url.pathname === "/v1/billing/checkout-session" || url.pathname === "/v1/billing/checkout")
@@ -213,6 +234,19 @@ test("full AI review workflow, selection quoting, live chat dual streaming, and 
     }).toPass();
 
     await expect(page.getByText("Balance $10.00")).toBeVisible();
+
+    const modelBtn = page.getByTitle("Model");
+    await expect(modelBtn).toBeVisible();
+    await modelBtn.click();
+    await page.getByRole("button", { name: "Claude 3.7 Sonnet" }).click();
+    await expect(page.getByTitle("Model")).toContainText("Claude 3.7 Sonnet");
+
+    const effortBtn = page.getByTitle("Reasoning effort");
+    await expect(effortBtn).toBeVisible();
+    await effortBtn.click();
+    await page.getByRole("button", { name: "High" }).click();
+    await expect(page.getByTitle("Reasoning effort")).toContainText("High");
+
     await expect(page.getByRole("button", { name: "Run review" }).first()).toBeEnabled();
 
     await page.getByRole("button", { name: "Run review" }).first().click();

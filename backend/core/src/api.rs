@@ -342,6 +342,40 @@ pub struct AiAddFundsResult {
     pub checkout_url: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct ModelOption {
+    pub id: String,
+    pub name: String,
+    #[serde(default)]
+    #[ts(optional)]
+    pub description: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct EffortOption {
+    pub id: String,
+    pub name: String,
+    #[serde(default)]
+    #[ts(optional)]
+    pub description: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct ModelsCatalog {
+    pub models: Vec<ModelOption>,
+    pub efforts: Vec<EffortOption>,
+    #[serde(alias = "default_model")]
+    pub default_model: String,
+    #[serde(alias = "default_effort")]
+    pub default_effort: String,
+}
+
 #[derive(Debug, Clone, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
@@ -353,6 +387,12 @@ pub struct AiStartReviewArgs {
     #[serde(default)]
     #[ts(optional)]
     pub target_branch: Option<String>,
+    #[serde(default)]
+    #[ts(optional)]
+    pub model: Option<String>,
+    #[serde(default)]
+    #[ts(optional)]
+    pub effort: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, TS)]

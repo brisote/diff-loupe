@@ -4,6 +4,7 @@ import { clampWidth, Splitter } from "../main-window/Splitter";
 import { TargetPicker } from "../main-window/TargetPicker";
 import { useApp } from "../state/context";
 import { AiChatPanel } from "./AiChatPanel";
+import { EffortPicker, ModelPicker } from "./ModelPicker";
 import { formatBalanceUsd, formatReviewCostUsd } from "./money";
 import { ReportViewer } from "./ReportViewer";
 
@@ -33,9 +34,18 @@ export function AiReviewIsland() {
   const aiAddFunds = useApp((state) => state.aiAddFunds);
   const startAiReview = useApp((state) => state.startAiReview);
   const cancelAiReview = useApp((state) => state.cancelAiReview);
+  const modelsCatalog = useApp((state) => state.modelsCatalog);
+  const selectedModel = useApp((state) => state.selectedModel);
+  const selectedEffort = useApp((state) => state.selectedEffort);
+  const setSelectedModel = useApp((state) => state.setSelectedModel);
+  const setSelectedEffort = useApp((state) => state.setSelectedEffort);
 
   const targetAnchor = useRef<HTMLButtonElement>(null);
+  const modelAnchor = useRef<HTMLButtonElement>(null);
+  const effortAnchor = useRef<HTMLButtonElement>(null);
   const [pickingTarget, setPickingTarget] = useState(false);
+  const [pickingModel, setPickingModel] = useState(false);
+  const [pickingEffort, setPickingEffort] = useState(false);
   const [chatHeight, setChatHeight] = useState(defaultAiChat);
   const [maxChatHeight, setMaxChatHeight] = useState(600);
 
@@ -77,6 +87,16 @@ export function AiReviewIsland() {
   const hasBalance = Boolean(account && Number.isFinite(parsedBalance) && parsedBalance > 0);
   const height = clampWidth(chatHeight, minAiChat, maxChatHeight);
 
+  const currentModelId = selectedModel ?? modelsCatalog?.defaultModel ?? "claude-3-5-sonnet";
+  const currentModelName =
+    modelsCatalog?.models.find((m) => m.id === currentModelId)?.name ??
+    (currentModelId === "claude-3-5-sonnet" ? "Claude 3.5 Sonnet" : currentModelId);
+
+  const currentEffortId = selectedEffort ?? modelsCatalog?.defaultEffort ?? "medium";
+  const currentEffortName =
+    modelsCatalog?.efforts.find((e) => e.id === currentEffortId)?.name ??
+    currentEffortId.charAt(0).toUpperCase() + currentEffortId.slice(1);
+
   return (
     <div style={{ flex: 1, minWidth: 0, minHeight: 0, display: "flex", flexDirection: "column" }}>
       <div style={{ flex: 1, display: "flex", minHeight: 0, overflow: "hidden" }}>
@@ -110,6 +130,56 @@ export function AiReviewIsland() {
             </button>
             {pickingTarget && (
               <TargetPicker anchor={targetAnchor} onClose={() => setPickingTarget(false)} />
+            )}
+
+            <button
+              ref={modelAnchor}
+              className={`dl-combo ${pickingModel ? "is-focused" : ""}`}
+              type="button"
+              title="Model"
+              onClick={() => {
+                setPickingModel(!pickingModel);
+                setPickingEffort(false);
+                setPickingTarget(false);
+              }}
+            >
+              <span className="dl-combo-label">model:</span>
+              <span className="dl-combo-text">{currentModelName}</span>
+              <Icon name="general-chevronDown" />
+            </button>
+            {pickingModel && (
+              <ModelPicker
+                anchor={modelAnchor}
+                catalog={modelsCatalog}
+                selected={selectedModel}
+                onSelect={(m) => setSelectedModel(m)}
+                onClose={() => setPickingModel(false)}
+              />
+            )}
+
+            <button
+              ref={effortAnchor}
+              className={`dl-combo ${pickingEffort ? "is-focused" : ""}`}
+              type="button"
+              title="Reasoning effort"
+              onClick={() => {
+                setPickingEffort(!pickingEffort);
+                setPickingModel(false);
+                setPickingTarget(false);
+              }}
+            >
+              <span className="dl-combo-label">effort:</span>
+              <span className="dl-combo-text">{currentEffortName}</span>
+              <Icon name="general-chevronDown" />
+            </button>
+            {pickingEffort && (
+              <EffortPicker
+                anchor={effortAnchor}
+                catalog={modelsCatalog}
+                selected={selectedEffort}
+                onSelect={(e) => setSelectedEffort(e)}
+                onClose={() => setPickingEffort(false)}
+              />
             )}
 
             <span className="dl-toolbar-spacer" />

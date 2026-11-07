@@ -22,6 +22,7 @@ import { type ReportEnv, toApiError } from "../api";
 import type { CloudAccount } from "../api/generated/CloudAccount";
 import type { DiffSettings } from "../api/generated/DiffSettings";
 import type { MergeSide } from "../api/generated/MergeSide";
+import type { ModelsCatalog } from "../api/generated/ModelsCatalog";
 import type { StoredAiChatMessage } from "../api/generated/StoredAiChatMessage";
 import { areaFor, inStaged, parseKey } from "../changes/rows";
 import {
@@ -374,7 +375,13 @@ export type AppState = {
   quotedSelection: { text: string; heading?: string } | null;
   inlineError: string | null;
   isChatOpen: boolean;
+  modelsCatalog: ModelsCatalog | null;
+  selectedModel: string | null;
+  selectedEffort: string | null;
   loadAiState: () => Promise<void>;
+  loadAiModels: () => Promise<void>;
+  setSelectedModel: (model: string) => void;
+  setSelectedEffort: (effort: string) => void;
   setAiConsent: (accepted: boolean) => Promise<void>;
   aiSignIn: () => Promise<void>;
   cancelAiSignIn: () => void;
@@ -606,6 +613,9 @@ export function createAppStore(backend: Backend) {
       quotedSelection: null,
       inlineError: null,
       isChatOpen: false,
+      modelsCatalog: null,
+      selectedModel: null,
+      selectedEffort: null,
 
       start: async () => {
         backend.onOutcome((outcome) => {
@@ -1695,11 +1705,38 @@ export function createAppStore(backend: Backend) {
             chatMessages: result.chatMessages ?? [],
             inlineError: null,
           });
+          if (result.consentAccepted && !get().modelsCatalog) {
+            void get().loadAiModels();
+          }
         } catch (err) {
           if (request !== aiStateRequest || get().repo?.path !== path) return;
           const apiError = toApiError(err);
           set({ inlineError: apiError.message });
         }
+      },
+
+      loadAiModels: async () => {
+        if (!get().consentAccepted) return;
+        try {
+          const catalog = await backend.call("ai_get_models");
+          const currentModel = get().selectedModel;
+          const currentEffort = get().selectedEffort;
+          set({
+            modelsCatalog: catalog,
+            selectedModel: currentModel ?? catalog.defaultModel,
+            selectedEffort: currentEffort ?? catalog.defaultEffort,
+          });
+        } catch {
+          // ignore when cloud service is not running
+        }
+      },
+
+      setSelectedModel: (model) => {
+        set({ selectedModel: model });
+      },
+
+      setSelectedEffort: (effort) => {
+        set({ selectedEffort: effort });
       },
 
       setAiConsent: async (accepted: boolean) => {
@@ -1709,6 +1746,7 @@ export function createAppStore(backend: Backend) {
           set({ consentAccepted: accepted });
           if (accepted) {
             void get().loadAiState();
+            void get().loadAiModels();
           }
         } catch (err) {
           const apiError = toApiError(err);
@@ -1790,6 +1828,8 @@ export function createAppStore(backend: Backend) {
             repo: repo.path,
             branch: repo.branch ?? undefined,
             targetBranch: repo.target,
+            model: get().selectedModel ?? undefined,
+            effort: get().selectedEffort ?? undefined,
           });
         } catch (err) {
           const apiError = toApiError(err);
