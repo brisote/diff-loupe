@@ -33,7 +33,10 @@ use tauri_plugin_dialog::DialogExt;
 
 struct WindowEvents(AppHandle);
 
-struct StartupError(String);
+struct StartupError {
+    message: String,
+    can_recover: bool,
+}
 
 struct DataDir(PathBuf);
 
@@ -528,7 +531,19 @@ fn main() {
             let data_dir = footprint::app_data_dir(&home);
             #[cfg(debug_assertions)]
             let data_dir = smoke::data_dir().unwrap_or(data_dir);
-            match Core::new(&data_dir, ShellEnv::detect(), events) {
+            let startup = match Core::new(&data_dir, ShellEnv::detect(), events.clone()) {
+                Ok(core) => Ok(core),
+                Err(diffloupe_core::error::Error::NewerStore(_))
+                    if diffloupe_core::store::is_same_version_newer(&data_dir) =>
+                {
+                    match diffloupe_core::store::Store::recover_newer(&data_dir) {
+                        Ok(_) => Core::new(&data_dir, ShellEnv::detect(), events),
+                        Err(err) => Err(err),
+                    }
+                }
+                Err(error) => Err(error),
+            };
+            match startup {
                 Ok(core) => {
                     app.manage(Arc::new(core));
                 }
@@ -536,7 +551,11 @@ fn main() {
                     if let Some(window) = app.get_webview_window("main") {
                         let _ = window.hide();
                     }
-                    app.manage(StartupError(error.to_string()));
+                    let can_recover = matches!(error, diffloupe_core::error::Error::NewerStore(_));
+                    app.manage(StartupError {
+                        message: error.to_string(),
+                        can_recover,
+                    });
                 }
             }
             app.manage(DataDir(data_dir));
@@ -550,7 +569,8 @@ fn main() {
             if let tauri::RunEvent::Ready = event
                 && let Some(error) = app.try_state::<StartupError>()
             {
-                cannot_start(app, &error.0);
+                let data_dir = app.try_state::<DataDir>().map(|d| d.0.clone());
+                cannot_start(app, &error, data_dir);
             }
             if let tauri::RunEvent::Exit = event
                 && let Some(core) = app.try_state::<Arc<Core>>()
@@ -561,17 +581,39 @@ fn main() {
         });
 }
 
-fn cannot_start(app: &AppHandle, message: &str) {
-    eprintln!("Diffloupe cannot start: {message}");
-    let _ = alert_then_exit(app, "Diffloupe cannot start", message, 1);
+fn cannot_start(app: &AppHandle, error: &StartupError, data_dir: Option<PathBuf>) {
+    eprintln!("Diffloupe cannot start: {}", error.message);
+    if error.can_recover {
+        let _ =
+            recoverable_alert_then_exit(app, "Diffloupe cannot start", &error.message, data_dir, 1);
+    } else {
+        let _ = alert_then_exit(app, "Diffloupe cannot start", &error.message, 1);
+    }
 }
 
 #[cfg(target_os = "macos")]
 fn alert_then_exit(app: &AppHandle, title: &str, message: &str, code: i32) -> Result<(), String> {
+    recoverable_alert_then_exit(app, title, message, None, code)
+}
+
+#[cfg(target_os = "macos")]
+fn recoverable_alert_then_exit(
+    app: &AppHandle,
+    title: &str,
+    message: &str,
+    data_dir: Option<PathBuf>,
+    code: i32,
+) -> Result<(), String> {
     let handle = app.clone();
-    let (title, message) = (title.to_string(), message.to_string());
+    let title = title.to_string();
+    let message = message.to_string();
     app.run_on_main_thread(move || {
-        show_alert(&title, &message);
+        if show_alert(&title, &message, data_dir.is_some())
+            && let Some(dir) = data_dir
+            && diffloupe_core::store::Store::recover_newer(&dir).is_ok()
+        {
+            handle.restart();
+        }
         handle.exit(code);
     })
     .map_err(|e| e.to_string())
@@ -582,6 +624,17 @@ fn alert_then_exit(app: &AppHandle, title: &str, message: &str, code: i32) -> Re
     show_alert(title, message);
     app.exit(code);
     Ok(())
+}
+
+#[cfg(windows)]
+fn recoverable_alert_then_exit(
+    app: &AppHandle,
+    title: &str,
+    message: &str,
+    _data_dir: Option<PathBuf>,
+    code: i32,
+) -> Result<(), String> {
+    alert_then_exit(app, title, message, code)
 }
 
 #[cfg(target_os = "linux")]
@@ -596,18 +649,33 @@ fn alert_then_exit(app: &AppHandle, title: &str, message: &str, code: i32) -> Re
     Ok(())
 }
 
+#[cfg(target_os = "linux")]
+fn recoverable_alert_then_exit(
+    app: &AppHandle,
+    title: &str,
+    message: &str,
+    _data_dir: Option<PathBuf>,
+    code: i32,
+) -> Result<(), String> {
+    alert_then_exit(app, title, message, code)
+}
+
 #[cfg(target_os = "macos")]
-fn show_alert(title: &str, message: &str) {
-    use objc2_app_kit::{NSAlert, NSAlertStyle};
+fn show_alert(title: &str, message: &str, can_recover: bool) -> bool {
+    use objc2_app_kit::{NSAlert, NSAlertSecondButtonReturn, NSAlertStyle};
     use objc2_foundation::{MainThreadMarker, NSString};
     let Some(main_thread) = MainThreadMarker::new() else {
-        return;
+        return false;
     };
     let alert = NSAlert::new(main_thread);
     alert.setAlertStyle(NSAlertStyle::Critical);
     alert.setMessageText(&NSString::from_str(title));
     alert.setInformativeText(&NSString::from_str(message));
-    alert.runModal();
+    if can_recover {
+        alert.addButtonWithTitle(&NSString::from_str("Quit"));
+        alert.addButtonWithTitle(&NSString::from_str("Recover Data & Reopen"));
+    }
+    alert.runModal() == NSAlertSecondButtonReturn
 }
 
 #[cfg(windows)]
