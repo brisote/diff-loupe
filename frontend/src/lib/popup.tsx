@@ -18,12 +18,37 @@ type PopupProps = {
   children: ReactNode;
 };
 
-export function useBelow(anchor: RefObject<HTMLElement | null>): CSSProperties {
-  const [style, setStyle] = useState<CSSProperties>({});
+export function useBelow(anchor: RefObject<HTMLElement | null>, width?: number): CSSProperties {
+  const [style, setStyle] = useState<CSSProperties>({ position: "fixed", zIndex: 20 });
+
   useLayoutEffect(() => {
-    const rect = anchor.current?.getBoundingClientRect();
-    if (rect) setStyle({ top: rect.bottom + 4, left: rect.left });
-  }, [anchor]);
+    const update = () => {
+      const rect = anchor.current?.getBoundingClientRect();
+      if (!rect) {
+        setStyle({ position: "fixed", zIndex: 20 });
+        return;
+      }
+      let left = rect.left;
+      if (width && typeof window !== "undefined" && left + width > window.innerWidth - 8) {
+        left = Math.max(8, window.innerWidth - width - 8);
+      }
+      setStyle({
+        position: "fixed",
+        top: rect.bottom + 4,
+        left,
+        zIndex: 20,
+      });
+    };
+
+    update();
+    window.addEventListener("scroll", update, true);
+    window.addEventListener("resize", update);
+    return () => {
+      window.removeEventListener("scroll", update, true);
+      window.removeEventListener("resize", update);
+    };
+  }, [anchor, width]);
+
   return style;
 }
 

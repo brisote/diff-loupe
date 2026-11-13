@@ -6,7 +6,11 @@
   "packageManager": "pnpm@11.21.0",
   "scripts": {
     "dev": "tauri dev",
+    "dev:ai": "DIFFLOUPE_AI_REVIEW=1 tauri dev",
     "dev:bridge": "python3 backend/scripts/dev_bridge.py",
+    "dev:bridge:ai": "DIFFLOUPE_AI_REVIEW=1 python3 backend/scripts/dev_bridge.py",
+    "dev:stack": "python3 backend/scripts/dev_stack.py",
+    "reload:cloud": "python3 backend/scripts/dev_stack.py reload-cloud",
     "vite": "pnpm --dir frontend vite",
     "build": "pnpm --dir frontend build",
     "tauri": "tauri",

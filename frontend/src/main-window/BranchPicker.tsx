@@ -31,7 +31,7 @@ export function BranchPicker({ anchor, onClose }: Props) {
   const showDialog = useApp((state) => state.showDialog);
   const mergeTarget = useApp((state) => state.mergeTarget);
   const merging = useApp((state) => Boolean(state.merge?.operation));
-  const style = useBelow(anchor);
+  const style = useBelow(anchor, 360);
 
   useEffect(() => {
     void loadBranches();

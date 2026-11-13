@@ -7,7 +7,7 @@ use std::time::UNIX_EPOCH;
 use ts_rs::TS;
 
 const BINARY_PROBE: usize = 8000;
-const SIZE_LIMIT: usize = 20 * 1024 * 1024;
+pub const SIZE_LIMIT: usize = 20 * 1024 * 1024;
 const IMAGE_EXTENSIONS: [&str; 10] = [
     "png", "jpg", "jpeg", "gif", "webp", "ico", "bmp", "tif", "tiff", "heic",
 ];

@@ -27,6 +27,9 @@ rustix = { version = "1.1", features = ["process"] }
 portable-pty = "0.9"
 sha2 = "0.10"
 winreg = "0.56"
+flate2 = "1"
+tar = "0.4"
+ureq = { version = "2", default-features = false, features = ["tls", "json"] }
 
 [workspace.lints.clippy]
 unwrap_used = "warn"

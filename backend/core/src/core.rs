@@ -1,9 +1,12 @@
+use crate::aireview;
 use crate::api::{
-    AcceptArgs, AppInfo, ApplyMergeArgs, BranchArgs, CommitArgs, CommitIdArgs, DiffArgs, ImageArgs,
-    PathArgs, PrepareArgs, RecentRepo, RepoInfo, RepoViewArgs, ReportEnv, RollbackArgs,
-    SaveFileArgs, SettingsArgs, StatusArgs, TargetArgs, TaskArgs, TerminalAckArgs,
-    TerminalOpenArgs, TerminalResizeArgs, TerminalWriteArgs, ToolTab, UiKeyArgs, UiValueArgs,
-    VersionArgs,
+    AcceptArgs, AiAddFundsArgs, AiAddFundsResult, AiClearThreadArgs, AiDeleteReviewArgs,
+    AiGetStateArgs, AiRevertVersionArgs, AiSendFollowupArgs, AiSetConsentArgs, AiSignInArgs,
+    AiSignInResult, AiStartReviewArgs, AiState, AppInfo, ApplyMergeArgs, BranchArgs, CloudAccount,
+    CommitArgs, CommitIdArgs, DiffArgs, ImageArgs, ModelsCatalog, PathArgs, PrepareArgs,
+    RecentRepo, RepoInfo, RepoViewArgs, ReportEnv, RollbackArgs, SaveFileArgs, SettingsArgs,
+    StatusArgs, TargetArgs, TaskArgs, TerminalAckArgs, TerminalOpenArgs, TerminalResizeArgs,
+    TerminalWriteArgs, ToolTab, UiKeyArgs, UiValueArgs, VersionArgs,
 };
 use crate::diffcache::{DiffCache, Prepare};
 use crate::error::{ApiError, Error, Result};
@@ -17,7 +20,7 @@ use crate::platform::{self, Platform};
 use crate::repo::Repo;
 use crate::shellenv::ShellEnv;
 use crate::status::{self, FileChange, Untracked};
-use crate::store::{RepoState, Store};
+use crate::store::{NewAiChatMessage, RepoState, Store, StoredAiReview};
 use crate::terminal::Terminals;
 use crate::update;
 use crate::watcher::RepoWatcher;
@@ -48,12 +51,13 @@ pub struct Core {
     events: Arc<dyn EventSink>,
     diffs: Arc<DiffCache>,
     history: HistoryCache,
-    cancels: Cancels,
+    cancels: Arc<Cancels>,
     runs: AtomicU64,
     actions: Mutex<()>,
     terminals: Terminals,
     bases: Mutex<Option<(BaseKey, Option<gix::ObjectId>)>>,
     update_url: Mutex<String>,
+    cloud_url: Mutex<String>,
     update_max_time: AtomicU64,
     data_dir: PathBuf,
     release: Mutex<Option<update::Release>>,
@@ -62,6 +66,7 @@ pub struct Core {
     package: Option<update::PackageKind>,
     platform: Platform,
     watch_polling: AtomicBool,
+    ai_review_enabled: AtomicBool,
 }
 
 struct OpenRepo {
@@ -107,12 +112,13 @@ impl Core {
             events,
             diffs: Arc::new(DiffCache::default()),
             history: HistoryCache::default(),
-            cancels: Cancels::default(),
+            cancels: Arc::new(Cancels::default()),
             runs: AtomicU64::new(0),
             actions: Mutex::new(()),
             terminals: Terminals::default(),
             bases: Mutex::new(None),
             update_url: Mutex::new(update::source()),
+            cloud_url: Mutex::new(update::cloud_source()),
             update_max_time: AtomicU64::new(update::MAX_TIME),
             data_dir: data_dir.to_path_buf(),
             release: Mutex::new(None),
@@ -121,11 +127,13 @@ impl Core {
             package,
             platform,
             watch_polling: AtomicBool::new(false),
+            ai_review_enabled: AtomicBool::new(aireview::ai_review_enabled()),
         })
     }
 
     pub fn shutdown(&self) {
         self.terminals.close_all();
+        self.cancels.cancel(aireview::AI_SIGN_IN_TASK);
         if self.cancels.cancel(UPDATE_TASK) {
             std::thread::sleep(std::time::Duration::from_millis(300));
         }
@@ -137,8 +145,30 @@ impl Core {
         }
     }
 
+    pub fn set_cloud_url(&self, url: &str) {
+        update::set_test_cloud_url(Some(url.to_string()));
+        if let Ok(mut current) = self.cloud_url.lock() {
+            *current = url.to_string();
+        }
+    }
+
+    pub fn cloud_url(&self) -> String {
+        self.cloud_url
+            .lock()
+            .map(|url| url.clone())
+            .unwrap_or_else(|_| update::cloud_source())
+    }
+
     pub fn set_watch_polling(&self, polling: bool) {
         self.watch_polling.store(polling, Ordering::SeqCst);
+    }
+
+    pub fn ai_review_enabled(&self) -> bool {
+        self.ai_review_enabled.load(Ordering::SeqCst)
+    }
+
+    pub fn set_ai_review_enabled(&self, enabled: bool) {
+        self.ai_review_enabled.store(enabled, Ordering::SeqCst);
     }
 
     pub fn set_update_max_time(&self, seconds: u64) {
@@ -202,6 +232,9 @@ impl Core {
     }
 
     fn run(&self, cmd: &str, args: Value) -> Result<Value> {
+        if cmd.starts_with("ai_") && !self.ai_review_enabled() {
+            return Err(Error::AiService("AI review is disabled.".into()));
+        }
         match cmd {
             "app_info" => reply(self.app_info()?),
             "report_env" => reply(self.report_env()),
@@ -455,6 +488,53 @@ impl Core {
                 self.store()?.set_ui_value(&a.key, &a.value)?;
                 reply(Value::Null)
             }
+            "ai_get_state" => {
+                let a: AiGetStateArgs = parse(args)?;
+                reply(self.ai_get_state(a)?)
+            }
+            "ai_set_consent" => {
+                let a: AiSetConsentArgs = parse(args)?;
+                self.ai_set_consent(a)?;
+                reply(Value::Null)
+            }
+            "ai_sign_in" => {
+                let a: AiSignInArgs = parse(args)?;
+                reply(self.ai_sign_in(a)?)
+            }
+            "ai_sign_out" => {
+                self.ai_sign_out()?;
+                reply(Value::Null)
+            }
+            "ai_refresh_account" => reply(self.ai_refresh_account()?),
+            "ai_add_funds" => {
+                let a: AiAddFundsArgs = parse(args)?;
+                reply(self.ai_add_funds(a)?)
+            }
+            "ai_get_models" => reply(self.ai_get_models()?),
+            "ai_start_review" => {
+                let a: AiStartReviewArgs = parse(args)?;
+                self.ai_start_review(a)?;
+                reply(Value::Null)
+            }
+            "ai_send_followup" => {
+                let a: AiSendFollowupArgs = parse(args)?;
+                self.ai_send_followup(a)?;
+                reply(Value::Null)
+            }
+            "ai_clear_thread" => {
+                let a: AiClearThreadArgs = parse(args)?;
+                self.ai_clear_thread(a)?;
+                reply(Value::Null)
+            }
+            "ai_delete_review" => {
+                let a: AiDeleteReviewArgs = parse(args)?;
+                self.ai_delete_review(a)?;
+                reply(Value::Null)
+            }
+            "ai_revert_version" => {
+                let a: AiRevertVersionArgs = parse(args)?;
+                reply(self.ai_revert_version(a)?)
+            }
             other => Err(Error::UnknownCommand(other.to_string())),
         }
     }
@@ -502,6 +582,7 @@ impl Core {
             })
             .ok(),
             platform: self.platform,
+            ai_review_enabled: self.ai_review_enabled(),
         })
     }
 
@@ -997,6 +1078,511 @@ impl Core {
             .as_ref()
             .map(|open| open.repo.root().to_path_buf())
             .ok_or(Error::NoRepository)
+    }
+
+    fn ai_get_state(&self, a: AiGetStateArgs) -> Result<AiState> {
+        let root = if a.repo.is_empty() {
+            None
+        } else {
+            self.open_root(&a.repo).ok().map(|(_, r, _)| r)
+        };
+        let (branch, target_branch) = match (a.branch, a.target_branch) {
+            (Some(b), Some(t)) => (Some(b), Some(t)),
+            (b, t) => {
+                let slot = self.repo_slot()?;
+                let open = slot.as_ref().filter(|o| match &root {
+                    Some(r) => platform::same_path(o.repo.root(), r),
+                    None => true,
+                });
+                let br = b.or_else(|| open.and_then(|o| o.repo.branch()));
+                drop(slot);
+                let tr = t.or_else(|| {
+                    root.as_deref()
+                        .and_then(|r| self.target_branch(r).ok().flatten())
+                });
+                (br, tr)
+            }
+        };
+        let store = self.store()?;
+        let consent_accepted = store.ai_consent()?;
+        let account = aireview::read_auth(&self.data_dir).map(|auth| auth.account);
+        let (reviews, active_review_id, review, chat_messages) = match &root {
+            Some(r) => {
+                let repo_str = r.display().to_string();
+                let revs = store.get_ai_reviews(&repo_str)?;
+                let active = match a.review_id {
+                    Some(rid) => store.get_ai_review(rid)?,
+                    None => store.get_latest_ai_review(
+                        &repo_str,
+                        branch.as_deref(),
+                        target_branch.as_deref(),
+                    )?,
+                };
+                let active_id = active.as_ref().map(|rev| rev.id);
+                let msgs = store.get_ai_chat_messages(
+                    active_id,
+                    &repo_str,
+                    branch.as_deref().unwrap_or(""),
+                    target_branch.as_deref().unwrap_or(""),
+                )?;
+                (revs, active_id, active, msgs)
+            }
+            None => (Vec::new(), None, None, Vec::new()),
+        };
+        Ok(AiState {
+            consent_accepted,
+            account,
+            reviews,
+            active_review_id,
+            review,
+            chat_messages,
+        })
+    }
+
+    fn ai_delete_review(&self, a: AiDeleteReviewArgs) -> Result<()> {
+        self.store()?.delete_ai_review(a.review_id)
+    }
+
+    fn ai_revert_version(&self, a: AiRevertVersionArgs) -> Result<Option<StoredAiReview>> {
+        self.store()?
+            .revert_ai_review_version(a.review_id, a.version_number)
+    }
+
+    fn ai_set_consent(&self, a: AiSetConsentArgs) -> Result<()> {
+        self.store()?.set_ai_consent(a.accepted)
+    }
+
+    fn ai_sign_in(&self, _a: AiSignInArgs) -> Result<AiSignInResult> {
+        let cloud_url = self.cloud_url();
+        let resp = ureq::post(&format!("{cloud_url}/v1/auth/device"))
+            .set("Content-Type", "application/json")
+            .send_json(serde_json::json!({}))
+            .map_err(aireview::map_ureq_error)?;
+        let data: serde_json::Value = resp
+            .into_json()
+            .map_err(|e| Error::AiService(e.to_string()))?;
+        let device_code = data["device_code"]
+            .as_str()
+            .ok_or_else(|| Error::AiService("Missing device_code".into()))?
+            .to_string();
+        let user_code = data["user_code"]
+            .as_str()
+            .ok_or_else(|| Error::AiService("Missing user_code".into()))?
+            .to_string();
+        let verification_url = data["verification_url"]
+            .as_str()
+            .ok_or_else(|| Error::AiService("Missing verification_url".into()))?
+            .to_string();
+        let poll_interval_ms = data["poll_interval_ms"].as_u64().unwrap_or(1000);
+
+        self.cancels.cancel(aireview::AI_SIGN_IN_TASK);
+        let cancels = self.cancels.clone();
+        let events = self.events.clone();
+        let data_dir = self.data_dir.clone();
+        let task_cloud_url = cloud_url.clone();
+
+        std::thread::spawn(move || {
+            let watch = cancels.watch(aireview::AI_SIGN_IN_TASK);
+            let _task = Task::cancellable(
+                events.as_ref(),
+                aireview::AI_SIGN_IN_TASK,
+                "Signing in...".to_string(),
+            );
+            let interval = std::time::Duration::from_millis(poll_interval_ms.max(50));
+            loop {
+                for _ in 0..(interval.as_millis() / 100).max(1) {
+                    if watch.cancelled() {
+                        return;
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(100));
+                }
+                if watch.cancelled() {
+                    return;
+                }
+                let token_resp = ureq::post(&format!("{task_cloud_url}/v1/auth/token"))
+                    .set("Content-Type", "application/json")
+                    .send_json(serde_json::json!({ "device_code": &device_code }));
+                if let Some(json) = token_resp
+                    .ok()
+                    .and_then(|r| r.into_json::<serde_json::Value>().ok())
+                {
+                    let status = json["status"].as_str().unwrap_or_default();
+                    if status == "authorized" {
+                        let maybe_account = json.get("account").and_then(|a| {
+                            serde_json::from_value::<CloudAccount>(a.clone())
+                                .ok()
+                                .or_else(|| {
+                                    Some(CloudAccount {
+                                        id: a.get("id")?.as_str()?.to_string(),
+                                        email: a.get("email")?.as_str()?.to_string(),
+                                        balance_usd: a
+                                            .get("balance_usd")
+                                            .or_else(|| a.get("balanceUsd"))?
+                                            .as_str()?
+                                            .to_string(),
+                                    })
+                                })
+                        });
+                        if let (Some(token), Some(account)) =
+                            (json["access_token"].as_str(), maybe_account)
+                        {
+                            let auth = aireview::StoredCloudAuth {
+                                access_token: token.to_string(),
+                                account,
+                            };
+                            let _ = aireview::write_auth(&data_dir, &auth);
+                        }
+                        break;
+                    } else if status == "expired" {
+                        break;
+                    }
+                }
+            }
+        });
+
+        Ok(AiSignInResult {
+            user_code,
+            verification_url,
+        })
+    }
+
+    fn ai_sign_out(&self) -> Result<()> {
+        if let Some(auth) = aireview::read_auth(&self.data_dir) {
+            let cloud_url = self.cloud_url();
+            let _ = ureq::post(&format!("{cloud_url}/v1/auth/logout"))
+                .set("Authorization", &format!("Bearer {}", auth.access_token))
+                .send_bytes(&[]);
+            aireview::clear_auth(&self.data_dir);
+        }
+        Ok(())
+    }
+
+    fn ai_refresh_account(&self) -> Result<CloudAccount> {
+        let auth = aireview::read_auth(&self.data_dir).ok_or(Error::AuthRequired)?;
+        let cloud_url = self.cloud_url();
+        let resp = ureq::get(&format!("{cloud_url}/v1/account"))
+            .set("Authorization", &format!("Bearer {}", auth.access_token))
+            .call()
+            .map_err(|e| {
+                if let ureq::Error::Status(401, _) = e {
+                    aireview::clear_auth(&self.data_dir);
+                }
+                aireview::map_ureq_error(e)
+            })?;
+        let acc: CloudAccount = resp
+            .into_json::<serde_json::Value>()
+            .map_err(|e| Error::AiService(e.to_string()))
+            .and_then(|data| {
+                serde_json::from_value::<CloudAccount>(data.clone()).or_else(|_| {
+                    Ok(CloudAccount {
+                        id: data["id"].as_str().unwrap_or_default().to_string(),
+                        email: data["email"].as_str().unwrap_or_default().to_string(),
+                        balance_usd: data["balance_usd"]
+                            .as_str()
+                            .or_else(|| data["balanceUsd"].as_str())
+                            .unwrap_or_default()
+                            .to_string(),
+                    })
+                })
+            })?;
+        let updated_auth = aireview::StoredCloudAuth {
+            access_token: auth.access_token,
+            account: acc.clone(),
+        };
+        aireview::write_auth(&self.data_dir, &updated_auth)?;
+        Ok(acc)
+    }
+
+    fn ai_add_funds(&self, a: AiAddFundsArgs) -> Result<AiAddFundsResult> {
+        if a.amount_usd != 10 && a.amount_usd != 25 && a.amount_usd != 50 {
+            return Err(Error::InvalidArgs("Amount must be 10, 25, or 50".into()));
+        }
+        let auth = aireview::read_auth(&self.data_dir).ok_or(Error::AuthRequired)?;
+        let cloud_url = self.cloud_url();
+        let resp = ureq::post(&format!("{cloud_url}/v1/billing/checkout-session"))
+            .set("Authorization", &format!("Bearer {}", auth.access_token))
+            .send_json(serde_json::json!({ "amount_usd": a.amount_usd }))
+            .map_err(aireview::map_ureq_error)?;
+        let data: serde_json::Value = resp
+            .into_json()
+            .map_err(|e| Error::AiService(e.to_string()))?;
+        let checkout_url = data["checkout_url"]
+            .as_str()
+            .ok_or_else(|| Error::AiService("Missing checkout_url".into()))?
+            .to_string();
+        Ok(AiAddFundsResult { checkout_url })
+    }
+
+    fn ai_get_models(&self) -> Result<ModelsCatalog> {
+        let store = self.store()?;
+        if !store.ai_consent()? {
+            return Err(Error::ConsentRequired);
+        }
+        drop(store);
+        let cloud_url = self.cloud_url();
+        let resp = ureq::get(&format!("{cloud_url}/v1/models"))
+            .call()
+            .map_err(aireview::map_ureq_error)?;
+        let catalog: ModelsCatalog = resp
+            .into_json()
+            .map_err(|e| Error::AiService(e.to_string()))?;
+        Ok(catalog)
+    }
+
+    fn ai_start_review(&self, a: AiStartReviewArgs) -> Result<()> {
+        let store = self.store()?;
+        if !store.ai_consent()? {
+            return Err(Error::ConsentRequired);
+        }
+        let auth = aireview::read_auth(&self.data_dir).ok_or(Error::AuthRequired)?;
+        drop(store);
+
+        let (repo, root, _) = self.open_root(&a.repo)?;
+        let repo_local = repo.to_thread_local();
+        let branch = match a.branch {
+            Some(b) => b,
+            None => repo_local
+                .head_name()
+                .ok()
+                .flatten()
+                .map(|n| n.shorten().to_string())
+                .ok_or_else(|| {
+                    Error::GitRefused("Cannot review detached HEAD without a branch name".into())
+                })?,
+        };
+        let target_branch = match a.target_branch {
+            Some(t) => t,
+            None => self
+                .target_branch(&root)?
+                .ok_or_else(|| Error::TargetNotFound("No target branch selected".into()))?,
+        };
+
+        let base_oid = self.diff_base(&repo_local, &root)?.map(|o| o.to_string());
+        let head_oid = repo_local.head_id().ok().map(|o| o.to_string());
+
+        let run_id = self.run_id("ai_review", &root);
+        let watch = self.cancels.watch(&run_id);
+        let mut task = Task::cancellable(
+            self.events.as_ref(),
+            &run_id,
+            "Uploading repository…".to_string(),
+        );
+
+        let archive = aireview::create_archive(&self.env, &root, &self.data_dir)?;
+        let unified_diff = aireview::collect_unified_diff(&self.env, &root, base_oid.as_deref());
+        let changes = match &base_oid {
+            Some(b) => status::against(&self.env, &root, b, status::Untracked::All)?,
+            None => status::read(&self.env, &root, status::Untracked::All)?,
+        };
+        let changed_files = serde_json::to_string(&aireview::collect_changed_files(&changes))?;
+        let commits = serde_json::to_string(&aireview::collect_commits(
+            &self.env,
+            &root,
+            base_oid.as_deref(),
+            head_oid.as_deref(),
+        ))?;
+
+        watch.check()?;
+
+        let boundary = format!(
+            "----Boundary{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_nanos()
+        );
+        let mut body = Vec::new();
+        body.extend_from_slice(format!("--{boundary}\r\nContent-Disposition: form-data; name=\"branch\"\r\n\r\n{branch}\r\n").as_bytes());
+        body.extend_from_slice(format!("--{boundary}\r\nContent-Disposition: form-data; name=\"target_branch\"\r\n\r\n{target_branch}\r\n").as_bytes());
+        body.extend_from_slice(format!("--{boundary}\r\nContent-Disposition: form-data; name=\"consent_confirmed\"\r\n\r\ntrue\r\n").as_bytes());
+        if let Some(ref b) = base_oid {
+            body.extend_from_slice(format!("--{boundary}\r\nContent-Disposition: form-data; name=\"base_oid\"\r\n\r\n{b}\r\n").as_bytes());
+        }
+        if let Some(ref h) = head_oid {
+            body.extend_from_slice(format!("--{boundary}\r\nContent-Disposition: form-data; name=\"head_oid\"\r\n\r\n{h}\r\n").as_bytes());
+        }
+        if let Some(ref m) = a.model {
+            body.extend_from_slice(
+                format!(
+                    "--{boundary}\r\nContent-Disposition: form-data; name=\"model\"\r\n\r\n{m}\r\n"
+                )
+                .as_bytes(),
+            );
+        }
+        if let Some(ref e) = a.effort {
+            body.extend_from_slice(
+                format!(
+                    "--{boundary}\r\nContent-Disposition: form-data; name=\"effort\"\r\n\r\n{e}\r\n"
+                )
+                .as_bytes(),
+            );
+        }
+        body.extend_from_slice(format!("--{boundary}\r\nContent-Disposition: form-data; name=\"unified_diff\"\r\n\r\n{unified_diff}\r\n").as_bytes());
+        body.extend_from_slice(format!("--{boundary}\r\nContent-Disposition: form-data; name=\"changed_files\"\r\n\r\n{changed_files}\r\n").as_bytes());
+        body.extend_from_slice(format!("--{boundary}\r\nContent-Disposition: form-data; name=\"commit_log\"\r\n\r\n{commits}\r\n").as_bytes());
+        body.extend_from_slice(format!("--{boundary}\r\nContent-Disposition: form-data; name=\"archive\"; filename=\"repo.tar.gz\"\r\nContent-Type: application/gzip\r\n\r\n").as_bytes());
+        let archive_bytes = std::fs::read(archive.path())?;
+        body.extend_from_slice(&archive_bytes);
+        body.extend_from_slice(format!("\r\n--{boundary}--\r\n").as_bytes());
+
+        let cloud_url = self.cloud_url();
+        let resp = ureq::post(&format!("{cloud_url}/v1/reviews/stream"))
+            .set("Authorization", &format!("Bearer {}", auth.access_token))
+            .set(
+                "Content-Type",
+                &format!("multipart/form-data; boundary={boundary}"),
+            )
+            .send_bytes(&body)
+            .map_err(aireview::map_ureq_error)?;
+
+        let store_guard = self.store()?;
+        let repo_str = root.display().to_string();
+        let ctx = aireview::StreamContext {
+            repo: &repo_str,
+            branch: &branch,
+            target_branch: &target_branch,
+            run_id: &run_id,
+            head_oid: head_oid.as_deref(),
+            base_oid: base_oid.as_deref(),
+            model: a.model.as_deref(),
+            effort: a.effort.as_deref(),
+            review_id: None,
+            data_dir: &self.data_dir,
+        };
+        aireview::stream_sse(
+            resp,
+            &ctx,
+            &watch,
+            self.events.as_ref(),
+            &mut task,
+            &store_guard,
+        )?;
+
+        Ok(())
+    }
+
+    fn ai_send_followup(&self, a: AiSendFollowupArgs) -> Result<()> {
+        {
+            let store = self.store()?;
+            if !store.ai_consent()? {
+                return Err(Error::ConsentRequired);
+            }
+        }
+        let auth = aireview::read_auth(&self.data_dir).ok_or(Error::AuthRequired)?;
+
+        let (repo, root, _) = self.open_root(&a.repo)?;
+        let repo_local = repo.to_thread_local();
+        let branch = match a.branch {
+            Some(b) => b,
+            None => repo_local
+                .head_name()
+                .ok()
+                .flatten()
+                .map(|n| n.shorten().to_string())
+                .ok_or_else(|| Error::GitRefused("Cannot send follow-up without branch".into()))?,
+        };
+        let target_branch = match a.target_branch {
+            Some(t) => t,
+            None => self
+                .target_branch(&root)?
+                .ok_or_else(|| Error::TargetNotFound("No target branch selected".into()))?,
+        };
+
+        let repo_str = root.display().to_string();
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs() as i64)
+            .unwrap_or(0);
+
+        let (active_review, current_report, chat_history) = {
+            let store = self.store()?;
+            let active_review = match a.review_id {
+                Some(rid) => store.get_ai_review(rid)?,
+                None => {
+                    store.get_latest_ai_review(&repo_str, Some(&branch), Some(&target_branch))?
+                }
+            };
+            let review_id = active_review.as_ref().map(|r| r.id);
+
+            store.append_ai_chat_message(&NewAiChatMessage {
+                review_id,
+                repo: &repo_str,
+                branch: &branch,
+                target_branch: &target_branch,
+                role: "user",
+                content: &a.prompt,
+                quoted_text: a.quoted_text.as_deref(),
+                cost_usd: None,
+                created_at: now,
+            })?;
+
+            let current_report = active_review
+                .as_ref()
+                .map(|r| r.report_markdown.clone())
+                .unwrap_or_default();
+            let msgs = store.get_ai_chat_messages(review_id, &repo_str, &branch, &target_branch)?;
+            let chat_history: Vec<serde_json::Value> = msgs
+                .iter()
+                .map(|m| serde_json::json!({ "role": m.role, "content": m.content }))
+                .collect();
+            (active_review, current_report, chat_history)
+        };
+        let review_id = active_review.as_ref().map(|r| r.id);
+
+        let run_id = self.run_id("ai_followup", &root);
+        let watch = self.cancels.watch(&run_id);
+        let mut task = Task::cancellable(
+            self.events.as_ref(),
+            &run_id,
+            "Analyzing follow-up question…".to_string(),
+        );
+
+        let cloud_url = self.cloud_url();
+        let resp = ureq::post(&format!("{cloud_url}/v1/reviews/followup"))
+            .set("Authorization", &format!("Bearer {}", auth.access_token))
+            .send_json(serde_json::json!({
+                "prompt": a.prompt,
+                "current_report_markdown": current_report,
+                "chat_history": chat_history,
+                "quoted_text": a.quoted_text,
+                "section_heading": a.section_heading,
+                "consent_confirmed": true,
+            }))
+            .map_err(aireview::map_ureq_error)?;
+
+        let store_guard = self.store()?;
+        let ctx = aireview::StreamContext {
+            repo: &repo_str,
+            branch: &branch,
+            target_branch: &target_branch,
+            run_id: &run_id,
+            head_oid: None,
+            base_oid: None,
+            model: active_review.as_ref().and_then(|r| r.model.as_deref()),
+            effort: active_review.as_ref().and_then(|r| r.effort.as_deref()),
+            review_id,
+            data_dir: &self.data_dir,
+        };
+        aireview::stream_sse(
+            resp,
+            &ctx,
+            &watch,
+            self.events.as_ref(),
+            &mut task,
+            &store_guard,
+        )?;
+
+        Ok(())
+    }
+
+    fn ai_clear_thread(&self, a: AiClearThreadArgs) -> Result<()> {
+        let (_, root, _) = self.open_root(&a.repo)?;
+        self.store()?.clear_ai_chat_thread(
+            a.review_id,
+            &root.display().to_string(),
+            &a.branch,
+            &a.target_branch,
+        )
     }
 }
 

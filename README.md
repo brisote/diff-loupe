@@ -1,6 +1,6 @@
 # Diffloupe
 
-Diffloupe is an app for reviewing Markdown and git changes on macOS, Windows and Linux. Pick the branch you work on and a target branch, and it shows every change between them: rendered Markdown diffs with changed words and tables marked, side-by-side and unified code diffs, the branch's commit history, a 3-pane merge window, commit and push, and a terminal. Your code stays on your computer.
+Diffloupe is an app for reviewing Markdown and git changes on macOS, Windows and Linux. Pick the branch you work on and a target branch, and it shows every change between them: rendered Markdown diffs with changed words and tables marked, side-by-side and unified code diffs, the branch's commit history, a 3-pane merge window, commit and push, and a terminal. Manual review keeps all code on the computer, while optional AI review uploads repository context over HTTPS only after explicit consent with zero server retention.
 
 ![Diffloupe showing an API document rendered side by side, with its changes marked](website/src/assets/screens/markdown-light.png)
 

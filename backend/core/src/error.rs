@@ -19,6 +19,10 @@ pub enum ErrorCode {
     Store,
     StoreVersion,
     Update,
+    ConsentRequired,
+    AuthRequired,
+    InsufficientBalance,
+    AiService,
     Io,
 }
 
@@ -54,6 +58,14 @@ pub enum Error {
     Upgrade(String),
     #[error("{0}")]
     Update(String),
+    #[error("Consent is required before uploading code for AI review.")]
+    ConsentRequired,
+    #[error("Sign in to run AI review.")]
+    AuthRequired,
+    #[error("Add funds to run AI review.")]
+    InsufficientBalance,
+    #[error("{0}")]
+    AiService(String),
     #[error(transparent)]
     Io(#[from] std::io::Error),
 }
@@ -75,6 +87,10 @@ impl Error {
             Error::Store(_) => ErrorCode::Store,
             Error::NewerStore(_) | Error::Upgrade(_) => ErrorCode::StoreVersion,
             Error::Update(_) => ErrorCode::Update,
+            Error::ConsentRequired => ErrorCode::ConsentRequired,
+            Error::AuthRequired => ErrorCode::AuthRequired,
+            Error::InsufficientBalance => ErrorCode::InsufficientBalance,
+            Error::AiService(_) => ErrorCode::AiService,
             Error::Io(_) => ErrorCode::Io,
         }
     }

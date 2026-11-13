@@ -65,6 +65,8 @@ type StartOptions = {
   pick?: string;
   dataDir?: string;
   updateUrl?: string;
+  cloudUrl?: string;
+  aiReview?: boolean;
   platform?: PlatformName;
   shell?: string;
 };
@@ -148,6 +150,8 @@ export async function startBridge(options: StartOptions, scratch: string): Promi
       SHELL: shell,
       ENV: "",
       DIFFLOUPE_UPDATE_URL: options.updateUrl ?? noUpdates,
+      ...(options.cloudUrl ? { DIFFLOUPE_CLOUD_URL: options.cloudUrl } : {}),
+      ...(options.aiReview || options.cloudUrl ? { DIFFLOUPE_AI_REVIEW: "1" } : {}),
     },
   });
   const lines = createInterface({ input: child.stdout as NodeJS.ReadableStream });
@@ -192,7 +196,10 @@ export const test = base.extend<Fixtures>({
         bridge,
         restart: async (next = {}) => {
           app.bridge.stop();
-          app.bridge = await startBridge({ dataDir: app.bridge.dataDir, ...next }, workspace.dir);
+          app.bridge = await startBridge(
+            { dataDir: app.bridge.dataDir, cloudUrl: options.cloudUrl, ...next },
+            workspace.dir,
+          );
           bridges.push(app.bridge);
           await visit(page, app.bridge);
           return app.bridge;

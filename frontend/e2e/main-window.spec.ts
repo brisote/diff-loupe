@@ -50,7 +50,7 @@ test("each repository remembers its tab", async ({ page, workspace, startApp }) 
     "aria-selected",
     "true",
   );
-  await expect(page.getByRole("button", { name: "Commit history" })).toHaveAttribute(
+  await expect(page.getByRole("button", { name: "Manual review" })).toHaveAttribute(
     "aria-pressed",
     "true",
   );
@@ -121,6 +121,7 @@ test("the settings menu opens About and Uninstall", async ({ page, workspace, st
   await expect(about).toContainText("check for a new version on diffloupe.com");
   await about.getByRole("button", { name: "Close" }).click();
   await expect(about).toBeHidden();
+  await expect(page.getByRole("button", { name: "AI review" })).toBeHidden();
 
   await page.getByRole("button", { name: "Settings menu" }).click();
   await page.getByRole("menuitem", { name: "Uninstall Diffloupe…" }).click();

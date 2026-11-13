@@ -22,6 +22,8 @@ pub const LATEST: &str = "https://diffloupe.com/download/latest/linux/version";
 pub const LATEST: &str = "https://diffloupe.com/download/latest/windows/version";
 pub const REPOSITORY: &str = "https://github.com/brisote/diff-loupe";
 pub const RELEASES: &str = "https://github.com/brisote/diff-loupe/releases/";
+pub const WEBSITE: &str = "https://diffloupe.com";
+pub const CLOUD: &str = "https://cloud.diffloupe.com";
 pub const MAX_TIME: u64 = 20;
 const DOWNLOAD_TIME: u64 = 1800;
 const MAX_IMAGE: u64 = 500 * 1024 * 1024;
@@ -135,9 +137,26 @@ pub fn distro_package(exists: impl Fn(&str) -> bool) -> Option<PackageKind> {
 
 const NO_PACKAGE: &str = "Diffloupe has no update package for this system.";
 
+static TEST_CLOUD_URL: std::sync::RwLock<Option<String>> = std::sync::RwLock::new(None);
+
 pub fn repository_page(url: &str) -> bool {
-    url.strip_prefix(REPOSITORY).is_some_and(|rest| {
-        (rest.is_empty() || rest.starts_with('/') || rest.starts_with('#'))
+    safe_prefix(REPOSITORY, url)
+}
+
+pub fn allowed_link(url: &str) -> bool {
+    if repository_page(url) || safe_prefix(WEBSITE, url) || safe_prefix(CLOUD, url) {
+        return true;
+    }
+    let cloud = cloud_source();
+    if loopback(&cloud) && safe_prefix(cloud.trim_end_matches('/'), url) {
+        return true;
+    }
+    false
+}
+
+fn safe_prefix(prefix: &str, url: &str) -> bool {
+    url.strip_prefix(prefix).is_some_and(|rest| {
+        (rest.is_empty() || rest.starts_with('/') || rest.starts_with('#') || rest.starts_with('?'))
             && !rest.contains("/.")
             && !rest.contains('%')
             && !rest.contains('\\')
@@ -145,12 +164,10 @@ pub fn repository_page(url: &str) -> bool {
 }
 
 pub fn link(url: &str) -> Result<&str> {
-    if repository_page(url) {
+    if allowed_link(url) {
         Ok(url)
     } else {
-        Err(Error::InvalidArgs(format!(
-            "{url} is not a page of Diffloupe's repository"
-        )))
+        Err(Error::InvalidArgs(format!("{url} is not an allowed link")))
     }
 }
 
@@ -164,7 +181,28 @@ pub fn source_from(value: Option<String>) -> String {
         .unwrap_or_else(|| LATEST.to_string())
 }
 
-fn loopback(url: &str) -> bool {
+pub fn cloud_source() -> String {
+    if let Ok(guard) = TEST_CLOUD_URL.read()
+        && let Some(url) = guard.as_ref()
+    {
+        return url.clone();
+    }
+    cloud_source_from(std::env::var("DIFFLOUPE_CLOUD_URL").ok())
+}
+
+pub fn cloud_source_from(value: Option<String>) -> String {
+    value
+        .filter(|url| loopback(url))
+        .unwrap_or_else(|| CLOUD.to_string())
+}
+
+pub fn set_test_cloud_url(url: Option<String>) {
+    if let Ok(mut guard) = TEST_CLOUD_URL.write() {
+        *guard = url;
+    }
+}
+
+pub fn loopback(url: &str) -> bool {
     let Some(rest) = url.strip_prefix("http://") else {
         return false;
     };
@@ -509,6 +547,15 @@ mod tests {
         ));
         assert!(link("https://github.com/brisote/diff-loupe#readme").is_ok());
         assert!(link("https://github.com/brisote/diff-loupe-fork").is_err());
+        assert!(link("https://diffloupe.com/privacy").is_ok());
+        assert!(link("https://cloud.diffloupe.com/auth/verify/ABCD-1234").is_ok());
+        assert!(link("https://diffloupe.com.evil.com").is_err());
+        assert!(link("https://cloud.diffloupe.com.evil.com").is_err());
+        assert!(link("https://evil.com").is_err());
+        set_test_cloud_url(Some("http://127.0.0.1:8080".into()));
+        assert!(link("http://127.0.0.1:8080/auth/verify/XYZ").is_ok());
+        assert!(link("http://127.0.0.1:9999/auth/verify/XYZ").is_err());
+        set_test_cloud_url(None);
     }
 
     #[test]

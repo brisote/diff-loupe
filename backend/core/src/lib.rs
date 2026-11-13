@@ -1,3 +1,4 @@
+pub mod aireview;
 pub mod api;
 mod core;
 pub mod diff;

@@ -17,6 +17,10 @@ const handled = new Set([
   "gitRefused",
   "update",
   "storeVersion",
+  "consentRequired",
+  "authRequired",
+  "insufficientBalance",
+  "aiService",
 ]);
 
 const quiet = new Set(["terminal_write", "terminal_ack", "terminal_resize", "report_env"]);

@@ -34,7 +34,7 @@ describe("SettingsDialog", () => {
         .getAllByRole("option")
         .filter((option) => option.closest('[aria-label="Settings sections"]'))
         .map((option) => option.textContent),
-    ).toEqual(["Diff", "Updates"]);
+    ).toEqual(["Diff", "Updates", "AI review"]);
     expect(screen.queryByText(/AI agent|claude/i)).toBeNull();
   });
 

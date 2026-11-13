@@ -1,12 +1,18 @@
 import { expect, test } from "@playwright/test";
 import { loadImages } from "./design";
 
+const aiReviewEnabled =
+  process.env.PUBLIC_AI_REVIEW === "1" || process.env.PUBLIC_AI_REVIEW === "true";
+
 test("every Download link on the home page leads to the Download page", async ({ page }) => {
   await page.goto("/");
   const links = {
     header: page.locator("header.header").getByRole("link", { name: "Download" }),
     hero: page.locator(".hero").getByRole("link", { name: "Download" }),
-    pricing: page.locator(".plan").getByRole("link", { name: "Download free" }),
+    pricingManual: page.locator(".plan").getByRole("link", { name: "Download free" }),
+    ...(aiReviewEnabled
+      ? { pricingAi: page.locator(".plan").getByRole("link", { name: "Try in Diffloupe" }) }
+      : {}),
     closing: page.locator(".closing").getByRole("link", { name: "Download" }),
     footer: page.locator("footer.footer").getByRole("link", { name: "Download" }),
   };

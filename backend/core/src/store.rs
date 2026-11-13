@@ -1,9 +1,11 @@
 use crate::error::{Error, Result};
 use crate::settings::{Settings, merge_into};
 use rusqlite::{Connection, OptionalExtension, params};
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::fs;
 use std::path::{Path, PathBuf};
+use ts_rs::TS;
 
 pub const SETTINGS_FILE: &str = "settings.json";
 pub const STATE_FILE: &str = "state.db";
@@ -40,6 +42,83 @@ const MIGRATIONS: &[&str] = &[
         key TEXT PRIMARY KEY,
         value TEXT NOT NULL
     );",
+    "CREATE TABLE ai_consent (
+        id INTEGER PRIMARY KEY CHECK (id = 1),
+        accepted_at INTEGER NOT NULL
+    );
+    CREATE TABLE ai_review (
+        repo TEXT NOT NULL COLLATE NOCASE,
+        branch TEXT NOT NULL,
+        target_branch TEXT NOT NULL,
+        report_markdown TEXT NOT NULL,
+        cost_usd TEXT,
+        head_oid TEXT,
+        base_oid TEXT,
+        updated_at INTEGER NOT NULL,
+        PRIMARY KEY (repo, branch, target_branch)
+    );
+    CREATE TABLE ai_chat_message (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        repo TEXT NOT NULL COLLATE NOCASE,
+        branch TEXT NOT NULL,
+        target_branch TEXT NOT NULL,
+        role TEXT NOT NULL,
+        content TEXT NOT NULL,
+        quoted_text TEXT,
+        cost_usd TEXT,
+        created_at INTEGER NOT NULL
+    );",
+    "CREATE TABLE ai_review_new (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        repo TEXT NOT NULL COLLATE NOCASE,
+        branch TEXT NOT NULL,
+        target_branch TEXT NOT NULL,
+        report_markdown TEXT NOT NULL,
+        cost_usd TEXT,
+        head_oid TEXT,
+        base_oid TEXT,
+        model TEXT,
+        effort TEXT,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+    );
+    INSERT INTO ai_review_new (repo, branch, target_branch, report_markdown, cost_usd, head_oid, base_oid, created_at, updated_at)
+        SELECT repo, branch, target_branch, report_markdown, cost_usd, head_oid, base_oid, updated_at, updated_at
+        FROM ai_review;
+    DROP TABLE ai_review;
+    ALTER TABLE ai_review_new RENAME TO ai_review;
+    CREATE TABLE ai_review_version (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        review_id INTEGER NOT NULL,
+        version_number INTEGER NOT NULL,
+        report_markdown TEXT NOT NULL,
+        created_at INTEGER NOT NULL
+    );
+    INSERT INTO ai_review_version (review_id, version_number, report_markdown, created_at)
+        SELECT id, 1, report_markdown, updated_at FROM ai_review;
+    CREATE TABLE ai_chat_message_new (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        review_id INTEGER,
+        repo TEXT NOT NULL COLLATE NOCASE,
+        branch TEXT NOT NULL,
+        target_branch TEXT NOT NULL,
+        role TEXT NOT NULL,
+        content TEXT NOT NULL,
+        quoted_text TEXT,
+        cost_usd TEXT,
+        created_at INTEGER NOT NULL
+    );
+    INSERT INTO ai_chat_message_new (id, repo, branch, target_branch, role, content, quoted_text, cost_usd, created_at)
+        SELECT id, repo, branch, target_branch, role, content, quoted_text, cost_usd, created_at FROM ai_chat_message;
+    DROP TABLE ai_chat_message;
+    ALTER TABLE ai_chat_message_new RENAME TO ai_chat_message;
+    UPDATE ai_chat_message SET review_id = (
+        SELECT id FROM ai_review
+        WHERE ai_review.repo = ai_chat_message.repo COLLATE NOCASE
+          AND ai_review.branch = ai_chat_message.branch
+          AND ai_review.target_branch = ai_chat_message.target_branch
+        ORDER BY id DESC LIMIT 1
+    );",
 ];
 
 pub type SettingsMigration = fn(&mut Value) -> std::result::Result<(), String>;
@@ -69,6 +148,101 @@ pub struct RepoState {
     pub target_branch: Option<String>,
     pub last_tab: Option<String>,
     pub last_selection: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct StoredAiReviewVersion {
+    #[ts(type = "number")]
+    pub id: i64,
+    #[ts(type = "number")]
+    pub review_id: i64,
+    #[ts(type = "number")]
+    pub version_number: i64,
+    pub report_markdown: String,
+    #[ts(type = "number")]
+    pub created_at: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct StoredAiReview {
+    #[ts(type = "number")]
+    pub id: i64,
+    pub repo: String,
+    pub branch: String,
+    pub target_branch: String,
+    pub report_markdown: String,
+    pub cost_usd: Option<String>,
+    pub head_oid: Option<String>,
+    pub base_oid: Option<String>,
+    pub model: Option<String>,
+    pub effort: Option<String>,
+    #[ts(type = "number")]
+    pub created_at: i64,
+    #[ts(type = "number")]
+    pub updated_at: i64,
+    pub versions: Vec<StoredAiReviewVersion>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct StoredAiChatMessage {
+    #[ts(type = "number")]
+    pub id: i64,
+    #[ts(type = "number | null")]
+    pub review_id: Option<i64>,
+    pub repo: String,
+    pub branch: String,
+    pub target_branch: String,
+    pub role: String,
+    pub content: String,
+    pub quoted_text: Option<String>,
+    pub cost_usd: Option<String>,
+    #[ts(type = "number")]
+    pub created_at: i64,
+}
+
+pub struct NewAiChatMessage<'a> {
+    pub review_id: Option<i64>,
+    pub repo: &'a str,
+    pub branch: &'a str,
+    pub target_branch: &'a str,
+    pub role: &'a str,
+    pub content: &'a str,
+    pub quoted_text: Option<&'a str>,
+    pub cost_usd: Option<&'a str>,
+    pub created_at: i64,
+}
+
+pub fn accumulate_cost(existing: Option<&str>, addition: Option<&str>) -> Option<String> {
+    match (existing, addition) {
+        (Some(e), Some(a)) => {
+            let e_val: f64 = e.trim().parse().unwrap_or(0.0);
+            let a_val: f64 = a.trim().parse().unwrap_or(0.0);
+            let sum = e_val + a_val;
+            if sum <= 0.0 {
+                Some("0.00".to_string())
+            } else {
+                let formatted = format!("{:.4}", sum);
+                let trimmed = formatted.trim_end_matches('0');
+                let res = if trimmed.ends_with('.') {
+                    format!("{trimmed}00")
+                } else if trimmed.split('.').nth(1).map_or(0, |f| f.len()) < 2 {
+                    format!("{trimmed}0")
+                } else {
+                    trimmed.to_string()
+                };
+                Some(res)
+            }
+        }
+        (Some(e), None) => Some(e.to_string()),
+        (None, Some(a)) => Some(a.to_string()),
+        (None, None) => None,
+    }
 }
 
 pub struct Store {
@@ -340,6 +514,467 @@ impl Store {
         let rows = stmt.query_map(params![repo], |r| r.get(0))?;
         rows.collect::<std::result::Result<Vec<String>, _>>()
             .map_err(Error::from)
+    }
+
+    pub fn ai_consent(&self) -> Result<bool> {
+        let row: Option<i64> = self
+            .db
+            .query_row("SELECT accepted_at FROM ai_consent WHERE id = 1", [], |r| {
+                r.get(0)
+            })
+            .optional()?;
+        Ok(row.is_some())
+    }
+
+    pub fn set_ai_consent(&self, accepted: bool) -> Result<()> {
+        if accepted {
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs() as i64)
+                .unwrap_or(0);
+            self.db.execute(
+                "INSERT INTO ai_consent (id, accepted_at) VALUES (1, ?1)
+                 ON CONFLICT(id) DO UPDATE SET accepted_at = excluded.accepted_at",
+                params![now],
+            )?;
+        } else {
+            self.db.execute("DELETE FROM ai_consent WHERE id = 1", [])?;
+        }
+        Ok(())
+    }
+
+    pub fn get_ai_review_versions(&self, review_id: i64) -> Result<Vec<StoredAiReviewVersion>> {
+        let mut stmt = self.db.prepare(
+            "SELECT id, review_id, version_number, report_markdown, created_at
+             FROM ai_review_version WHERE review_id = ?1 ORDER BY version_number ASC",
+        )?;
+        let rows = stmt.query_map(params![review_id], |r| {
+            Ok(StoredAiReviewVersion {
+                id: r.get(0)?,
+                review_id: r.get(1)?,
+                version_number: r.get(2)?,
+                report_markdown: r.get(3)?,
+                created_at: r.get(4)?,
+            })
+        })?;
+        rows.collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(Error::from)
+    }
+
+    pub fn get_ai_reviews(&self, repo: &str) -> Result<Vec<StoredAiReview>> {
+        let repo = clean_path(repo);
+        let mut stmt = self.db.prepare(
+            "SELECT id, repo, branch, target_branch, report_markdown, cost_usd, head_oid, base_oid, model, effort, created_at, updated_at
+             FROM ai_review WHERE repo = ?1 COLLATE NOCASE ORDER BY id DESC",
+        )?;
+        let rows = stmt.query_map(params![repo], |r| {
+            Ok((
+                r.get::<_, i64>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, String>(2)?,
+                r.get::<_, String>(3)?,
+                r.get::<_, String>(4)?,
+                r.get::<_, Option<String>>(5)?,
+                r.get::<_, Option<String>>(6)?,
+                r.get::<_, Option<String>>(7)?,
+                r.get::<_, Option<String>>(8)?,
+                r.get::<_, Option<String>>(9)?,
+                r.get::<_, i64>(10)?,
+                r.get::<_, i64>(11)?,
+            ))
+        })?;
+        let mut list = Vec::new();
+        for row in rows {
+            let (
+                id,
+                repo,
+                branch,
+                target_branch,
+                report_markdown,
+                cost_usd,
+                head_oid,
+                base_oid,
+                model,
+                effort,
+                created_at,
+                updated_at,
+            ) = row?;
+            let versions = self.get_ai_review_versions(id)?;
+            list.push(StoredAiReview {
+                id,
+                repo,
+                branch,
+                target_branch,
+                report_markdown,
+                cost_usd,
+                head_oid,
+                base_oid,
+                model,
+                effort,
+                created_at,
+                updated_at,
+                versions,
+            });
+        }
+        Ok(list)
+    }
+
+    pub fn get_ai_review(&self, review_id: i64) -> Result<Option<StoredAiReview>> {
+        let row = self
+            .db
+            .query_row(
+                "SELECT id, repo, branch, target_branch, report_markdown, cost_usd, head_oid, base_oid, model, effort, created_at, updated_at
+                 FROM ai_review WHERE id = ?1",
+                params![review_id],
+                |r| {
+                    Ok((
+                        r.get::<_, i64>(0)?,
+                        r.get::<_, String>(1)?,
+                        r.get::<_, String>(2)?,
+                        r.get::<_, String>(3)?,
+                        r.get::<_, String>(4)?,
+                        r.get::<_, Option<String>>(5)?,
+                        r.get::<_, Option<String>>(6)?,
+                        r.get::<_, Option<String>>(7)?,
+                        r.get::<_, Option<String>>(8)?,
+                        r.get::<_, Option<String>>(9)?,
+                        r.get::<_, i64>(10)?,
+                        r.get::<_, i64>(11)?,
+                    ))
+                },
+            )
+            .optional()?;
+
+        match row {
+            Some((
+                id,
+                repo,
+                branch,
+                target_branch,
+                report_markdown,
+                cost_usd,
+                head_oid,
+                base_oid,
+                model,
+                effort,
+                created_at,
+                updated_at,
+            )) => {
+                let versions = self.get_ai_review_versions(id)?;
+                Ok(Some(StoredAiReview {
+                    id,
+                    repo,
+                    branch,
+                    target_branch,
+                    report_markdown,
+                    cost_usd,
+                    head_oid,
+                    base_oid,
+                    model,
+                    effort,
+                    created_at,
+                    updated_at,
+                    versions,
+                }))
+            }
+            None => Ok(None),
+        }
+    }
+
+    pub fn get_latest_ai_review(
+        &self,
+        repo: &str,
+        branch: Option<&str>,
+        target_branch: Option<&str>,
+    ) -> Result<Option<StoredAiReview>> {
+        let repo = clean_path(repo);
+        let id_opt: Option<i64> = match (branch, target_branch) {
+            (Some(b), Some(t)) => self
+                .db
+                .query_row(
+                    "SELECT id FROM ai_review WHERE repo = ?1 COLLATE NOCASE AND branch = ?2 AND target_branch = ?3 ORDER BY id DESC LIMIT 1",
+                    params![repo, b, t],
+                    |r| r.get(0),
+                )
+                .optional()?,
+            _ => self
+                .db
+                .query_row(
+                    "SELECT id FROM ai_review WHERE repo = ?1 COLLATE NOCASE ORDER BY id DESC LIMIT 1",
+                    params![repo],
+                    |r| r.get(0),
+                )
+                .optional()?,
+        };
+        match id_opt {
+            Some(id) => self.get_ai_review(id),
+            None => Ok(None),
+        }
+    }
+
+    pub fn save_ai_review(&self, review: &StoredAiReview) -> Result<i64> {
+        let repo = clean_path(&review.repo);
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs() as i64)
+            .unwrap_or(0);
+        let updated_at = if review.updated_at > 0 {
+            review.updated_at
+        } else {
+            now
+        };
+        let created_at = if review.created_at > 0 {
+            review.created_at
+        } else {
+            now
+        };
+
+        if review.id > 0 {
+            self.db.execute(
+                "UPDATE ai_review SET
+                    report_markdown = ?2,
+                    cost_usd = ?3,
+                    head_oid = ?4,
+                    base_oid = ?5,
+                    model = ?6,
+                    effort = ?7,
+                    updated_at = ?8
+                 WHERE id = ?1",
+                params![
+                    review.id,
+                    review.report_markdown,
+                    review.cost_usd,
+                    review.head_oid,
+                    review.base_oid,
+                    review.model,
+                    review.effort,
+                    updated_at,
+                ],
+            )?;
+
+            let latest_version_report: Option<String> = self
+                .db
+                .query_row(
+                    "SELECT report_markdown FROM ai_review_version WHERE review_id = ?1 ORDER BY version_number DESC LIMIT 1",
+                    params![review.id],
+                    |r| r.get(0),
+                )
+                .optional()?;
+
+            if latest_version_report.as_deref() != Some(&review.report_markdown) {
+                let max_version: i64 = self
+                    .db
+                    .query_row(
+                        "SELECT COALESCE(MAX(version_number), 0) FROM ai_review_version WHERE review_id = ?1",
+                        params![review.id],
+                        |r| r.get(0),
+                    )
+                    .unwrap_or(0);
+                self.db.execute(
+                    "INSERT INTO ai_review_version (review_id, version_number, report_markdown, created_at)
+                     VALUES (?1, ?2, ?3, ?4)",
+                    params![review.id, max_version + 1, review.report_markdown, updated_at],
+                )?;
+            }
+
+            Ok(review.id)
+        } else {
+            self.db.execute(
+                "INSERT INTO ai_review (repo, branch, target_branch, report_markdown, cost_usd, head_oid, base_oid, model, effort, created_at, updated_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+                params![
+                    repo,
+                    review.branch,
+                    review.target_branch,
+                    review.report_markdown,
+                    review.cost_usd,
+                    review.head_oid,
+                    review.base_oid,
+                    review.model,
+                    review.effort,
+                    created_at,
+                    updated_at,
+                ],
+            )?;
+            let id = self.db.last_insert_rowid();
+            self.db.execute(
+                "INSERT INTO ai_review_version (review_id, version_number, report_markdown, created_at)
+                 VALUES (?1, 1, ?2, ?3)",
+                params![id, review.report_markdown, updated_at],
+            )?;
+            Ok(id)
+        }
+    }
+
+    pub fn delete_ai_review(&self, review_id: i64) -> Result<()> {
+        self.db.execute(
+            "DELETE FROM ai_review_version WHERE review_id = ?1",
+            params![review_id],
+        )?;
+        self.db.execute(
+            "DELETE FROM ai_chat_message WHERE review_id = ?1",
+            params![review_id],
+        )?;
+        self.db
+            .execute("DELETE FROM ai_review WHERE id = ?1", params![review_id])?;
+        Ok(())
+    }
+
+    pub fn revert_ai_review_version(
+        &self,
+        review_id: i64,
+        version_number: i64,
+    ) -> Result<Option<StoredAiReview>> {
+        let version_row: Option<String> = self
+            .db
+            .query_row(
+                "SELECT report_markdown FROM ai_review_version WHERE review_id = ?1 AND version_number = ?2",
+                params![review_id, version_number],
+                |r| r.get(0),
+            )
+            .optional()?;
+
+        let Some(target_report) = version_row else {
+            return Ok(None);
+        };
+
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs() as i64)
+            .unwrap_or(0);
+
+        let max_version: i64 = self
+            .db
+            .query_row(
+                "SELECT COALESCE(MAX(version_number), 0) FROM ai_review_version WHERE review_id = ?1",
+                params![review_id],
+                |r| r.get(0),
+            )
+            .unwrap_or(0);
+
+        self.db.execute(
+            "INSERT INTO ai_review_version (review_id, version_number, report_markdown, created_at)
+             VALUES (?1, ?2, ?3, ?4)",
+            params![review_id, max_version + 1, target_report, now],
+        )?;
+
+        self.db.execute(
+            "UPDATE ai_review SET report_markdown = ?2, updated_at = ?3 WHERE id = ?1",
+            params![review_id, target_report, now],
+        )?;
+
+        self.get_ai_review(review_id)
+    }
+
+    pub fn get_ai_chat_messages(
+        &self,
+        review_id: Option<i64>,
+        repo: &str,
+        branch: &str,
+        target_branch: &str,
+    ) -> Result<Vec<StoredAiChatMessage>> {
+        let repo = clean_path(repo);
+        let rows = if let Some(rid) = review_id {
+            let mut stmt = self.db.prepare(
+                "SELECT id, review_id, repo, branch, target_branch, role, content, quoted_text, cost_usd, created_at
+                 FROM ai_chat_message WHERE review_id = ?1
+                 ORDER BY id ASC",
+            )?;
+            let mapped = stmt.query_map(params![rid], |r| {
+                Ok(StoredAiChatMessage {
+                    id: r.get(0)?,
+                    review_id: r.get(1)?,
+                    repo: r.get(2)?,
+                    branch: r.get(3)?,
+                    target_branch: r.get(4)?,
+                    role: r.get(5)?,
+                    content: r.get(6)?,
+                    quoted_text: r.get(7)?,
+                    cost_usd: r.get(8)?,
+                    created_at: r.get(9)?,
+                })
+            })?;
+            mapped.collect::<std::result::Result<Vec<_>, _>>()?
+        } else {
+            let mut stmt = self.db.prepare(
+                "SELECT id, review_id, repo, branch, target_branch, role, content, quoted_text, cost_usd, created_at
+                 FROM ai_chat_message WHERE repo = ?1 COLLATE NOCASE AND branch = ?2 AND target_branch = ?3
+                 ORDER BY id ASC",
+            )?;
+            let mapped = stmt.query_map(params![repo, branch, target_branch], |r| {
+                Ok(StoredAiChatMessage {
+                    id: r.get(0)?,
+                    review_id: r.get(1)?,
+                    repo: r.get(2)?,
+                    branch: r.get(3)?,
+                    target_branch: r.get(4)?,
+                    role: r.get(5)?,
+                    content: r.get(6)?,
+                    quoted_text: r.get(7)?,
+                    cost_usd: r.get(8)?,
+                    created_at: r.get(9)?,
+                })
+            })?;
+            mapped.collect::<std::result::Result<Vec<_>, _>>()?
+        };
+        Ok(rows)
+    }
+
+    pub fn append_ai_chat_message(
+        &self,
+        msg: &NewAiChatMessage<'_>,
+    ) -> Result<StoredAiChatMessage> {
+        let repo = clean_path(msg.repo);
+        self.db.execute(
+            "INSERT INTO ai_chat_message (review_id, repo, branch, target_branch, role, content, quoted_text, cost_usd, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+            params![
+                msg.review_id,
+                repo,
+                msg.branch,
+                msg.target_branch,
+                msg.role,
+                msg.content,
+                msg.quoted_text,
+                msg.cost_usd,
+                msg.created_at
+            ],
+        )?;
+        let id = self.db.last_insert_rowid();
+        Ok(StoredAiChatMessage {
+            id,
+            review_id: msg.review_id,
+            repo,
+            branch: msg.branch.to_string(),
+            target_branch: msg.target_branch.to_string(),
+            role: msg.role.to_string(),
+            content: msg.content.to_string(),
+            quoted_text: msg.quoted_text.map(|s| s.to_string()),
+            cost_usd: msg.cost_usd.map(|s| s.to_string()),
+            created_at: msg.created_at,
+        })
+    }
+
+    pub fn clear_ai_chat_thread(
+        &self,
+        review_id: Option<i64>,
+        repo: &str,
+        branch: &str,
+        target_branch: &str,
+    ) -> Result<()> {
+        let repo = clean_path(repo);
+        if let Some(rid) = review_id {
+            self.db.execute(
+                "DELETE FROM ai_chat_message WHERE review_id = ?1",
+                params![rid],
+            )?;
+        } else {
+            self.db.execute(
+                "DELETE FROM ai_chat_message WHERE repo = ?1 COLLATE NOCASE AND branch = ?2 AND target_branch = ?3",
+                params![repo, branch, target_branch],
+            )?;
+        }
+        Ok(())
     }
 
     pub fn schema_version(&self) -> Result<i64> {
@@ -1041,6 +1676,139 @@ mod tests {
         assert_eq!(store.repo_state("/a").unwrap(), state);
         store.set_ui_value("split", "320").unwrap();
         assert_eq!(store.ui_value("split").unwrap().as_deref(), Some("320"));
+    }
+
+    #[test]
+    fn ai_review_history_versions_and_cost_accumulation() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::open(dir.path()).unwrap();
+
+        assert_eq!(
+            accumulate_cost(Some("0.14"), Some("0.02")).as_deref(),
+            Some("0.16")
+        );
+        assert_eq!(
+            accumulate_cost(Some("0.16"), Some("0.005")).as_deref(),
+            Some("0.165")
+        );
+
+        let rev1_id = store
+            .save_ai_review(&StoredAiReview {
+                id: 0,
+                repo: "/repo".into(),
+                branch: "feat".into(),
+                target_branch: "main".into(),
+                report_markdown: "# Report v1".into(),
+                cost_usd: Some("0.14".into()),
+                head_oid: Some("head1".into()),
+                base_oid: Some("base1".into()),
+                model: Some("claude".into()),
+                effort: Some("medium".into()),
+                created_at: 1000,
+                updated_at: 1000,
+                versions: Vec::new(),
+            })
+            .unwrap();
+        assert!(rev1_id > 0);
+
+        store
+            .append_ai_chat_message(&NewAiChatMessage {
+                review_id: Some(rev1_id),
+                repo: "/repo",
+                branch: "feat",
+                target_branch: "main",
+                role: "user",
+                content: "Can you fix X?",
+                quoted_text: None,
+                cost_usd: None,
+                created_at: 1010,
+            })
+            .unwrap();
+
+        store
+            .append_ai_chat_message(&NewAiChatMessage {
+                review_id: Some(rev1_id),
+                repo: "/repo",
+                branch: "feat",
+                target_branch: "main",
+                role: "assistant",
+                content: "I updated the report.",
+                quoted_text: None,
+                cost_usd: Some("0.02"),
+                created_at: 1020,
+            })
+            .unwrap();
+
+        let mut r1 = store.get_ai_review(rev1_id).unwrap().unwrap();
+        assert_eq!(r1.versions.len(), 1);
+        assert_eq!(r1.versions[0].version_number, 1);
+        assert_eq!(r1.report_markdown, "# Report v1");
+
+        r1.report_markdown = "# Report v2 with fix".into();
+        r1.cost_usd = accumulate_cost(r1.cost_usd.as_deref(), Some("0.02"));
+        r1.updated_at = 1020;
+        store.save_ai_review(&r1).unwrap();
+
+        let r1_updated = store.get_ai_review(rev1_id).unwrap().unwrap();
+        assert_eq!(r1_updated.cost_usd.as_deref(), Some("0.16"));
+        assert_eq!(r1_updated.versions.len(), 2);
+        assert_eq!(r1_updated.versions[1].version_number, 2);
+        assert_eq!(
+            r1_updated.versions[1].report_markdown,
+            "# Report v2 with fix"
+        );
+
+        let r1_reverted = store.revert_ai_review_version(rev1_id, 1).unwrap().unwrap();
+        assert_eq!(r1_reverted.report_markdown, "# Report v1");
+        assert_eq!(r1_reverted.versions.len(), 3);
+
+        let rev2_id = store
+            .save_ai_review(&StoredAiReview {
+                id: 0,
+                repo: "/repo".into(),
+                branch: "feat".into(),
+                target_branch: "main".into(),
+                report_markdown: "# Fresh Review".into(),
+                cost_usd: Some("0.12".into()),
+                head_oid: Some("head2".into()),
+                base_oid: Some("base2".into()),
+                model: Some("claude".into()),
+                effort: Some("medium".into()),
+                created_at: 2000,
+                updated_at: 2000,
+                versions: Vec::new(),
+            })
+            .unwrap();
+        assert_ne!(rev1_id, rev2_id);
+
+        let reviews = store.get_ai_reviews("/repo").unwrap();
+        assert_eq!(reviews.len(), 2);
+        assert_eq!(reviews[0].id, rev2_id);
+        assert_eq!(reviews[1].id, rev1_id);
+
+        let msgs_r1 = store
+            .get_ai_chat_messages(Some(rev1_id), "/repo", "feat", "main")
+            .unwrap();
+        let msgs_r2 = store
+            .get_ai_chat_messages(Some(rev2_id), "/repo", "feat", "main")
+            .unwrap();
+        assert_eq!(msgs_r1.len(), 2);
+        assert_eq!(msgs_r2.len(), 0);
+
+        store.delete_ai_review(rev1_id).unwrap();
+        assert!(store.get_ai_review(rev1_id).unwrap().is_none());
+        assert_eq!(store.get_ai_review_versions(rev1_id).unwrap().len(), 0);
+        assert_eq!(
+            store
+                .get_ai_chat_messages(Some(rev1_id), "/repo", "feat", "main")
+                .unwrap()
+                .len(),
+            0
+        );
+
+        let remaining = store.get_ai_reviews("/repo").unwrap();
+        assert_eq!(remaining.len(), 1);
+        assert_eq!(remaining[0].id, rev2_id);
     }
 
     #[test]

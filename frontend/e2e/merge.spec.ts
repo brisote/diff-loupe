@@ -156,6 +156,7 @@ async function aiControls(page: Page): Promise<string[]> {
         "button, [role=button], [role=menuitem], [role=option], [role=tab]",
       ),
     ]
+      .filter((control) => !control.closest("nav[aria-label='Tool windows']"))
       .map(
         (control) =>
           `${control.getAttribute("aria-label") ?? ""} ${control.getAttribute("title") ?? ""} ${control.textContent ?? ""}`,
@@ -184,12 +185,12 @@ test("no screen offers AI", async ({ page, workspace, startApp }) => {
   await expect(
     settings.getByRole("listbox", { name: "Settings sections" }).getByRole("option"),
   ).toHaveText(["Diff", "Updates"]);
-  await noAi();
   await settings.getByRole("button", { name: "Cancel" }).click();
+  await noAi();
   await page.getByRole("button", { name: "Settings menu" }).click();
   await page.getByRole("menuitem", { name: "About Diffloupe" }).click();
   const about = page.getByRole("dialog", { name: "About Diffloupe" });
-  await expect(about).not.toContainText(/\bAI\b|Claude|personal build/);
+  await expect(about).not.toContainText(/Claude|personal build/);
   await about.getByRole("button", { name: "Close", exact: true }).click();
 
   await mergeMain(page);

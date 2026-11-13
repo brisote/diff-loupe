@@ -1,9 +1,20 @@
+---
+import { aiReviewEnabled } from "../lib/features";
+---
 <footer class="footer">
   <div class="wrap wrap-wide footer-in">
     <div>
       <a class="brand" href="/"><img src="/icon.png" alt="" width="36" height="36" /><span>Diffloupe</span></a>
-      <p class="footer-text">An app for reviewing Markdown and git changes on macOS, Windows and Linux: rendered Markdown, code diffs, history and merges, with your code kept on your computer.</p>
-      <p class="footer-note">No trackers on this site. Diffloupe is open source, and everything it reads stays on your computer.</p>
+      <p class="footer-text">
+        {aiReviewEnabled
+          ? "An app for reviewing Markdown and git changes on macOS, Windows and Linux: rendered Markdown, code diffs, history and merges, with manual review kept on your computer."
+          : "An app for reviewing Markdown and git changes on macOS, Windows and Linux: rendered Markdown, code diffs, history and merges, with your code kept on your computer."}
+      </p>
+      <p class="footer-note">
+        {aiReviewEnabled
+          ? "No trackers on this site. Diffloupe is open source, and manual review stays entirely on your computer."
+          : "No trackers on this site. Diffloupe is open source, and everything it reads stays on your computer."}
+      </p>
     </div>
     <nav class="footer-col" aria-label="Product">
       <h2>Product</h2>

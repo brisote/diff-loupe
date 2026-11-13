@@ -1,6 +1,39 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::sync::Mutex;
 use ts_rs::TS;
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+#[ts(export)]
+pub enum AiStreamPayload {
+    #[serde(rename_all = "camelCase")]
+    Stage {
+        stage: String,
+        message: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        thought: Option<String>,
+    },
+    #[serde(rename_all = "camelCase")]
+    ReportDelta { content: String, delta: String },
+    #[serde(rename_all = "camelCase")]
+    ReportUpdate { report_markdown: String },
+    #[serde(rename_all = "camelCase")]
+    ChatDelta { content: String, delta: String },
+    #[serde(rename_all = "camelCase")]
+    Billing {
+        balance_usd: String,
+        cost_usd: String,
+    },
+    #[serde(rename_all = "camelCase")]
+    Done {
+        report_markdown: String,
+        chat_message: String,
+        balance_usd: String,
+        cost_usd: String,
+    },
+    #[serde(rename_all = "camelCase")]
+    Error { code: String, message: String },
+}
 
 #[derive(Debug, Clone, PartialEq, Serialize, TS)]
 #[serde(tag = "type", rename_all = "camelCase")]
@@ -20,6 +53,14 @@ pub enum CoreEvent {
     TerminalOutput { id: String, data: String },
     #[serde(rename_all = "camelCase")]
     TerminalExit { id: String },
+    #[serde(rename_all = "camelCase")]
+    AiReviewStream {
+        repo: String,
+        branch: String,
+        target_branch: String,
+        run_id: String,
+        event: AiStreamPayload,
+    },
 }
 
 pub trait EventSink: Send + Sync {

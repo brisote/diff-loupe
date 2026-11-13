@@ -5,7 +5,9 @@
   "packageManager": "pnpm@11.21.0",
   "scripts": {
     "dev": "astro dev",
-    "build": "astro build",
+    "dev:ai": "PUBLIC_AI_REVIEW=1 astro dev",
+    "build": "ASTRO_TELEMETRY_DISABLED=1 astro build",
+    "build:ai": "ASTRO_TELEMETRY_DISABLED=1 PUBLIC_AI_REVIEW=1 astro build",
     "preview": "astro preview",
     "lint": "biome ci . && tsc --noEmit",
     "test": "vitest run",

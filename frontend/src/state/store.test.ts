@@ -315,6 +315,7 @@ describe("actions", () => {
         settingsNotice: notice,
         home: "/Users/ada",
         platform: "macos",
+        aiReviewEnabled: false,
       }),
       set_settings: (args) => {
         notice = null;
