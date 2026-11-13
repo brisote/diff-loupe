@@ -2,6 +2,19 @@
 
 Each release lists what changed for the person who uses Diffloupe, and every change to stored data with its migration.
 
+## 0.6.3
+
+Simplified file list appearance in changes and commit history views.
+
+### Changes
+
+- Display only file names in the changed files list and commit history details without the trailing directory path.
+- Keep the full relative path in the hover tooltip.
+
+### Install
+
+- Nothing in your stored data changes.
+
 ## 0.6.2
 
 Kotlin backtick identifiers in syntax highlighting, and product copy refreshed around rendered Markdown diff review.
