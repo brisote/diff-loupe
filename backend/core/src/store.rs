@@ -125,6 +125,65 @@ impl Store {
         })
     }
 
+    pub fn recover_newer(dir: &Path) -> Result<Store> {
+        Store::recover_newer_with(dir, &CURRENT)
+    }
+
+    pub fn recover_newer_with(dir: &Path, migrations: &Migrations) -> Result<Store> {
+        fs::create_dir_all(dir)?;
+        let db_path = dir.join(STATE_FILE);
+        let settings_path = dir.join(SETTINGS_FILE);
+        let (raw, _) = read_settings(&settings_path);
+        let settings_from = settings_version(&raw);
+        let (state_from, backup) = if db_path.exists() {
+            let db = Connection::open(&db_path)?;
+            db.pragma_update(None, "journal_mode", "WAL")?;
+            let state_from = user_version(&db)?;
+            let from = written_by(&db);
+            let backup = back_up(dir, &db, from)?;
+            (state_from, Some(backup))
+        } else {
+            (0, None)
+        };
+        if let Some(candidate) = find_compatible_backup(dir, backup.as_deref(), migrations) {
+            if settings_from > migrations.settings.len()
+                && !candidate.join(SETTINGS_FILE).exists()
+                && settings_path.exists()
+            {
+                fs::remove_file(&settings_path)?;
+            }
+            restore(dir, &candidate)?;
+            let mut store = Store::open_with(dir, migrations)?;
+            if let Some(saved) = backup.as_deref() {
+                store.notice = prepend_notice(
+                    store.notice.take(),
+                    format!(
+                        "Diffloupe restored an earlier backup because your previous data could not be opened by this version ({APP_VERSION}). A copy of the previous data is in {}.",
+                        saved.display()
+                    ),
+                );
+            }
+            return Ok(store);
+        }
+        if state_from > migrations.state.len() {
+            remove_state_files(dir)?;
+        }
+        if settings_from > migrations.settings.len() && settings_path.exists() {
+            fs::remove_file(&settings_path)?;
+        }
+        let mut store = Store::open_with(dir, migrations)?;
+        if let Some(saved) = backup.as_deref() {
+            store.notice = prepend_notice(
+                store.notice.take(),
+                format!(
+                    "Diffloupe started with fresh data because your previous data could not be opened by this version ({APP_VERSION}). A copy of the previous data is in {}.",
+                    saved.display()
+                ),
+            );
+        }
+        Ok(store)
+    }
+
     pub fn dir(&self) -> &Path {
         &self.dir
     }
@@ -458,6 +517,76 @@ fn prune_backups(root: &Path, newest: &Path) -> Result<()> {
         fs::remove_dir_all(old)?;
     }
     Ok(())
+}
+
+pub fn is_same_version_newer(dir: &Path) -> bool {
+    let db_path = dir.join(STATE_FILE);
+    if !db_path.exists() {
+        return false;
+    }
+    let Ok(db) = Connection::open(&db_path) else {
+        return false;
+    };
+    written_by(&db).as_deref() == Some(APP_VERSION)
+}
+
+fn find_compatible_backup(
+    dir: &Path,
+    skip: Option<&Path>,
+    migrations: &Migrations,
+) -> Option<PathBuf> {
+    let root = dir.join(BACKUPS_DIR);
+    let entries = fs::read_dir(root).ok()?;
+    let mut candidates: Vec<PathBuf> = entries
+        .filter_map(|entry| entry.ok().map(|e| e.path()))
+        .filter(|path| path.is_dir() && skip != Some(path.as_path()))
+        .collect();
+    candidates.sort();
+    candidates.reverse();
+    candidates
+        .into_iter()
+        .find(|candidate| backup_is_compatible(candidate, migrations))
+}
+
+fn backup_is_compatible(candidate: &Path, migrations: &Migrations) -> bool {
+    let db_path = candidate.join(STATE_FILE);
+    if !db_path.exists() {
+        return false;
+    }
+    let Ok(db) = Connection::open(&db_path) else {
+        return false;
+    };
+    let Ok(state_version) = user_version(&db) else {
+        return false;
+    };
+    if state_version > migrations.state.len() {
+        return false;
+    }
+    let settings_path = candidate.join(SETTINGS_FILE);
+    if settings_path.exists() {
+        let (raw, _) = read_settings(&settings_path);
+        if settings_version(&raw) > migrations.settings.len() {
+            return false;
+        }
+    }
+    true
+}
+
+fn remove_state_files(dir: &Path) -> Result<()> {
+    for suffix in ["", "-wal", "-shm"] {
+        let path = dir.join(format!("{STATE_FILE}{suffix}"));
+        if path.exists() {
+            fs::remove_file(path)?;
+        }
+    }
+    Ok(())
+}
+
+fn prepend_notice(existing: Option<String>, message: String) -> Option<String> {
+    match existing {
+        Some(rest) => Some(format!("{message} {rest}")),
+        None => Some(message),
+    }
 }
 
 fn restore(dir: &Path, backup: &Path) -> Result<()> {
@@ -912,5 +1041,104 @@ mod tests {
         assert_eq!(store.repo_state("/a").unwrap(), state);
         store.set_ui_value("split", "320").unwrap();
         assert_eq!(store.ui_value("split").unwrap().as_deref(), Some("320"));
+    }
+
+    #[test]
+    fn recover_newer_restores_compatible_backup_and_preserves_newer_data() {
+        let dir = tempfile::tempdir().unwrap();
+        let old_store = Store::open_with(dir.path(), &OLD).unwrap();
+        old_store
+            .touch_recent("/repo", "repo", Some("main"), 100)
+            .unwrap();
+        drop(old_store);
+
+        let upgraded = Store::open(dir.path()).unwrap();
+        assert_eq!(upgraded.schema_version().unwrap(), MIGRATIONS.len() as i64);
+        drop(upgraded);
+        assert_eq!(backups(dir.path()).len(), 1);
+
+        assert!(matches!(
+            Store::open_with(dir.path(), &OLD),
+            Err(Error::NewerStore(_))
+        ));
+
+        let recovered = Store::recover_newer_with(dir.path(), &OLD).unwrap();
+        assert_eq!(recovered.schema_version().unwrap(), OLD.state.len() as i64);
+        assert!(
+            recovered
+                .notice()
+                .unwrap()
+                .contains("restored an earlier backup")
+        );
+        assert_eq!(recovered.recent().unwrap().len(), 1);
+        drop(recovered);
+
+        assert!(backups(dir.path()).len() >= 2);
+        assert!(Store::open_with(dir.path(), &OLD).is_ok());
+    }
+
+    #[test]
+    fn recover_newer_resets_when_no_compatible_backup_exists() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::open(dir.path()).unwrap();
+        store
+            .touch_recent("/repo", "repo", Some("main"), 100)
+            .unwrap();
+        drop(store);
+        assert!(backups(dir.path()).is_empty());
+
+        assert!(matches!(
+            Store::open_with(dir.path(), &OLD),
+            Err(Error::NewerStore(_))
+        ));
+
+        let recovered = Store::recover_newer_with(dir.path(), &OLD).unwrap();
+        assert_eq!(recovered.schema_version().unwrap(), OLD.state.len() as i64);
+        assert!(
+            recovered
+                .notice()
+                .unwrap()
+                .contains("started with fresh data")
+        );
+        assert!(recovered.recent().unwrap().is_empty());
+        drop(recovered);
+
+        assert_eq!(backups(dir.path()).len(), 1);
+        assert!(Store::open_with(dir.path(), &OLD).is_ok());
+    }
+
+    #[test]
+    fn recover_newer_handles_newer_settings_version() {
+        let dir = tempfile::tempdir().unwrap();
+        drop(Store::open(dir.path()).unwrap());
+        fs::write(dir.path().join(SETTINGS_FILE), r#"{"version": 9}"#).unwrap();
+        assert!(matches!(Store::open(dir.path()), Err(Error::NewerStore(_))));
+
+        let recovered = Store::recover_newer(dir.path()).unwrap();
+        assert_eq!(
+            recovered.settings().diff.viewer,
+            Settings::default().diff.viewer
+        );
+        assert_eq!(backups(dir.path()).len(), 1);
+        drop(recovered);
+        assert!(Store::open(dir.path()).is_ok());
+    }
+
+    #[test]
+    fn is_same_version_newer_detects_matching_app_version() {
+        let dir = tempfile::tempdir().unwrap();
+        assert!(!is_same_version_newer(dir.path()));
+
+        drop(Store::open(dir.path()).unwrap());
+        assert!(is_same_version_newer(dir.path()));
+
+        let db = Connection::open(dir.path().join(STATE_FILE)).unwrap();
+        db.execute(
+            "UPDATE meta SET value = '9.9.9' WHERE key = 'app_version'",
+            [],
+        )
+        .unwrap();
+        drop(db);
+        assert!(!is_same_version_newer(dir.path()));
     }
 }
