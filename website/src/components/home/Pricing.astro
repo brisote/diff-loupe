@@ -1,26 +1,36 @@
 ---
+import { aiReviewEnabled } from "../../lib/features";
 import Icon from "../Icon.astro";
 
-const questions = [
-  [
-    "Does Diffloupe cost anything?",
-    "Manual review is completely free. AI review is pay-as-you-go from a prepaid USD balance starting at $10 with all model usage included.",
-  ],
-  [
-    "Do I need an account?",
-    "Not for manual review. You only sign in if you choose to use AI review.",
-  ],
-  [
-    "How does AI review pricing work?",
-    "Add funds in $10, $25 or $50 packs. Each review shows its exact dollar cost, with model usage included and no separate API keys.",
-  ],
-];
+const questions = aiReviewEnabled
+  ? [
+      [
+        "Does Diffloupe cost anything?",
+        "Manual review is completely free. AI review is pay-as-you-go from a prepaid USD balance starting at $10 with all model usage included.",
+      ],
+      [
+        "Do I need an account?",
+        "Not for manual review. You only sign in if you choose to use AI review.",
+      ],
+      [
+        "How does AI review pricing work?",
+        "Add funds in $10, $25 or $50 packs. Each review shows its exact dollar cost, with model usage included and no separate API keys.",
+      ],
+    ]
+  : [
+      ["Does Diffloupe cost anything?", "No. Every feature in this release is free to use."],
+      ["Do I need an account?", "No. Diffloupe has no accounts. Install it and open a repository."],
+      [
+        "Will there be a paid plan?",
+        "Perhaps later, for new features. This page will show it first.",
+      ],
+    ];
 const manualTicks = [
   "Rendered Markdown diffs",
   "Side-by-side and unified code diffs",
   "The 3-pane merge window",
   "Branch log, commit, push and a terminal",
-  "100% local, no account, open source",
+  aiReviewEnabled ? "100% local, no account, open source" : "No account, open source",
 ];
 const aiTicks = [
   "Two-stage repository audit and diff review",
@@ -34,8 +44,14 @@ const aiTicks = [
 <section class="pricing" id="pricing" aria-labelledby="pricing-title">
   <div>
     <span class="chip chip-section"><Icon name="tag" />Pricing</span>
-    <h2 class="h2" id="pricing-title">Free local review, pay as you go for AI.</h2>
-    <p class="sub">Manual Git and Markdown review is 100% local, free and open source. Interactive AI review uses a prepaid USD balance with model usage included and zero server data retention.</p>
+    <h2 class="h2" id="pricing-title">
+      {aiReviewEnabled ? "Free local review, pay as you go for AI." : "Free."}
+    </h2>
+    <p class="sub">
+      {aiReviewEnabled
+        ? "Manual Git and Markdown review is 100% local, free and open source. Interactive AI review uses a prepaid USD balance with model usage included and zero server data retention."
+        : "Every feature in this release is free to use, with no account and no tracking."}
+    </p>
     <div class="faq-mini">
       {questions.map(([question, answer]) => (
         <details><summary><span class="plus"><Icon name="plus" /></span>{question}</summary><p class="faq-a">{answer}</p></details>
@@ -43,29 +59,39 @@ const aiTicks = [
     </div>
   </div>
   <div class="plans">
-    <span class="plans-tag">Two ways to review</span>
+    <span class="plans-tag">{aiReviewEnabled ? "Two ways to review" : "Current release"}</span>
     <div class="plan">
       <div>
-        <h3 class="plan-name">Manual review</h3>
-        <p class="plan-desc">Local Git and Markdown diff inspection on your machine.</p>
-        <p class="plan-price"><b>$0</b><span>free</span></p>
+        <h3 class="plan-name">{aiReviewEnabled ? "Manual review" : "Diffloupe"}</h3>
+        <p class="plan-desc">
+          {aiReviewEnabled
+            ? "Local Git and Markdown diff inspection on your machine."
+            : "The desktop app for macOS, Windows and Linux."}
+        </p>
+        <p class="plan-price"><b>$0</b><span>{aiReviewEnabled ? "free" : "free to use"}</span></p>
         <a class="btn btn-primary" href="/download/"><Icon name="download" size="sm" />Download free</a>
       </div>
       <ul class="ticks">
         {manualTicks.map((tick) => <li><span class="tick"><Icon name="check" /></span>{tick}</li>)}
       </ul>
     </div>
-    <div class="plan">
-      <div>
-        <h3 class="plan-name">AI review</h3>
-        <p class="plan-desc">Interactive whole-project analysis and branch diff review.</p>
-        <p class="plan-price"><b>From $10</b><span>prepaid balance</span></p>
-        <a class="btn btn-outline" href="/download/"><Icon name="download" size="sm" />Try in Diffloupe</a>
+    {aiReviewEnabled && (
+      <div class="plan">
+        <div>
+          <h3 class="plan-name">AI review</h3>
+          <p class="plan-desc">Interactive whole-project analysis and branch diff review.</p>
+          <p class="plan-price"><b>From $10</b><span>prepaid balance</span></p>
+          <a class="btn btn-outline" href="/download/"><Icon name="download" size="sm" />Try in Diffloupe</a>
+        </div>
+        <ul class="ticks">
+          {aiTicks.map((tick) => <li><span class="tick"><Icon name="check" /></span>{tick}</li>)}
+        </ul>
       </div>
-      <ul class="ticks">
-        {aiTicks.map((tick) => <li><span class="tick"><Icon name="check" /></span>{tick}</li>)}
-      </ul>
-    </div>
-    <p class="plans-note">AI review requires sign-in and explicit consent. Repositories and reports are deleted immediately once generation completes.</p>
+    )}
+    <p class="plans-note">
+      {aiReviewEnabled
+        ? "AI review requires sign-in and explicit consent. Repositories and reports are deleted immediately once generation completes."
+        : "This release is free and open source. Future plans, if any, will be published here first."}
+    </p>
   </div>
 </section>

@@ -768,7 +768,11 @@ export function createAppStore(backend: Backend) {
             .call("get_ui_value", { key: modeKey(repoPath) })
             .then((val) => {
               if (get().repo?.path !== repoPath) return;
-              if (val === "ai" || val === "manual") set({ workspaceMode: val });
+              if (val === "ai" && get().info?.aiReviewEnabled) {
+                set({ workspaceMode: "ai" });
+              } else if (val === "manual") {
+                set({ workspaceMode: "manual" });
+              }
             })
             .catch(() => undefined);
           void backend
@@ -863,7 +867,11 @@ export function createAppStore(backend: Backend) {
               .call("get_ui_value", { key: modeKey(repoPath) })
               .then((val) => {
                 if (get().repo?.path !== repoPath) return;
-                if (val === "ai" || val === "manual") set({ workspaceMode: val });
+                if (val === "ai" && get().info?.aiReviewEnabled) {
+                  set({ workspaceMode: "ai" });
+                } else if (val === "manual") {
+                  set({ workspaceMode: "manual" });
+                }
               })
               .catch(() => undefined);
             void backend
@@ -1672,6 +1680,7 @@ export function createAppStore(backend: Backend) {
       setSearchMatch: (searchMatch) => set({ searchMatch }),
 
       setWorkspaceMode: (mode) => {
+        if (mode === "ai" && !get().info?.aiReviewEnabled) return;
         set({ workspaceMode: mode });
         const repo = get().repo;
         if (repo) {
@@ -1685,6 +1694,7 @@ export function createAppStore(backend: Backend) {
       },
 
       loadAiState: async (targetReviewId?: number) => {
+        if (!get().info?.aiReviewEnabled) return;
         const repo = get().repo;
         if (!repo) {
           set({

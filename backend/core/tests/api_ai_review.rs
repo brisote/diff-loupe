@@ -99,6 +99,7 @@ fn open_repo_core(repo: &TempRepo) -> (tempfile::TempDir, Core, Arc<RecordedEven
     let data = tempfile::tempdir().unwrap();
     let events = Arc::new(RecordedEvents::default());
     let core = Core::new(data.path(), test_env(), events.clone()).unwrap();
+    core.set_ai_review_enabled(true);
     let info = core
         .dispatch("open_repo", json!({"path": repo.path()}))
         .unwrap();
@@ -690,4 +691,24 @@ fn models_catalog_and_start_review_parameters() {
     assert!(captured.contains("name=\"effort\"\r\n\r\nmedium"));
 
     drop(data);
+}
+
+#[test]
+fn ai_commands_are_blocked_when_feature_flag_is_disabled() {
+    let repo = TempRepo::with_commit();
+    let data = tempfile::tempdir().unwrap();
+    let events = Arc::new(RecordedEvents::default());
+    let core = Core::new(data.path(), test_env(), events).unwrap();
+    core.set_ai_review_enabled(false);
+
+    let app_info = core.dispatch("app_info", Value::Null).unwrap();
+    assert_eq!(app_info["aiReviewEnabled"], false);
+
+    let err = core
+        .dispatch("ai_get_state", json!({ "repo": repo.path() }))
+        .unwrap_err();
+    assert_eq!(err.code, ErrorCode::AiService);
+
+    let err = core.dispatch("ai_get_models", Value::Null).unwrap_err();
+    assert_eq!(err.code, ErrorCode::AiService);
 }

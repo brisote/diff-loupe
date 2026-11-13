@@ -184,7 +184,7 @@ test("no screen offers AI", async ({ page, workspace, startApp }) => {
   const settings = page.getByRole("dialog", { name: "Settings" });
   await expect(
     settings.getByRole("listbox", { name: "Settings sections" }).getByRole("option"),
-  ).toHaveText(["Diff", "Updates", "AI review"]);
+  ).toHaveText(["Diff", "Updates"]);
   await settings.getByRole("button", { name: "Cancel" }).click();
   await noAi();
   await page.getByRole("button", { name: "Settings menu" }).click();

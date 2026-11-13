@@ -21,8 +21,13 @@ for (const path of [...pages.map((target) => target.path), missing.path]) {
     const description = await page.locator("meta[name=description]").getAttribute("content");
     expect(description).toBeTruthy();
     expect(words).toContain(description);
+    const aiReviewEnabled =
+      process.env.PUBLIC_AI_REVIEW === "1" || process.env.PUBLIC_AI_REVIEW === "true";
     expect(words).not.toMatch(/\bClaude\b|\bagents?\b|forever|\bcredits?\b/i);
     expect(words).not.toMatch(/offline|network call|\bgit remotes?\b|(?<!pull )\brequests?\b/i);
+    if (!aiReviewEnabled) {
+      expect(words).not.toMatch(/\bAI\b|\bservers?\b/i);
+    }
     if (path === "/") {
       expect(words).toMatch(/Review Markdown changes as a page/);
     }

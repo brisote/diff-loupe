@@ -4,6 +4,7 @@ import { useApp } from "../state/context";
 
 export function Stripe() {
   const platform = usePlatform();
+  const aiReviewEnabled = useApp((state) => Boolean(state.info?.aiReviewEnabled));
   const workspaceMode = useApp((state) => state.workspaceMode);
   const setWorkspaceMode = useApp((state) => state.setWorkspaceMode);
   const terminalOpen = useApp((state) => state.terminalOpen);
@@ -20,16 +21,18 @@ export function Stripe() {
       >
         <Icon name="toolwindows-changes" />
       </button>
-      <button
-        className={`dl-tbtn app-stripe-button ${workspaceMode === "ai" ? "is-toggled" : ""}`}
-        type="button"
-        title="AI review"
-        aria-label="AI review"
-        aria-pressed={workspaceMode === "ai"}
-        onClick={() => setWorkspaceMode("ai")}
-      >
-        <Icon name="diff-magicResolveToolbar" />
-      </button>
+      {aiReviewEnabled && (
+        <button
+          className={`dl-tbtn app-stripe-button ${workspaceMode === "ai" ? "is-toggled" : ""}`}
+          type="button"
+          title="AI review"
+          aria-label="AI review"
+          aria-pressed={workspaceMode === "ai"}
+          onClick={() => setWorkspaceMode("ai")}
+        >
+          <Icon name="diff-magicResolveToolbar" />
+        </button>
+      )}
       <span className="app-stripe-spacer" />
       <button
         className={`dl-tbtn app-stripe-button ${terminalOpen ? "is-toggled" : ""}`}

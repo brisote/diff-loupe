@@ -26,6 +26,7 @@ export function MainWindow() {
   const resized = useRef(false);
   const [maxWidth, setMaxWidth] = useState(1000);
   const terminalOpen = useApp((state) => state.terminalOpen);
+  const aiReviewEnabled = useApp((state) => Boolean(state.info?.aiReviewEnabled));
   const workspaceMode = useApp((state) => state.workspaceMode);
   const [terminalHeight, setTerminalHeight] = useState(defaultTerminal);
   const [maxHeight, setMaxHeight] = useState(600);
@@ -86,7 +87,7 @@ export function MainWindow() {
       <div className="app-body">
         <Stripe />
         <div className="app-work">
-          {workspaceMode === "ai" ? (
+          {aiReviewEnabled && workspaceMode === "ai" ? (
             <AiReviewIsland />
           ) : (
             <div className="app-panes" ref={body}>

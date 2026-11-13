@@ -13,6 +13,11 @@ use serde::{Deserialize, Serialize};
 pub const CLOUD_AUTH_FILE: &str = "cloud_auth.json";
 pub const AI_SIGN_IN_TASK: &str = "ai_sign_in";
 
+pub fn ai_review_enabled() -> bool {
+    std::env::var("DIFFLOUPE_AI_REVIEW")
+        .is_ok_and(|value| value == "1" || value.eq_ignore_ascii_case("true"))
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StoredCloudAuth {

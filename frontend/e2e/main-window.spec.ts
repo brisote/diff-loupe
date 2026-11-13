@@ -117,10 +117,11 @@ test("the settings menu opens About and Uninstall", async ({ page, workspace, st
   await page.getByRole("button", { name: "Settings menu" }).click();
   await page.getByRole("menuitem", { name: "About Diffloupe" }).click();
   const about = page.getByRole("dialog", { name: "About Diffloupe" });
-  await expect(about).toContainText("Manual review is local and open source");
+  await expect(about).toContainText("It is open source");
   await expect(about).toContainText("check for a new version on diffloupe.com");
   await about.getByRole("button", { name: "Close" }).click();
   await expect(about).toBeHidden();
+  await expect(page.getByRole("button", { name: "AI review" })).toBeHidden();
 
   await page.getByRole("button", { name: "Settings menu" }).click();
   await page.getByRole("menuitem", { name: "Uninstall Diffloupe…" }).click();

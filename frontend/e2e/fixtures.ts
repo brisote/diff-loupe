@@ -66,6 +66,7 @@ type StartOptions = {
   dataDir?: string;
   updateUrl?: string;
   cloudUrl?: string;
+  aiReview?: boolean;
   platform?: PlatformName;
   shell?: string;
 };
@@ -150,6 +151,7 @@ export async function startBridge(options: StartOptions, scratch: string): Promi
       ENV: "",
       DIFFLOUPE_UPDATE_URL: options.updateUrl ?? noUpdates,
       ...(options.cloudUrl ? { DIFFLOUPE_CLOUD_URL: options.cloudUrl } : {}),
+      ...(options.aiReview || options.cloudUrl ? { DIFFLOUPE_AI_REVIEW: "1" } : {}),
     },
   });
   const lines = createInterface({ input: child.stdout as NodeJS.ReadableStream });

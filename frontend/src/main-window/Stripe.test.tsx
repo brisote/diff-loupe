@@ -29,4 +29,22 @@ describe("Stripe", () => {
     fireEvent.click(terminal);
     expect(terminal).toHaveAttribute("aria-pressed", "true");
   });
+
+  it("hides AI review button when AI review is disabled", async () => {
+    const core = fakeCore({
+      app_info: () => ({
+        version: "0.1.0",
+        settingsNotice: null,
+        home: "/Users/ada",
+        platform: "macos",
+        aiReviewEnabled: false,
+      }),
+      current_repo: () => repoInfo("acme-billing", "gs/invoice-export"),
+    });
+    await renderWithStore(<Stripe />, core);
+
+    expect(screen.getByRole("button", { name: "Manual review" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "AI review" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Terminal/ })).toBeInTheDocument();
+  });
 });

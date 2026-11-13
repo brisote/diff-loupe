@@ -42,6 +42,7 @@ export function fakeCore(handlers: Record<string, Handler> = {}, platform: Platf
       settingsNotice: null,
       home: "/Users/ada",
       platform,
+      aiReviewEnabled: true,
     }),
     get_settings: () => settings,
     recent_repos: () => [],

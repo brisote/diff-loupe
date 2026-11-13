@@ -12,10 +12,13 @@ import type { UpdateInstall, UpdateStatus } from "../state/updates";
 
 export function SettingsDialog() {
   const settings = useApp((state) => state.settings);
+  const aiReviewEnabled = useApp((state) => Boolean(state.info?.aiReviewEnabled));
   const saveSettings = useApp((state) => state.saveSettings);
   const showDialog = useApp((state) => state.showDialog);
   const initialPage = useApp((state) => state.settingsPage);
-  const [page, setPage] = useState<SettingsPage>(initialPage);
+  const [page, setPage] = useState<SettingsPage>(
+    initialPage === "ai" && !aiReviewEnabled ? "diff" : initialPage,
+  );
   const [draft, setDraft] = useState<Settings | null>(settings);
   const [error, setError] = useState<ApiError | null>(null);
   if (!draft) return null;
@@ -46,9 +49,11 @@ export function SettingsDialog() {
             <Row selected={page === "updates"} onActivate={() => setPage("updates")}>
               <span>Updates</span>
             </Row>
-            <Row selected={page === "ai"} onActivate={() => setPage("ai")}>
-              <span>AI review</span>
-            </Row>
+            {aiReviewEnabled && (
+              <Row selected={page === "ai"} onActivate={() => setPage("ai")}>
+                <span>AI review</span>
+              </Row>
+            )}
           </div>
         </nav>
         {page === "updates" ? (
@@ -56,7 +61,7 @@ export function SettingsDialog() {
             check={draft.updates.check}
             onCheck={(check) => setDraft({ ...draft, updates: { ...draft.updates, check } })}
           />
-        ) : page === "ai" ? (
+        ) : aiReviewEnabled && page === "ai" ? (
           <AiReviewSettingsPage />
         ) : (
           <div className="dl-settings-page">

@@ -23,6 +23,11 @@ test.skip(
   "the private design checkout is absent, so the design comparison runs on the Mac only",
 );
 
+test.skip(
+  process.env.PUBLIC_AI_REVIEW !== "1" && process.env.PUBLIC_AI_REVIEW !== "true",
+  "AI review website copy is gated behind PUBLIC_AI_REVIEW=1",
+);
+
 test.beforeAll(() => {
   if (!designPresent)
     throw new Error(

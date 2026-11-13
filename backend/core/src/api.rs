@@ -20,6 +20,7 @@ pub struct AppInfo {
     pub settings_notice: Option<String>,
     pub home: Option<String>,
     pub platform: Platform,
+    pub ai_review_enabled: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]

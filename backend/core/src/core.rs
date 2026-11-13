@@ -66,6 +66,7 @@ pub struct Core {
     package: Option<update::PackageKind>,
     platform: Platform,
     watch_polling: AtomicBool,
+    ai_review_enabled: AtomicBool,
 }
 
 struct OpenRepo {
@@ -126,6 +127,7 @@ impl Core {
             package,
             platform,
             watch_polling: AtomicBool::new(false),
+            ai_review_enabled: AtomicBool::new(aireview::ai_review_enabled()),
         })
     }
 
@@ -159,6 +161,14 @@ impl Core {
 
     pub fn set_watch_polling(&self, polling: bool) {
         self.watch_polling.store(polling, Ordering::SeqCst);
+    }
+
+    pub fn ai_review_enabled(&self) -> bool {
+        self.ai_review_enabled.load(Ordering::SeqCst)
+    }
+
+    pub fn set_ai_review_enabled(&self, enabled: bool) {
+        self.ai_review_enabled.store(enabled, Ordering::SeqCst);
     }
 
     pub fn set_update_max_time(&self, seconds: u64) {
@@ -222,6 +232,9 @@ impl Core {
     }
 
     fn run(&self, cmd: &str, args: Value) -> Result<Value> {
+        if cmd.starts_with("ai_") && !self.ai_review_enabled() {
+            return Err(Error::AiService("AI review is disabled.".into()));
+        }
         match cmd {
             "app_info" => reply(self.app_info()?),
             "report_env" => reply(self.report_env()),
@@ -569,6 +582,7 @@ impl Core {
             })
             .ok(),
             platform: self.platform,
+            ai_review_enabled: self.ai_review_enabled(),
         })
     }
 
