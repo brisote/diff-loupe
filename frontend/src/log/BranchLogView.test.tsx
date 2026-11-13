@@ -195,6 +195,26 @@ describe("BranchLogView", () => {
     expect(screen.getByText("Pick a commit")).toBeInTheDocument();
   });
 
+  it("shows only file names in changed files and sets the path in title", async () => {
+    const file = {
+      path: "billing/src/InvoiceExporter.kt",
+      oldPath: null,
+      kind: "modified" as const,
+    };
+    const transport = fakeCore({
+      current_repo: () => ({ ...repoInfo("acme-billing"), lastTab: "log" }),
+      branch_log: () => ({ entries: [skip], truncated: false }),
+      commit_details: () => ({ ...details(skip), files: [file] }),
+    });
+    const { store } = await renderWithStore(<BranchLogView />, transport);
+    await screen.findByText("1 commit");
+    await act(async () => store.getState().selectCommit(skip.id));
+    const option = await screen.findByRole("option", { name: "billing/src/InvoiceExporter.kt" });
+    expect(option.querySelector(".dl-row-name")).toHaveTextContent("InvoiceExporter.kt");
+    expect(option.querySelector(".dl-row-path")).toBeNull();
+    expect(option).toHaveAttribute("title", "billing/src/InvoiceExporter.kt");
+  });
+
   it("ignores a diff that arrives for a commit that is no longer selected", async () => {
     const other = entry("c", "Round totals half-even");
     const file = { path: "README.md", oldPath: null, kind: "modified" as const };

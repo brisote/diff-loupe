@@ -437,7 +437,7 @@ function CommitFiles({
             role="option"
             aria-selected={isSelected}
             aria-label={file.path}
-            title={file.oldPath ? `Renamed from ${file.oldPath}` : undefined}
+            title={file.oldPath ? `Renamed from ${file.oldPath}` : folder ? file.path : undefined}
             style={{ "--depth": 1 } as React.CSSProperties}
             tabIndex={-1}
             onMouseDown={keepFocus}
@@ -446,7 +446,6 @@ function CommitFiles({
           >
             <span className={`dl-i ${fileIcon(file.path)}`} aria-hidden="true" />
             <span className={`dl-row-name ${statusClass(file.kind)}`}>{name}</span>
-            <span className="dl-row-path">{folder}</span>
           </div>
         );
       })}

@@ -184,7 +184,8 @@ button {
   overflow-y: auto;
 }
 
-.app-changes-list .dl-row-name {
+.app-changes-list .dl-row-name,
+.app-log-files .dl-row-name {
   flex: 1;
   min-width: 0;
   max-width: none;
