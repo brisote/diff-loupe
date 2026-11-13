@@ -335,7 +335,9 @@ def main() -> int:
         results.append(check("Kotlin code has syntax colours", main_window.get("keywords", 0) > 0, str(main_window.get("keywords"))))
         offset = main_window.get("connector")
         results.append(check("the connector meets its block beside a long line", offset is not None and abs(offset) < 1, str(offset)))
-        results.append(check("the window has an AI control", main_window.get("aiControls") == 1, str(main_window.get("aiControls"))))
+        ai_expected = 1 if os.environ.get("DIFFLOUPE_AI_REVIEW") in ("1", "true", "True") else 0
+        ai_msg = "the window has an AI control" if ai_expected else "the window has no AI control"
+        results.append(check(ai_msg, main_window.get("aiControls") == ai_expected, str(main_window.get("aiControls"))))
         results.append(check("the branch and target show", "gs/invoice-export" in text and "Target" in text, text[:200]))
         terminal = main_window.get("terminal", "")
         results.append(check("the terminal shows the shell's output", terminal.strip() != "", terminal[:200]))
