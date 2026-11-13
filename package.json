@@ -21,7 +21,7 @@
     "types": "python3 backend/scripts/export_types.py"
   },
   "devDependencies": {
-    "@biomejs/biome": "2.5.15",
-    "@tauri-apps/cli": "2.12.3"
+    "@biomejs/biome": "2.6.6",
+    "@tauri-apps/cli": "2.12.4"
   }
 }
