@@ -45,7 +45,7 @@ describe("ChangesView", () => {
     expect(screen.queryAllByRole("treeitem", { name: "notes.md" })).toHaveLength(0);
   });
 
-  it("shows groups and files with icons, names, folders and status colours", async () => {
+  it("shows groups and files with icons, names and status colours", async () => {
     await view();
     const tree = screen.getByRole("tree", { name: "Changed files" });
     const group = within(tree).getByRole("treeitem", { name: /Changes/ });
@@ -53,7 +53,9 @@ describe("ChangesView", () => {
     const row = within(tree).getByRole("treeitem", { name: "billing/src/InvoiceExporter.kt" });
     expect(row.querySelector(".dl-ft-kotlin")).not.toBeNull();
     expect(row.querySelector(".dl-row-name")).toHaveClass("st-modified");
-    expect(row).toHaveTextContent("billing/src");
+    expect(row).toHaveTextContent("InvoiceExporter.kt");
+    expect(row.querySelector(".dl-row-path")).toBeNull();
+    expect(row).toHaveAttribute("title", "billing/src/InvoiceExporter.kt");
     expect(within(tree).getByRole("treeitem", { name: "billing/Name.kt" })).toHaveAttribute(
       "title",
       "Renamed from old/Name.kt",

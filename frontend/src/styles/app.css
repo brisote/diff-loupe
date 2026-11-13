@@ -184,6 +184,12 @@ button {
   overflow-y: auto;
 }
 
+.app-changes-list .dl-row-name {
+  flex: 1;
+  min-width: 0;
+  max-width: none;
+}
+
 .app-virtual {
   position: relative;
   width: 100%;

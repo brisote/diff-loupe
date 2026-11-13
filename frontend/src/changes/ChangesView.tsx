@@ -249,7 +249,7 @@ function ChangesList({ rows, selection, onSelect, onToggle }: ListProps) {
                 aria-selected={row.id === selection}
                 tabIndex={-1}
                 aria-label={row.group === "staged" ? `${row.change.path}, staged` : row.change.path}
-                title={renamed}
+                title={renamed ?? (row.folder ? row.change.path : undefined)}
                 style={{ ...style, "--depth": 1 } as React.CSSProperties}
                 onMouseDown={keepFocus}
                 onClick={() => onSelect(row.id)}
@@ -261,7 +261,6 @@ function ChangesList({ rows, selection, onSelect, onToggle }: ListProps) {
               >
                 <span className={`dl-i ${fileIcon(row.change.path)}`} aria-hidden="true" />
                 <span className={`dl-row-name ${statusClass(row.change.kind)}`}>{row.name}</span>
-                <span className="dl-row-path">{row.folder}</span>
               </div>
             );
           })}
