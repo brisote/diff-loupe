@@ -232,6 +232,9 @@ pub struct StreamContext<'a> {
     pub run_id: &'a str,
     pub head_oid: Option<&'a str>,
     pub base_oid: Option<&'a str>,
+    pub model: Option<&'a str>,
+    pub effort: Option<&'a str>,
+    pub review_id: Option<i64>,
     pub data_dir: &'a Path,
 }
 
@@ -352,13 +355,15 @@ fn dispatch_sse_event(
             let content = val["content"].as_str().unwrap_or_default().to_string();
             let delta = val["delta"].as_str().unwrap_or_default().to_string();
             acc.chat.push_str(&delta);
-            events.emit(CoreEvent::AiReviewStream {
-                repo: ctx.repo.to_string(),
-                branch: ctx.branch.to_string(),
-                target_branch: ctx.target_branch.to_string(),
-                run_id: ctx.run_id.to_string(),
-                event: AiStreamPayload::ChatDelta { content, delta },
-            });
+            if !acc.chat.contains("--- REPORT UPDATE ---") {
+                events.emit(CoreEvent::AiReviewStream {
+                    repo: ctx.repo.to_string(),
+                    branch: ctx.branch.to_string(),
+                    target_branch: ctx.target_branch.to_string(),
+                    run_id: ctx.run_id.to_string(),
+                    event: AiStreamPayload::ChatDelta { content, delta },
+                });
+            }
         }
         "billing" => {
             let balance_usd = val["balance_usd"].as_str().unwrap_or_default().to_string();
@@ -400,37 +405,69 @@ fn dispatch_sse_event(
             } else {
                 acc.report.clone()
             };
-            let final_chat = if !chat_message.is_empty() {
+            let raw_chat = if !chat_message.is_empty() {
                 chat_message
             } else {
                 acc.chat.clone()
             };
-            let final_cost = if !cost_usd.is_empty() {
+            let final_chat = raw_chat
+                .split("--- REPORT UPDATE ---")
+                .next()
+                .unwrap_or("")
+                .trim()
+                .to_string();
+            let turn_cost = if !cost_usd.is_empty() {
                 Some(cost_usd)
             } else {
                 acc.cost_usd.clone()
             };
-            if !final_report.is_empty() {
-                let _ = store.save_ai_review(&StoredAiReview {
+
+            let mut active_review_id = ctx.review_id;
+            if let Some(rid) = active_review_id {
+                if let Ok(Some(existing)) = store.get_ai_review(rid) {
+                    let accumulated = crate::store::accumulate_cost(
+                        existing.cost_usd.as_deref(),
+                        turn_cost.as_deref(),
+                    );
+                    let mut updated = existing;
+                    if !final_report.is_empty() {
+                        updated.report_markdown = final_report.clone();
+                    }
+                    updated.cost_usd = accumulated;
+                    updated.updated_at = now;
+                    let _ = store.save_ai_review(&updated);
+                }
+            } else if !final_report.is_empty() {
+                let saved_id = store.save_ai_review(&StoredAiReview {
+                    id: 0,
                     repo: ctx.repo.to_string(),
                     branch: ctx.branch.to_string(),
                     target_branch: ctx.target_branch.to_string(),
                     report_markdown: final_report.clone(),
-                    cost_usd: final_cost.clone(),
+                    cost_usd: turn_cost.clone(),
                     head_oid: ctx.head_oid.map(|s| s.to_string()),
                     base_oid: ctx.base_oid.map(|s| s.to_string()),
+                    model: ctx.model.map(|s| s.to_string()),
+                    effort: ctx.effort.map(|s| s.to_string()),
+                    created_at: now,
                     updated_at: now,
+                    versions: Vec::new(),
                 });
+                if let Ok(id) = saved_id {
+                    active_review_id = Some(id);
+                }
             }
+
             if !final_chat.is_empty() {
                 let _ = store.append_ai_chat_message(&crate::store::NewAiChatMessage {
+                    review_id: active_review_id,
                     repo: ctx.repo,
                     branch: ctx.branch,
                     target_branch: ctx.target_branch,
                     role: "assistant",
                     content: &final_chat,
                     quoted_text: None,
-                    cost_usd: final_cost.as_deref(),
+                    cost_usd: turn_cost.as_deref(),
                     created_at: now,
                 });
             }
@@ -444,7 +481,7 @@ fn dispatch_sse_event(
                     report_markdown: final_report,
                     chat_message: final_chat,
                     balance_usd,
-                    cost_usd: final_cost.unwrap_or_default(),
+                    cost_usd: turn_cost.unwrap_or_default(),
                 },
             });
         }

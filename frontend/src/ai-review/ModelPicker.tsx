@@ -12,85 +12,85 @@ type ModelPickerProps = {
 };
 
 export function ModelPicker({ anchor, catalog, selected, onSelect, onClose }: ModelPickerProps) {
-  const style = useBelow(anchor);
-  const models = catalog?.models ?? [
-    {
-      id: "claude-3-7-sonnet",
-      name: "Claude 3.7 Sonnet",
-      description: "High intelligence with hybrid reasoning",
-    },
-    {
-      id: "claude-3-5-sonnet",
-      name: "Claude 3.5 Sonnet",
-      description: "Balanced speed and deep code analysis (Default)",
-    },
-    {
-      id: "claude-3-5-haiku",
-      name: "Claude 3.5 Haiku",
-      description: "Fast lightweight code review",
-    },
-  ];
+  const style = useBelow(anchor, 280);
+  const rawModels = catalog?.models ?? [];
+  const models = [...rawModels];
+  if (selected && !models.some((m) => m.id === selected || m.name === selected)) {
+    models.unshift({
+      id: selected,
+      name: selected,
+      description: undefined,
+    });
+  }
 
   return (
     <Popup
       label="Review model"
       role="menu"
-      className="dl-popup"
+      className="dl-popup app-model-picker"
       anchor={anchor}
-      style={{ ...style, width: 280, zIndex: 5 }}
+      style={{ ...style, width: 280 }}
       onClose={onClose}
     >
       <div className="dl-popup-section">Model</div>
-      {models.map((model) => {
-        const isSelected = selected ? selected === model.id : model.id === catalog?.defaultModel;
-        const isDefault = catalog?.defaultModel === model.id;
-        const desc = model.description
-          ? isDefault && !model.description.includes("Default")
-            ? `${model.description} (Default)`
-            : model.description
-          : isDefault
-            ? "Default"
-            : undefined;
+      {models.length === 0 ? (
+        <div style={{ padding: "10px 12px", fontSize: 12, color: "var(--text-muted)" }}>
+          No models available from ACP agent
+        </div>
+      ) : (
+        models.map((model) => {
+          const isSelected = selected
+            ? selected === model.id || selected === model.name
+            : model.id === catalog?.defaultModel;
+          const isDefault = catalog?.defaultModel === model.id;
+          const desc = model.description
+            ? isDefault && !model.description.includes("Default")
+              ? `${model.description} (Default)`
+              : model.description
+            : isDefault
+              ? "Default"
+              : undefined;
 
-        return (
-          <button
-            key={model.id}
-            type="button"
-            className={`dl-row ${isSelected ? "is-selected" : ""}`}
-            style={{
-              padding: "6px 10px",
-              display: "flex",
-              alignItems: "flex-start",
-              gap: 8,
-              textAlign: "left",
-              width: "100%",
-              border: "none",
-              background: isSelected ? "var(--row-current-bg)" : "transparent",
-              cursor: "pointer",
-            }}
-            onClick={() => {
-              onSelect(model.id);
-              onClose();
-            }}
-          >
-            {isSelected ? (
-              <span
-                style={{ width: 16, flex: "none", display: "inline-flex", alignItems: "center" }}
-              >
-                <Icon name="actions-check" />
-              </span>
-            ) : (
-              <span style={{ width: 16, flex: "none" }} />
-            )}
-            <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-              <span style={{ fontWeight: isSelected ? 600 : 500, color: "var(--text-color)" }}>
-                {model.name}
-              </span>
-              {desc && <span style={{ fontSize: 11, color: "var(--text-muted)" }}>{desc}</span>}
-            </div>
-          </button>
-        );
-      })}
+          return (
+            <button
+              key={model.id}
+              type="button"
+              className={`dl-row ${isSelected ? "is-selected" : ""}`}
+              style={{
+                padding: "6px 10px",
+                display: "flex",
+                alignItems: "flex-start",
+                gap: 8,
+                textAlign: "left",
+                width: "100%",
+                border: "none",
+                background: isSelected ? "var(--row-current-bg)" : "transparent",
+                cursor: "pointer",
+              }}
+              onClick={() => {
+                onSelect(model.id);
+                onClose();
+              }}
+            >
+              {isSelected ? (
+                <span
+                  style={{ width: 16, flex: "none", display: "inline-flex", alignItems: "center" }}
+                >
+                  <Icon name="actions-check" />
+                </span>
+              ) : (
+                <span style={{ width: 16, flex: "none" }} />
+              )}
+              <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                <span style={{ fontWeight: isSelected ? 600 : 500, color: "var(--text-color)" }}>
+                  {model.name}
+                </span>
+                {desc && <span style={{ fontSize: 11, color: "var(--text-muted)" }}>{desc}</span>}
+              </div>
+            </button>
+          );
+        })
+      )}
     </Popup>
   );
 }
@@ -104,75 +104,85 @@ type EffortPickerProps = {
 };
 
 export function EffortPicker({ anchor, catalog, selected, onSelect, onClose }: EffortPickerProps) {
-  const style = useBelow(anchor);
-  const efforts = catalog?.efforts ?? [
-    { id: "low", name: "Low", description: "Fastest response with minimal thinking" },
-    { id: "medium", name: "Medium", description: "Balanced reasoning effort (Default)" },
-    { id: "high", name: "High", description: "Comprehensive reasoning effort" },
-  ];
+  const style = useBelow(anchor, 240);
+  const rawEfforts = catalog?.efforts ?? [];
+  const efforts = [...rawEfforts];
+  if (selected && !efforts.some((e) => e.id === selected || e.name === selected)) {
+    efforts.unshift({
+      id: selected,
+      name: selected.charAt(0).toUpperCase() + selected.slice(1),
+      description: undefined,
+    });
+  }
 
   return (
     <Popup
       label="Reasoning effort"
       role="menu"
-      className="dl-popup"
+      className="dl-popup app-effort-picker"
       anchor={anchor}
-      style={{ ...style, width: 240, zIndex: 5 }}
+      style={{ ...style, width: 240 }}
       onClose={onClose}
     >
       <div className="dl-popup-section">Reasoning effort</div>
-      {efforts.map((effort) => {
-        const isSelected = selected
-          ? selected === effort.id
-          : effort.id === (catalog?.defaultEffort ?? "medium");
-        const isDefault = (catalog?.defaultEffort ?? "medium") === effort.id;
-        const desc = effort.description
-          ? isDefault && !effort.description.includes("Default")
-            ? `${effort.description} (Default)`
-            : effort.description
-          : isDefault
-            ? "Default"
-            : undefined;
+      {efforts.length === 0 ? (
+        <div style={{ padding: "10px 12px", fontSize: 12, color: "var(--text-muted)" }}>
+          No reasoning effort options available
+        </div>
+      ) : (
+        efforts.map((effort) => {
+          const isSelected = selected
+            ? selected === effort.id || selected === effort.name
+            : effort.id === (catalog?.defaultEffort ?? "medium");
+          const isDefault = (catalog?.defaultEffort ?? "medium") === effort.id;
+          const desc = effort.description
+            ? isDefault && !effort.description.includes("Default")
+              ? `${effort.description} (Default)`
+              : effort.description
+            : isDefault
+              ? "Default"
+              : undefined;
 
-        return (
-          <button
-            key={effort.id}
-            type="button"
-            className={`dl-row ${isSelected ? "is-selected" : ""}`}
-            style={{
-              padding: "6px 10px",
-              display: "flex",
-              alignItems: "flex-start",
-              gap: 8,
-              textAlign: "left",
-              width: "100%",
-              border: "none",
-              background: isSelected ? "var(--row-current-bg)" : "transparent",
-              cursor: "pointer",
-            }}
-            onClick={() => {
-              onSelect(effort.id);
-              onClose();
-            }}
-          >
-            {isSelected ? (
-              <span
-                style={{ width: 16, flex: "none", display: "inline-flex", alignItems: "center" }}
-              >
-                <Icon name="actions-check" />
-              </span>
-            ) : (
-              <span style={{ width: 16, flex: "none" }} />
-            )}
-            <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-              <span style={{ fontWeight: isSelected ? 600 : 500, color: "var(--text-color)" }}>
-                {effort.name}
-              </span>
-              {desc && <span style={{ fontSize: 11, color: "var(--text-muted)" }}>{desc}</span>}
-            </div>
-          </button>
-        );
-      })}
+          return (
+            <button
+              key={effort.id}
+              type="button"
+              className={`dl-row ${isSelected ? "is-selected" : ""}`}
+              style={{
+                padding: "6px 10px",
+                display: "flex",
+                alignItems: "flex-start",
+                gap: 8,
+                textAlign: "left",
+                width: "100%",
+                border: "none",
+                background: isSelected ? "var(--row-current-bg)" : "transparent",
+                cursor: "pointer",
+              }}
+              onClick={() => {
+                onSelect(effort.id);
+                onClose();
+              }}
+            >
+              {isSelected ? (
+                <span
+                  style={{ width: 16, flex: "none", display: "inline-flex", alignItems: "center" }}
+                >
+                  <Icon name="actions-check" />
+                </span>
+              ) : (
+                <span style={{ width: 16, flex: "none" }} />
+              )}
+              <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                <span style={{ fontWeight: isSelected ? 600 : 500, color: "var(--text-color)" }}>
+                  {effort.name}
+                </span>
+                {desc && <span style={{ fontSize: 11, color: "var(--text-muted)" }}>{desc}</span>}
+              </div>
+            </button>
+          );
+        })
+      )}
     </Popup>
   );
 }

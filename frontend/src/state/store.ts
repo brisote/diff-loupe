@@ -24,6 +24,7 @@ import type { DiffSettings } from "../api/generated/DiffSettings";
 import type { MergeSide } from "../api/generated/MergeSide";
 import type { ModelsCatalog } from "../api/generated/ModelsCatalog";
 import type { StoredAiChatMessage } from "../api/generated/StoredAiChatMessage";
+import type { StoredAiReview } from "../api/generated/StoredAiReview";
 import { areaFor, inStaged, parseKey } from "../changes/rows";
 import {
   addFailure,
@@ -370,6 +371,9 @@ export type AppState = {
   } | null;
   reportMarkdown: string | null;
   reviewCostUsd: string | null;
+  reviews: StoredAiReview[];
+  activeReviewId: number | null;
+  selectedVersionNumber: number | null;
   chatMessages: StoredAiChatMessage[];
   streamingChat: string | null;
   quotedSelection: { text: string; heading?: string } | null;
@@ -378,7 +382,11 @@ export type AppState = {
   modelsCatalog: ModelsCatalog | null;
   selectedModel: string | null;
   selectedEffort: string | null;
-  loadAiState: () => Promise<void>;
+  loadAiState: (targetReviewId?: number) => Promise<void>;
+  switchReview: (reviewId: number) => Promise<void>;
+  aiDeleteReview: (reviewId: number) => Promise<void>;
+  aiRevertVersion: (reviewId: number, versionNumber: number) => Promise<void>;
+  selectVersion: (versionNumber: number | null) => void;
   loadAiModels: () => Promise<void>;
   setSelectedModel: (model: string) => void;
   setSelectedEffort: (effort: string) => void;
@@ -608,6 +616,9 @@ export function createAppStore(backend: Backend) {
       activeRun: null,
       reportMarkdown: null,
       reviewCostUsd: null,
+      reviews: [],
+      activeReviewId: null,
+      selectedVersionNumber: null,
       chatMessages: [],
       streamingChat: null,
       quotedSelection: null,
@@ -1673,12 +1684,15 @@ export function createAppStore(backend: Backend) {
         }
       },
 
-      loadAiState: async () => {
+      loadAiState: async (targetReviewId?: number) => {
         const repo = get().repo;
         if (!repo) {
           set({
             consentAccepted: false,
             account: null,
+            reviews: [],
+            activeReviewId: null,
+            selectedVersionNumber: null,
             reportMarkdown: null,
             reviewCostUsd: null,
             chatMessages: [],
@@ -1689,20 +1703,25 @@ export function createAppStore(backend: Backend) {
         const path = repo.path;
         const branch = repo.branch ?? undefined;
         const targetBranch = repo.target ?? undefined;
+        const reviewId = targetReviewId ?? get().activeReviewId ?? undefined;
         const request = ++aiStateRequest;
         try {
           const result = await backend.call("ai_get_state", {
             repo: path,
             branch,
             targetBranch,
+            reviewId,
           });
           if (request !== aiStateRequest || get().repo?.path !== path) return;
           set({
             consentAccepted: result.consentAccepted,
             account: result.account,
+            reviews: result.reviews ?? [],
+            activeReviewId: result.activeReviewId ?? null,
             reportMarkdown: result.review?.reportMarkdown ?? null,
             reviewCostUsd: result.review?.costUsd ?? null,
             chatMessages: result.chatMessages ?? [],
+            selectedVersionNumber: null,
             inlineError: null,
           });
           if (result.consentAccepted && !get().modelsCatalog) {
@@ -1715,19 +1734,89 @@ export function createAppStore(backend: Backend) {
         }
       },
 
+      switchReview: async (reviewId: number) => {
+        set({ activeReviewId: reviewId, selectedVersionNumber: null });
+        await get().loadAiState(reviewId);
+      },
+
+      selectVersion: (versionNumber: number | null) => {
+        set({ selectedVersionNumber: versionNumber });
+      },
+
+      aiDeleteReview: async (reviewId: number) => {
+        set({ inlineError: null });
+        try {
+          await backend.call("ai_delete_review", { reviewId });
+          if (get().activeReviewId === reviewId) {
+            set({
+              activeReviewId: null,
+              reportMarkdown: null,
+              reviewCostUsd: null,
+              chatMessages: [],
+              selectedVersionNumber: null,
+            });
+          }
+          await get().loadAiState();
+        } catch (err) {
+          const apiError = toApiError(err);
+          set({ inlineError: apiError.message });
+        }
+      },
+
+      aiRevertVersion: async (reviewId: number, versionNumber: number) => {
+        set({ inlineError: null });
+        try {
+          const updated = await backend.call("ai_revert_version", { reviewId, versionNumber });
+          if (updated) {
+            set({
+              reportMarkdown: updated.reportMarkdown,
+              selectedVersionNumber: null,
+            });
+          }
+          await get().loadAiState(reviewId);
+        } catch (err) {
+          const apiError = toApiError(err);
+          set({ inlineError: apiError.message });
+        }
+      },
+
       loadAiModels: async () => {
         if (!get().consentAccepted) return;
         try {
           const catalog = await backend.call("ai_get_models");
+          const availableModels = catalog.models ?? [];
           const currentModel = get().selectedModel;
+          const selectedModel =
+            currentModel ??
+            (catalog.defaultModel &&
+            availableModels.some(
+              (m) => m.id === catalog.defaultModel || m.name === catalog.defaultModel,
+            )
+              ? catalog.defaultModel
+              : (availableModels[0]?.id ?? null));
+
+          const availableEfforts = catalog.efforts ?? [];
           const currentEffort = get().selectedEffort;
+          const selectedEffort =
+            currentEffort ??
+            (catalog.defaultEffort &&
+            availableEfforts.some(
+              (e) => e.id === catalog.defaultEffort || e.name === catalog.defaultEffort,
+            )
+              ? catalog.defaultEffort
+              : (availableEfforts[0]?.id ?? null));
+
           set({
             modelsCatalog: catalog,
-            selectedModel: currentModel ?? catalog.defaultModel,
-            selectedEffort: currentEffort ?? catalog.defaultEffort,
+            selectedModel,
+            selectedEffort,
           });
         } catch {
-          // ignore when cloud service is not running
+          set({
+            modelsCatalog: { models: [], efforts: [], defaultModel: "", defaultEffort: "" },
+            selectedModel: null,
+            selectedEffort: null,
+          });
         }
       },
 
@@ -1815,6 +1904,11 @@ export function createAppStore(backend: Backend) {
         if (!repo?.target) return;
         set({
           inlineError: null,
+          reportMarkdown: null,
+          reviewCostUsd: null,
+          chatMessages: [],
+          activeReviewId: null,
+          selectedVersionNumber: null,
           activeRun: {
             runId: "starting",
             stage: "upload",
@@ -1860,6 +1954,7 @@ export function createAppStore(backend: Backend) {
       aiSendFollowup: async ({ prompt, quotedText, sectionHeading }) => {
         const repo = get().repo;
         if (!repo?.target) return;
+        const activeReviewId = get().activeReviewId ?? undefined;
         set({
           inlineError: null,
           streamingChat: "",
@@ -1874,6 +1969,7 @@ export function createAppStore(backend: Backend) {
             ...get().chatMessages,
             {
               id: Date.now(),
+              reviewId: activeReviewId ?? null,
               repo: repo.path,
               branch: repo.branch ?? "",
               targetBranch: repo.target,
@@ -1890,11 +1986,12 @@ export function createAppStore(backend: Backend) {
             repo: repo.path,
             branch: repo.branch ?? undefined,
             targetBranch: repo.target,
+            reviewId: activeReviewId,
             prompt,
             quotedText,
             sectionHeading,
           });
-          await get().loadAiState();
+          await get().loadAiState(activeReviewId);
         } catch (err) {
           const apiError = toApiError(err);
           set({ inlineError: apiError.message, activeRun: null, streamingChat: null });
@@ -1906,11 +2003,13 @@ export function createAppStore(backend: Backend) {
       aiClearThread: async () => {
         const repo = get().repo;
         if (!repo?.target || !repo.branch) return;
+        const activeReviewId = get().activeReviewId ?? undefined;
         try {
           await backend.call("ai_clear_thread", {
             repo: repo.path,
             branch: repo.branch,
             targetBranch: repo.target,
+            reviewId: activeReviewId,
           });
           set({ chatMessages: [] });
         } catch (err) {

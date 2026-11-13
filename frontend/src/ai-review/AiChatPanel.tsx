@@ -1,7 +1,16 @@
 import { type KeyboardEvent, useEffect, useRef, useState } from "react";
 import { Icon } from "../lib/icon";
+import { MarkdownDocument } from "../markdown-diff/MarkdownDocument";
 import { useApp } from "../state/context";
 import { formatReviewCostUsd } from "./money";
+
+function cleanChatContent(content: string): string {
+  if (content.includes("--- REPORT UPDATE ---")) {
+    const parts = content.split("--- REPORT UPDATE ---");
+    return (parts[0] ?? "").trim();
+  }
+  return content;
+}
 
 type AiChatPanelProps = {
   height: number;
@@ -97,7 +106,10 @@ export function AiChatPanel({ height, onClose }: AiChatPanelProps) {
               <div className="dl-ai-chat-msg is-user">{msg.content}</div>
             ) : (
               <div className="dl-ai-chat-msg is-assistant">
-                <div>{msg.content}</div>
+                <MarkdownDocument
+                  markdown={cleanChatContent(msg.content)}
+                  className="dl-ai-chat-md"
+                />
                 {msg.costUsd && (
                   <div className="dl-ai-turn-cost">
                     <Icon name="diff-magicResolveToolbar" />
@@ -111,7 +123,14 @@ export function AiChatPanel({ height, onClose }: AiChatPanelProps) {
         {isSending && (
           <div className="dl-ai-chat-msg is-assistant">
             <div>
-              {streamingChat || "Analyzing follow-up question…"}
+              {streamingChat ? (
+                <MarkdownDocument
+                  markdown={cleanChatContent(streamingChat)}
+                  className="dl-ai-chat-md"
+                />
+              ) : (
+                "Analyzing follow-up question…"
+              )}
               <span className="dl-caret" />
             </div>
           </div>

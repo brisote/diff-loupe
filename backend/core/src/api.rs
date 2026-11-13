@@ -296,6 +296,9 @@ pub struct AiGetStateArgs {
     #[serde(default)]
     #[ts(optional)]
     pub target_branch: Option<String>,
+    #[serde(default)]
+    #[ts(type = "number | null", optional)]
+    pub review_id: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize, TS)]
@@ -304,6 +307,9 @@ pub struct AiGetStateArgs {
 pub struct AiState {
     pub consent_accepted: bool,
     pub account: Option<CloudAccount>,
+    pub reviews: Vec<crate::store::StoredAiReview>,
+    #[ts(type = "number | null")]
+    pub active_review_id: Option<i64>,
     pub review: Option<crate::store::StoredAiReview>,
     pub chat_messages: Vec<crate::store::StoredAiChatMessage>,
 }
@@ -406,6 +412,9 @@ pub struct AiSendFollowupArgs {
     #[serde(default)]
     #[ts(optional)]
     pub target_branch: Option<String>,
+    #[serde(default)]
+    #[ts(type = "number | null", optional)]
+    pub review_id: Option<i64>,
     pub prompt: String,
     #[serde(default)]
     #[ts(optional)]
@@ -422,4 +431,25 @@ pub struct AiClearThreadArgs {
     pub repo: String,
     pub branch: String,
     pub target_branch: String,
+    #[serde(default)]
+    #[ts(type = "number | null", optional)]
+    pub review_id: Option<i64>,
+}
+
+#[derive(Debug, Clone, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct AiDeleteReviewArgs {
+    #[ts(type = "number")]
+    pub review_id: i64,
+}
+
+#[derive(Debug, Clone, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct AiRevertVersionArgs {
+    #[ts(type = "number")]
+    pub review_id: i64,
+    #[ts(type = "number")]
+    pub version_number: i64,
 }

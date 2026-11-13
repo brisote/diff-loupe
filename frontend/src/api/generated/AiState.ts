@@ -3,4 +3,4 @@ import type { CloudAccount } from "./CloudAccount";
 import type { StoredAiChatMessage } from "./StoredAiChatMessage";
 import type { StoredAiReview } from "./StoredAiReview";
 
-export type AiState = { consentAccepted: boolean, account: CloudAccount | null, review: StoredAiReview | null, chatMessages: Array<StoredAiChatMessage>, };
+export type AiState = { consentAccepted: boolean, account: CloudAccount | null, reviews: Array<StoredAiReview>, activeReviewId: number | null, review: StoredAiReview | null, chatMessages: Array<StoredAiChatMessage>, };

@@ -1,12 +1,12 @@
 use crate::aireview;
 use crate::api::{
-    AcceptArgs, AiAddFundsArgs, AiAddFundsResult, AiClearThreadArgs, AiGetStateArgs,
-    AiSendFollowupArgs, AiSetConsentArgs, AiSignInArgs, AiSignInResult, AiStartReviewArgs, AiState,
-    AppInfo, ApplyMergeArgs, BranchArgs, CloudAccount, CommitArgs, CommitIdArgs, DiffArgs,
-    ImageArgs, ModelsCatalog, PathArgs, PrepareArgs, RecentRepo, RepoInfo, RepoViewArgs, ReportEnv,
-    RollbackArgs, SaveFileArgs, SettingsArgs, StatusArgs, TargetArgs, TaskArgs, TerminalAckArgs,
-    TerminalOpenArgs, TerminalResizeArgs, TerminalWriteArgs, ToolTab, UiKeyArgs, UiValueArgs,
-    VersionArgs,
+    AcceptArgs, AiAddFundsArgs, AiAddFundsResult, AiClearThreadArgs, AiDeleteReviewArgs,
+    AiGetStateArgs, AiRevertVersionArgs, AiSendFollowupArgs, AiSetConsentArgs, AiSignInArgs,
+    AiSignInResult, AiStartReviewArgs, AiState, AppInfo, ApplyMergeArgs, BranchArgs, CloudAccount,
+    CommitArgs, CommitIdArgs, DiffArgs, ImageArgs, ModelsCatalog, PathArgs, PrepareArgs,
+    RecentRepo, RepoInfo, RepoViewArgs, ReportEnv, RollbackArgs, SaveFileArgs, SettingsArgs,
+    StatusArgs, TargetArgs, TaskArgs, TerminalAckArgs, TerminalOpenArgs, TerminalResizeArgs,
+    TerminalWriteArgs, ToolTab, UiKeyArgs, UiValueArgs, VersionArgs,
 };
 use crate::diffcache::{DiffCache, Prepare};
 use crate::error::{ApiError, Error, Result};
@@ -20,7 +20,7 @@ use crate::platform::{self, Platform};
 use crate::repo::Repo;
 use crate::shellenv::ShellEnv;
 use crate::status::{self, FileChange, Untracked};
-use crate::store::{NewAiChatMessage, RepoState, Store};
+use crate::store::{NewAiChatMessage, RepoState, Store, StoredAiReview};
 use crate::terminal::Terminals;
 use crate::update;
 use crate::watcher::RepoWatcher;
@@ -512,6 +512,15 @@ impl Core {
                 let a: AiClearThreadArgs = parse(args)?;
                 self.ai_clear_thread(a)?;
                 reply(Value::Null)
+            }
+            "ai_delete_review" => {
+                let a: AiDeleteReviewArgs = parse(args)?;
+                self.ai_delete_review(a)?;
+                reply(Value::Null)
+            }
+            "ai_revert_version" => {
+                let a: AiRevertVersionArgs = parse(args)?;
+                reply(self.ai_revert_version(a)?)
             }
             other => Err(Error::UnknownCommand(other.to_string())),
         }
@@ -1083,21 +1092,46 @@ impl Core {
         let store = self.store()?;
         let consent_accepted = store.ai_consent()?;
         let account = aireview::read_auth(&self.data_dir).map(|auth| auth.account);
-        let (review, chat_messages) = match (&root, &branch, &target_branch) {
-            (Some(r), Some(b), Some(t)) => {
+        let (reviews, active_review_id, review, chat_messages) = match &root {
+            Some(r) => {
                 let repo_str = r.display().to_string();
-                let rev = store.get_ai_review(&repo_str, b, t)?;
-                let msgs = store.get_ai_chat_messages(&repo_str, b, t)?;
-                (rev, msgs)
+                let revs = store.get_ai_reviews(&repo_str)?;
+                let active = match a.review_id {
+                    Some(rid) => store.get_ai_review(rid)?,
+                    None => store.get_latest_ai_review(
+                        &repo_str,
+                        branch.as_deref(),
+                        target_branch.as_deref(),
+                    )?,
+                };
+                let active_id = active.as_ref().map(|rev| rev.id);
+                let msgs = store.get_ai_chat_messages(
+                    active_id,
+                    &repo_str,
+                    branch.as_deref().unwrap_or(""),
+                    target_branch.as_deref().unwrap_or(""),
+                )?;
+                (revs, active_id, active, msgs)
             }
-            _ => (None, Vec::new()),
+            None => (Vec::new(), None, None, Vec::new()),
         };
         Ok(AiState {
             consent_accepted,
             account,
+            reviews,
+            active_review_id,
             review,
             chat_messages,
         })
+    }
+
+    fn ai_delete_review(&self, a: AiDeleteReviewArgs) -> Result<()> {
+        self.store()?.delete_ai_review(a.review_id)
+    }
+
+    fn ai_revert_version(&self, a: AiRevertVersionArgs) -> Result<Option<StoredAiReview>> {
+        self.store()?
+            .revert_ai_review_version(a.review_id, a.version_number)
     }
 
     fn ai_set_consent(&self, a: AiSetConsentArgs) -> Result<()> {
@@ -1396,6 +1430,9 @@ impl Core {
             run_id: &run_id,
             head_oid: head_oid.as_deref(),
             base_oid: base_oid.as_deref(),
+            model: a.model.as_deref(),
+            effort: a.effort.as_deref(),
+            review_id: None,
             data_dir: &self.data_dir,
         };
         aireview::stream_sse(
@@ -1443,9 +1480,18 @@ impl Core {
             .map(|d| d.as_secs() as i64)
             .unwrap_or(0);
 
-        let (current_report, chat_history) = {
+        let (active_review, current_report, chat_history) = {
             let store = self.store()?;
+            let active_review = match a.review_id {
+                Some(rid) => store.get_ai_review(rid)?,
+                None => {
+                    store.get_latest_ai_review(&repo_str, Some(&branch), Some(&target_branch))?
+                }
+            };
+            let review_id = active_review.as_ref().map(|r| r.id);
+
             store.append_ai_chat_message(&NewAiChatMessage {
+                review_id,
                 repo: &repo_str,
                 branch: &branch,
                 target_branch: &target_branch,
@@ -1456,17 +1502,18 @@ impl Core {
                 created_at: now,
             })?;
 
-            let current_report = store
-                .get_ai_review(&repo_str, &branch, &target_branch)?
-                .map(|r| r.report_markdown)
+            let current_report = active_review
+                .as_ref()
+                .map(|r| r.report_markdown.clone())
                 .unwrap_or_default();
-            let msgs = store.get_ai_chat_messages(&repo_str, &branch, &target_branch)?;
+            let msgs = store.get_ai_chat_messages(review_id, &repo_str, &branch, &target_branch)?;
             let chat_history: Vec<serde_json::Value> = msgs
                 .iter()
                 .map(|m| serde_json::json!({ "role": m.role, "content": m.content }))
                 .collect();
-            (current_report, chat_history)
+            (active_review, current_report, chat_history)
         };
+        let review_id = active_review.as_ref().map(|r| r.id);
 
         let run_id = self.run_id("ai_followup", &root);
         let watch = self.cancels.watch(&run_id);
@@ -1497,6 +1544,9 @@ impl Core {
             run_id: &run_id,
             head_oid: None,
             base_oid: None,
+            model: active_review.as_ref().and_then(|r| r.model.as_deref()),
+            effort: active_review.as_ref().and_then(|r| r.effort.as_deref()),
+            review_id,
             data_dir: &self.data_dir,
         };
         aireview::stream_sse(
@@ -1513,8 +1563,12 @@ impl Core {
 
     fn ai_clear_thread(&self, a: AiClearThreadArgs) -> Result<()> {
         let (_, root, _) = self.open_root(&a.repo)?;
-        self.store()?
-            .clear_ai_chat_thread(&root.display().to_string(), &a.branch, &a.target_branch)
+        self.store()?.clear_ai_chat_thread(
+            a.review_id,
+            &root.display().to_string(),
+            &a.branch,
+            &a.target_branch,
+        )
     }
 }
 

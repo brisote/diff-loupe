@@ -32,7 +32,7 @@ export function TargetPicker({ anchor, onClose }: Props) {
   const branches = useApp((state) => state.branches);
   const loadBranches = useApp((state) => state.loadBranches);
   const setTarget = useApp((state) => state.setTarget);
-  const style = useBelow(anchor);
+  const style = useBelow(anchor, 320);
 
   useEffect(() => {
     void loadBranches();

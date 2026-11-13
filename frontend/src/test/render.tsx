@@ -59,6 +59,8 @@ export function fakeCore(handlers: Record<string, Handler> = {}, platform: Platf
       consentAccepted: false,
       account: null,
       review: null,
+      reviews: [],
+      activeReviewId: null,
       chatMessages: [],
     }),
     ai_set_consent: () => null,
@@ -86,6 +88,8 @@ export function fakeCore(handlers: Record<string, Handler> = {}, platform: Platf
     ai_start_review: () => null,
     ai_send_followup: () => null,
     ai_clear_thread: () => null,
+    ai_delete_review: () => null,
+    ai_revert_version: () => null,
     ...handlers,
   });
 }

@@ -2,7 +2,9 @@ import type { AcceptArgs } from "./generated/AcceptArgs";
 import type { AiAddFundsArgs } from "./generated/AiAddFundsArgs";
 import type { AiAddFundsResult } from "./generated/AiAddFundsResult";
 import type { AiClearThreadArgs } from "./generated/AiClearThreadArgs";
+import type { AiDeleteReviewArgs } from "./generated/AiDeleteReviewArgs";
 import type { AiGetStateArgs } from "./generated/AiGetStateArgs";
+import type { AiRevertVersionArgs } from "./generated/AiRevertVersionArgs";
 import type { AiSendFollowupArgs } from "./generated/AiSendFollowupArgs";
 import type { AiSetConsentArgs } from "./generated/AiSetConsentArgs";
 import type { AiSignInArgs } from "./generated/AiSignInArgs";
@@ -40,6 +42,7 @@ import type { SaveFileArgs } from "./generated/SaveFileArgs";
 import type { Settings } from "./generated/Settings";
 import type { SettingsArgs } from "./generated/SettingsArgs";
 import type { StatusArgs } from "./generated/StatusArgs";
+import type { StoredAiReview } from "./generated/StoredAiReview";
 import type { TargetArgs } from "./generated/TargetArgs";
 import type { TaskArgs } from "./generated/TaskArgs";
 import type { TerminalAckArgs } from "./generated/TerminalAckArgs";
@@ -111,6 +114,8 @@ export type Commands = {
   ai_start_review: [AiStartReviewArgs, null];
   ai_send_followup: [AiSendFollowupArgs, null];
   ai_clear_thread: [AiClearThreadArgs, null];
+  ai_delete_review: [AiDeleteReviewArgs, null];
+  ai_revert_version: [AiRevertVersionArgs, StoredAiReview | null];
 };
 
 export type Command = keyof Commands;
