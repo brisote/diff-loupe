@@ -9,6 +9,142 @@ type MockCloudServer = {
   close: () => Promise<void>;
 };
 
+const STRUCTURED_REPORT = {
+  schema_version: 1,
+  overview: "Audited 4 changed files for invoice export currency support.",
+  categories: [
+    {
+      id: "encapsulation",
+      title: "Encapsulation",
+      score: 9,
+      summary: "Currency formatting stays encapsulated in InvoiceExporter.",
+      problems: [],
+    },
+    {
+      id: "idempotency",
+      title: "Idempotency",
+      score: 8,
+      summary: "CSV export is pure and repeatable for identical inputs.",
+      problems: [],
+    },
+    {
+      id: "edge_cases",
+      title: "Edge cases & inputs",
+      score: 6,
+      summary: "Empty or lowercase currency strings are not normalized.",
+      problems: [
+        {
+          title: "Unvalidated currency serialization",
+          description:
+            "InvoiceExporter.kt adds currency to the exported header without validating ISO-4217 codes.",
+          location: "InvoiceExporter.kt:41",
+          severity: "warning",
+        },
+      ],
+    },
+    {
+      id: "error_handling",
+      title: "Error handling",
+      score: 5,
+      summary: "Missing explicit exception when currency is blank.",
+      problems: [
+        {
+          title: "Silent fallback on blank currency",
+          description: "Blank currency codes emit an empty CSV column instead of failing fast.",
+          location: "InvoiceExporter.kt:48",
+          severity: "warning",
+        },
+      ],
+    },
+    {
+      id: "logs",
+      title: "Logs",
+      score: 8,
+      summary: "Export count logging remains intact without sensitive data.",
+      problems: [],
+    },
+    {
+      id: "monitoring",
+      title: "Monitoring",
+      score: 8,
+      summary: "Existing export duration metrics cover the new column.",
+      problems: [],
+    },
+    {
+      id: "security",
+      title: "Security",
+      score: 9,
+      summary: "No injection or credential exposure introduced.",
+      problems: [],
+    },
+    {
+      id: "concurrency",
+      title: "Concurrency",
+      score: 9,
+      summary: "Exporter holds no mutable shared state.",
+      problems: [],
+    },
+    {
+      id: "transactions",
+      title: "Transactions & atomicity",
+      score: 8,
+      summary: "Read-only export query runs in a single snapshot.",
+      problems: [],
+    },
+    {
+      id: "performance",
+      title: "Performance",
+      score: 8,
+      summary: "Appending one column adds negligible serialization overhead.",
+      problems: [],
+    },
+    {
+      id: "breaking_changes",
+      title: "Breaking changes",
+      score: 4,
+      summary: "CSV header expands from 3 to 4 columns.",
+      problems: [
+        {
+          title: "CSV header column added",
+          description: "Downstream parsers expecting 3 columns may fail.",
+          location: "InvoiceExporter.kt:41",
+          severity: "warning",
+        },
+      ],
+    },
+    {
+      id: "test_coverage",
+      title: "Test coverage",
+      score: 6,
+      summary: "Happy-path USD export is tested; invalid currency codes are not.",
+      problems: [
+        {
+          title: "Missing test for invalid currency",
+          description: "No unit test verifies rejection of malformed ISO-4217 codes.",
+          location: "InvoiceExporterTest.kt:28",
+          severity: "suggestion",
+        },
+      ],
+      coverage_percent: 72,
+      test_scenarios: ["Exports 4-column CSV header with USD", "Preserves decimal rounding"],
+    },
+    {
+      id: "dependencies",
+      title: "New dependencies",
+      score: 10,
+      summary: "Uses existing standard library and CurrencyCode helper.",
+      problems: [],
+      dependencies_introduced: false,
+      dependency_tradeoff: "Reuses internal CurrencyCode module instead of adding a new library.",
+    },
+  ],
+  blast_radius: "Affects **CSV invoice exports** for all billing tenants.",
+  deployment_risks: "Downstream CSV consumers must handle the `currency` column.",
+  rollback_plan: "Revert the export header commit; no database migration required.",
+};
+
+const STRUCTURED_REPORT_JSON = JSON.stringify(STRUCTURED_REPORT);
+
 function createMockCloud(): Promise<MockCloudServer> {
   let currentBalance = "0.00";
   const requests: { method: string; path: string; body?: unknown }[] = [];
@@ -122,12 +258,12 @@ function createMockCloud(): Promise<MockCloudServer> {
       res.write(
         'event: stage\ndata: {"stage":"analyzing","message":"Analyzing branch changes…"}\n\n',
       );
-      const report =
-        '## Branch review: invoice export currency support\n\nAudited 4 changed files against repository conventions. Found 1 potential contract regression and 1 missing test case.\n\n### Findings\n\n#### 1. Unvalidated currency serialization\n\n`billing/src/main/kotlin/acme/billing/InvoiceExporter.kt:41`\n\nInvoiceExporter.kt adds currency to the exported header without validating ISO-4217 codes. Downstream billing parsers assume standard three-letter uppercase currency symbols.\n\n```kotlin\ncompanion object {\n    val HEADER = listOf("number", "customer", "amount", "currency")\n}\n```\n';
-      res.write(`event: report_delta\ndata: ${JSON.stringify({ delta: report })}\n\n`);
+      res.write(
+        `event: report_delta\ndata: ${JSON.stringify({ delta: STRUCTURED_REPORT_JSON })}\n\n`,
+      );
       res.write('event: billing\ndata: {"cost_usd":"0.14","balance_usd":"9.86"}\n\n');
       res.write(
-        `event: done\ndata: ${JSON.stringify({ cost_usd: "0.14", balance_usd: "9.86", report_markdown: report })}\n\n`,
+        `event: done\ndata: ${JSON.stringify({ cost_usd: "0.14", balance_usd: "9.86", report_markdown: STRUCTURED_REPORT_JSON })}\n\n`,
       );
       res.end();
       return;
@@ -140,16 +276,11 @@ function createMockCloud(): Promise<MockCloudServer> {
         Connection: "close",
       });
       const chatDelta =
-        "Currency validation is implemented in CurrencyCode.kt via CurrencyCode.isValid(raw).";
+        "Currency validation is implemented in **CurrencyCode.kt** via `CurrencyCode.isValid(raw)`.";
       res.write(`event: chat_delta\ndata: ${JSON.stringify({ delta: chatDelta })}\n\n`);
-      const updatedReport =
-        '## Branch review: invoice export currency support\n\nAudited 4 changed files against repository conventions. Found 1 potential contract regression and 1 missing test case.\n\n### Live update: Added recommendation to validate currency\n\n### Findings\n\n#### 1. Unvalidated currency serialization\n\n`billing/src/main/kotlin/acme/billing/InvoiceExporter.kt:41`\n\nInvoiceExporter.kt adds currency to the exported header without validating ISO-4217 codes. Downstream billing parsers assume standard three-letter uppercase currency symbols.\n\n```kotlin\ncompanion object {\n    val HEADER = listOf("number", "customer", "amount", "currency")\n}\n```\n';
-      res.write(
-        `event: report_update\ndata: ${JSON.stringify({ report_markdown: updatedReport })}\n\n`,
-      );
       res.write('event: billing\ndata: {"cost_usd":"0.0034","balance_usd":"9.85"}\n\n');
       res.write(
-        `event: done\ndata: ${JSON.stringify({ cost_usd: "0.0034", balance_usd: "9.85", chat_message: chatDelta, report_markdown: updatedReport })}\n\n`,
+        `event: done\ndata: ${JSON.stringify({ cost_usd: "0.0034", balance_usd: "9.85", chat_message: chatDelta })}\n\n`,
       );
       res.end();
       return;
@@ -251,73 +382,133 @@ test("full AI review workflow, selection quoting, live chat dual streaming, and 
 
     await page.getByRole("button", { name: "Run review" }).first().click();
 
-    await expect(page.getByText("Review in progress")).toBeVisible();
-    await expect(page.getByText("Branch review: invoice export currency support")).toBeVisible();
+    await expect(
+      page.getByText("Audited 4 changed files for invoice export currency support."),
+    ).toBeVisible();
     await expect(page.getByText("Cost $0.14")).toBeVisible();
     await expect(page.getByText("Balance $9.86")).toBeVisible();
 
     const bodyText = await page.textContent("body");
     expect(bodyText).not.toMatch(/\bcredits?\b/i);
 
-    await page.evaluate(() => {
-      const p = Array.from(document.querySelectorAll("p")).find((el) =>
-        el.textContent?.includes("InvoiceExporter.kt adds currency"),
-      );
-      if (!p) throw new Error("Paragraph not found");
-      const range = document.createRange();
-      range.selectNodeContents(p);
-      const sel = window.getSelection();
-      sel?.removeAllRanges();
-      sel?.addRange(range);
-      document.dispatchEvent(new Event("selectionchange"));
-    });
-
-    const askBtn = page.getByRole("button", { name: "Ask about selection" });
-    await expect(askBtn).toBeVisible();
-    await askBtn.click();
-
     const chatRegion = page.getByRole("region", { name: "Interactive chat" });
     await expect(chatRegion).toBeVisible();
+    await expect(page.getByRole("separator", { name: "Resize AI chat" })).toHaveCount(0);
+
+    const gaugesGroup = chatRegion.getByRole("group", { name: "Review categories" });
+    await expect(gaugesGroup).toBeVisible();
+    const gaugeButtons = gaugesGroup.locator(".dl-ai-gauge-btn");
+    await expect(gaugeButtons).toHaveCount(13);
+
+    for (const [i, cat] of STRUCTURED_REPORT.categories.entries()) {
+      const btn = gaugeButtons.nth(i);
+      await expect(btn.locator(".dl-ai-gauge-label")).toHaveText(cat.title);
+      await expect(btn.locator(".dl-ai-gauge-score")).toHaveText(String(cat.score));
+    }
+
+    const detailSection = chatRegion.getByRole("region", { name: "Selected category details" });
+    await expect(detailSection).toHaveCount(0);
+
+    const edgeCasesBtn = gaugesGroup.getByRole("button", { name: /Edge cases & inputs/ });
+    await edgeCasesBtn.click();
+    await expect(edgeCasesBtn).toHaveAttribute("aria-expanded", "true");
+    await expect(detailSection).toBeVisible();
     await expect(
-      chatRegion.getByText(
-        "InvoiceExporter.kt adds currency to the exported header without validating ISO-4217 codes.",
+      detailSection.getByText("Empty or lowercase currency strings are not normalized."),
+    ).toBeVisible();
+    await expect(detailSection.getByText("Unvalidated currency serialization")).toBeVisible();
+
+    const testCoverageBtn = gaugesGroup.getByRole("button", { name: /Test coverage/ });
+    await testCoverageBtn.click();
+    await expect(edgeCasesBtn).toHaveAttribute("aria-expanded", "false");
+    await expect(testCoverageBtn).toHaveAttribute("aria-expanded", "true");
+    await expect(detailSection.getByText("Test coverage for changed code: 72%")).toBeVisible();
+    await expect(detailSection.getByText("Exports 4-column CSV header with USD")).toBeVisible();
+
+    const depsBtn = gaugesGroup.getByRole("button", { name: /New dependencies/ });
+    await depsBtn.click();
+    await expect(testCoverageBtn).toHaveAttribute("aria-expanded", "false");
+    await expect(depsBtn).toHaveAttribute("aria-expanded", "true");
+    await expect(detailSection.getByText("New dependency introduced: No")).toBeVisible();
+    await expect(
+      detailSection.getByText(
+        "Reuses internal CurrencyCode module instead of adding a new library.",
       ),
     ).toBeVisible();
 
-    const splitter = page.getByRole("separator", { name: "Resize AI chat" });
-    await expect(splitter).toBeVisible();
-    await splitter.focus();
-    await page.keyboard.press("ArrowUp");
+    await depsBtn.click();
+    await expect(depsBtn).toHaveAttribute("aria-expanded", "false");
+    await expect(detailSection).toHaveCount(0);
+
+    await expect(chatRegion.getByRole("heading", { name: "Blast radius" })).toBeVisible();
+    await expect(chatRegion.getByText("CSV invoice exports")).toBeVisible();
+    await expect(chatRegion.getByRole("heading", { name: "Deployment risks" })).toBeVisible();
+    await expect(chatRegion.getByText("Downstream CSV consumers must handle the")).toBeVisible();
+    await expect(chatRegion.getByRole("heading", { name: "Rollback plan" })).toBeVisible();
+    await expect(
+      chatRegion.getByText("Revert the export header commit; no database migration required."),
+    ).toBeVisible();
+
+    await edgeCasesBtn.click();
+    await detailSection.getByRole("button", { name: "Ask about category" }).click();
+
+    const composerQuote = chatRegion.locator(".dl-ai-composer .dl-ai-quote-text");
+    await expect(composerQuote).toHaveText(
+      "Empty or lowercase currency strings are not normalized.",
+    );
 
     const composer = page.getByPlaceholder("Ask about this review or request changes…");
+    await expect(composer).toBeVisible();
     await composer.fill("Where is ISO-4217 validation handled in the rest of the billing module?");
     await page.keyboard.press("Enter");
 
+    const thread = chatRegion.locator(".dl-ai-thread");
     await expect(
-      page.getByText(
-        "Currency validation is implemented in CurrencyCode.kt via CurrencyCode.isValid(raw).",
-      ),
+      thread.getByText("Where is ISO-4217 validation handled in the rest of the billing module?"),
     ).toBeVisible();
-    await expect(chatRegion.getByText("Cost <$0.01")).toBeVisible();
+    await expect(thread.locator("strong", { hasText: "CurrencyCode.kt" })).toBeVisible();
+    await expect(thread.locator("code", { hasText: "CurrencyCode.isValid(raw)" })).toBeVisible();
+    await expect(thread.getByText("Cost <$0.01")).toBeVisible();
+
+    const followupRequest = cloud.requests.find(
+      (req) => req.method === "POST" && req.path === "/v1/reviews/followup",
+    );
+    expect(followupRequest).toBeDefined();
+    const followupBody = followupRequest?.body as { current_report_markdown?: string };
+    expect(followupBody.current_report_markdown).toBe(STRUCTURED_REPORT_JSON);
+
+    await manualBtn.click();
+    await expect(page.getByRole("region", { name: "Side-by-side diff" })).toBeVisible();
+    await aiBtn.click();
     await expect(
-      page.getByText("Live update: Added recommendation to validate currency"),
+      chatRegion.getByText("Audited 4 changed files for invoice export currency support."),
+    ).toBeVisible();
+    await expect(chatRegion.locator(".dl-ai-gauge-btn")).toHaveCount(13);
+    await expect(
+      chatRegion
+        .locator(".dl-ai-thread")
+        .getByText("Where is ISO-4217 validation handled in the rest of the billing module?"),
     ).toBeVisible();
 
     await app.restart({ pick: billing, cloudUrl: cloud.url });
     await page.getByRole("button", { name: "AI review" }).click();
-    await expect(page.getByText("Branch review: invoice export currency support")).toBeVisible();
+    const restartChat = page.getByRole("region", { name: "Interactive chat" });
+    await expect(restartChat).toBeVisible();
+    await expect(
+      restartChat.getByText("Audited 4 changed files for invoice export currency support."),
+    ).toBeVisible();
+    await expect(restartChat.locator(".dl-ai-gauge-btn")).toHaveCount(13);
+    await expect(restartChat.getByRole("heading", { name: "Blast radius" })).toBeVisible();
+    await expect(restartChat.getByRole("heading", { name: "Deployment risks" })).toBeVisible();
+    await expect(restartChat.getByRole("heading", { name: "Rollback plan" })).toBeVisible();
     await expect(page.getByText("Balance $9.85")).toBeVisible();
 
-    const restartChat = page.getByRole("region", { name: "Interactive chat" });
-    if (!(await restartChat.isVisible())) {
-      await page.getByRole("button", { name: "Chat" }).click();
-    }
     await expect(
-      restartChat.getByText(
-        "Where is ISO-4217 validation handled in the rest of the billing module?",
-      ),
+      restartChat
+        .locator(".dl-ai-thread")
+        .getByText("Where is ISO-4217 validation handled in the rest of the billing module?"),
     ).toBeVisible();
-    await expect(restartChat.getByText("Cost <$0.01")).toBeVisible();
+    await expect(restartChat.locator(".dl-ai-thread").getByText("Cost <$0.01")).toBeVisible();
   } finally {
     await cloud.close();
   }
