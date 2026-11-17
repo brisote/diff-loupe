@@ -1,20 +1,23 @@
-import type { RefObject } from "react";
+import type { KeyboardEvent, RefObject } from "react";
 import { useEffect, useRef, useState } from "react";
 import type { StoredAiReview } from "../api/generated/StoredAiReview";
 import { Dialog } from "../lib/dialog";
 import { Icon } from "../lib/icon";
 import { Popup, useBelow } from "../lib/popup";
-import { clampWidth, Splitter } from "../main-window/Splitter";
 import { TargetPicker } from "../main-window/TargetPicker";
+import { MarkdownDocument } from "../markdown-diff/MarkdownDocument";
 import { useApp } from "../state/context";
-import { AiChatPanel } from "./AiChatPanel";
 import { EffortPicker, ModelPicker } from "./ModelPicker";
 import { formatBalanceUsd, formatReviewCostUsd } from "./money";
 import { ReportViewer } from "./ReportViewer";
 
-export const aiChatHeightKey = "aiChatHeight";
-export const defaultAiChat = 240;
-export const minAiChat = 140;
+function cleanChatContent(content: string): string {
+  if (content.includes("--- REPORT UPDATE ---")) {
+    const parts = content.split("--- REPORT UPDATE ---");
+    return (parts[0] ?? "").trim();
+  }
+  return content;
+}
 
 type ReviewPickerProps = {
   anchor: RefObject<HTMLElement | null>;
@@ -126,7 +129,6 @@ function ReviewPicker({ anchor, reviews, activeId, onSelect, onNew, onClose }: R
 }
 
 export function AiReviewIsland() {
-  const backend = useApp((state) => state.backend);
   const repo = useApp((state) => state.repo);
   const setWorkspaceMode = useApp((state) => state.setWorkspaceMode);
   const consentAccepted = useApp((state) => state.consentAccepted);
@@ -144,10 +146,13 @@ export function AiReviewIsland() {
   const aiRevertVersion = useApp((state) => state.aiRevertVersion);
   const selectVersion = useApp((state) => state.selectVersion);
   const inlineError = useApp((state) => state.inlineError);
-  const isChatOpen = useApp((state) => state.isChatOpen);
-  const toggleAiChat = useApp((state) => state.toggleAiChat);
-  const setAiChatOpen = useApp((state) => state.setAiChatOpen);
+  const chatMessages = useApp((state) => state.chatMessages);
+  const streamingChat = useApp((state) => state.streamingChat);
+  const quotedSelection = useApp((state) => state.quotedSelection);
   const setQuotedSelection = useApp((state) => state.setQuotedSelection);
+  const aiSendFollowup = useApp((state) => state.aiSendFollowup);
+  const aiClearThread = useApp((state) => state.aiClearThread);
+  const cancelTask = useApp((state) => state.cancelTask);
   const aiSignIn = useApp((state) => state.aiSignIn);
   const cancelAiSignIn = useApp((state) => state.cancelAiSignIn);
   const aiSignOut = useApp((state) => state.aiSignOut);
@@ -164,42 +169,70 @@ export function AiReviewIsland() {
   const targetAnchor = useRef<HTMLButtonElement>(null);
   const modelAnchor = useRef<HTMLButtonElement>(null);
   const effortAnchor = useRef<HTMLButtonElement>(null);
+  const composerInputRef = useRef<HTMLTextAreaElement>(null);
+  const streamRef = useRef<HTMLDivElement>(null);
+  const prevReviewIdRef = useRef<number | null | undefined>(undefined);
+  const prevMessageCountRef = useRef<number | null>(null);
   const [pickingReview, setPickingReview] = useState(false);
   const [pickingTarget, setPickingTarget] = useState(false);
   const [pickingModel, setPickingModel] = useState(false);
   const [pickingEffort, setPickingEffort] = useState(false);
   const [confirmRerun, setConfirmRerun] = useState(false);
-  const [chatHeight, setChatHeight] = useState(defaultAiChat);
-  const [maxChatHeight, setMaxChatHeight] = useState(600);
+  const [prompt, setPrompt] = useState("");
+
+  const isSending = streamingChat !== null;
 
   useEffect(() => {
-    void backend
-      .call("get_ui_value", { key: aiChatHeightKey })
-      .then((saved) => {
-        const value = Number(saved);
-        if (saved && Number.isFinite(value)) setChatHeight(value);
-      })
-      .catch(() => undefined);
-  }, [backend]);
+    if (quotedSelection) {
+      composerInputRef.current?.focus();
+    }
+  }, [quotedSelection]);
 
   useEffect(() => {
-    const updateMax = () => {
-      setMaxChatHeight(Math.round(window.innerHeight * 0.7));
-    };
-    updateMax();
-    window.addEventListener("resize", updateMax);
-    return () => window.removeEventListener("resize", updateMax);
-  }, []);
+    const stream = streamRef.current;
+    if (prevReviewIdRef.current !== activeReviewId) {
+      prevReviewIdRef.current = activeReviewId;
+      prevMessageCountRef.current = chatMessages.length;
+      if (streamingChat !== null && stream) {
+        stream.scrollTop = stream.scrollHeight;
+      }
+      return;
+    }
 
-  const saveChatHeight = (value: number) => {
-    void backend
-      .call("set_ui_value", { key: aiChatHeightKey, value: String(value) })
-      .catch(() => undefined);
-  };
+    const prevCount = prevMessageCountRef.current;
+    prevMessageCountRef.current = chatMessages.length;
+    if (!stream) return;
+
+    if (streamingChat !== null || (prevCount !== null && chatMessages.length > prevCount)) {
+      stream.scrollTop = stream.scrollHeight;
+    }
+  }, [activeReviewId, chatMessages.length, streamingChat]);
 
   const handleAskSelection = (selection: { text: string; heading?: string }) => {
     setQuotedSelection(selection);
-    setAiChatOpen(true);
+    composerInputRef.current?.focus();
+  };
+
+  const handleSend = () => {
+    const trimmed = prompt.trim();
+    if (!trimmed || isSending) return;
+
+    const currentQuote = quotedSelection;
+    setPrompt("");
+    setQuotedSelection(null);
+
+    void aiSendFollowup({
+      prompt: trimmed,
+      quotedText: currentQuote?.text,
+      sectionHeading: currentQuote?.heading,
+    });
+  };
+
+  const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      handleSend();
+    }
   };
 
   if (!repo) return null;
@@ -208,7 +241,6 @@ export function AiReviewIsland() {
   const hasTarget = Boolean(repo.target && !targetIsBranch);
   const parsedBalance = account ? Number.parseFloat(account.balanceUsd) : 0;
   const hasBalance = Boolean(account && Number.isFinite(parsedBalance) && parsedBalance > 0);
-  const height = clampWidth(chatHeight, minAiChat, maxChatHeight);
 
   const availableModels = modelsCatalog?.models ?? [];
   const hasModels = availableModels.length > 0;
@@ -511,16 +543,6 @@ export function AiReviewIsland() {
                   <Icon name="general-add" />
                   New review
                 </button>
-                <button
-                  className={`dl-tbtn ${isChatOpen ? "is-toggled" : ""}`}
-                  type="button"
-                  title="Chat"
-                  aria-label="Chat"
-                  aria-pressed={isChatOpen}
-                  onClick={toggleAiChat}
-                >
-                  <Icon name="toolwindows-terminal" />
-                </button>
               </>
             ) : (
               <button
@@ -710,144 +732,262 @@ export function AiReviewIsland() {
                 </div>
               </div>
             </div>
-          ) : activeRun ? (
-            <div
-              className="dl-island-body"
-              style={{ flex: 1, overflowY: "auto", padding: "24px 32px" }}
+          ) : activeRun || displayedMarkdown ? (
+            <section
+              className="dl-island-body dl-ai-session"
+              aria-label="Interactive chat"
+              style={{ padding: 0 }}
             >
-              <div
-                style={{
-                  maxWidth: 820,
-                  margin: "0 auto",
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: 20,
-                }}
-              >
-                <div
-                  style={{
-                    display: "flex",
-                    flexDirection: "column",
-                    gap: 12,
-                    padding: "16px 20px",
-                    border: "1px solid var(--border)",
-                    borderRadius: "var(--radius-6)",
-                    background: "var(--panel-bg-inline)",
-                  }}
-                >
+              <div className="dl-ai-session-stream" ref={streamRef}>
+                {activeRun && (
                   <div
                     style={{
+                      maxWidth: 920,
+                      width: "100%",
+                      margin: "0 auto",
                       display: "flex",
-                      alignItems: "center",
-                      justifyContent: "space-between",
+                      flexDirection: "column",
+                      gap: 12,
+                      padding: "16px 20px",
+                      border: "1px solid var(--border)",
+                      borderRadius: "var(--radius-6)",
+                      background: "var(--panel-bg-inline)",
+                      boxSizing: "border-box",
                     }}
                   >
-                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                      <span
-                        className="dl-caret"
-                        style={{
-                          width: 10,
-                          height: 10,
-                          borderRadius: "50%",
-                          background: "var(--accent)",
-                        }}
-                      />
-                      <span style={{ fontWeight: 600, fontSize: 14 }}>Review in progress</span>
-                    </div>
-                    <span style={{ fontSize: 12, color: "var(--text-muted)" }}>
-                      Comparing {repo.branch} against {repo.target}
-                    </span>
-                  </div>
-
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13 }}>
-                    <span style={{ fontWeight: 500, color: "var(--text)" }}>
-                      {activeRun.message || activeRun.stage || "Analyzing branch changes…"}
-                    </span>
-                  </div>
-
-                  {activeRun.thoughts &&
-                    activeRun.thoughts.length > 0 &&
-                    (() => {
-                      const thoughts = activeRun.thoughts;
-                      return (
-                        <div
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                      }}
+                    >
+                      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                        <span
+                          className="dl-caret"
                           style={{
-                            marginTop: 4,
-                            padding: "10px 12px",
-                            background: "var(--window-bg)",
-                            borderRadius: "var(--radius-4)",
-                            border: "1px solid var(--border)",
-                            display: "flex",
-                            flexDirection: "column",
-                            gap: 6,
-                            maxHeight: 180,
-                            overflowY: "auto",
-                            fontSize: 12,
-                            fontFamily: "var(--font-code, monospace)",
+                            width: 10,
+                            height: 10,
+                            borderRadius: "50%",
+                            background: "var(--accent)",
                           }}
-                        >
+                        />
+                        <span style={{ fontWeight: 600, fontSize: 14 }}>Review in progress</span>
+                      </div>
+                      <span style={{ fontSize: 12, color: "var(--text-muted)" }}>
+                        Comparing {repo.branch} against {repo.target}
+                      </span>
+                    </div>
+
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13 }}>
+                      <span style={{ fontWeight: 500, color: "var(--text)" }}>
+                        {activeRun.message || activeRun.stage || "Analyzing branch changes…"}
+                      </span>
+                    </div>
+
+                    {activeRun.thoughts &&
+                      activeRun.thoughts.length > 0 &&
+                      (() => {
+                        const thoughts = activeRun.thoughts;
+                        return (
                           <div
                             style={{
-                              fontSize: 11,
-                              fontWeight: 600,
-                              color: "var(--text-muted)",
-                              textTransform: "uppercase",
-                              letterSpacing: 0.5,
-                              marginBottom: 2,
+                              marginTop: 4,
+                              padding: "10px 12px",
+                              background: "var(--window-bg)",
+                              borderRadius: "var(--radius-4)",
+                              border: "1px solid var(--border)",
+                              display: "flex",
+                              flexDirection: "column",
+                              gap: 6,
+                              maxHeight: 180,
+                              overflowY: "auto",
+                              fontSize: 12,
+                              fontFamily: "var(--font-code, monospace)",
                             }}
                           >
-                            Model Thinking
-                          </div>
-                          {thoughts.map((thought, idx) => {
-                            const isLatest = idx === thoughts.length - 1;
-                            return (
-                              <div
-                                key={thought}
-                                style={{
-                                  display: "flex",
-                                  alignItems: "center",
-                                  gap: 8,
-                                  color: isLatest ? "var(--text)" : "var(--text-muted)",
-                                  lineHeight: 1.4,
-                                }}
-                              >
-                                <span
+                            <div
+                              style={{
+                                fontSize: 11,
+                                fontWeight: 600,
+                                color: "var(--text-muted)",
+                                textTransform: "uppercase",
+                                letterSpacing: 0.5,
+                                marginBottom: 2,
+                              }}
+                            >
+                              Model Thinking
+                            </div>
+                            {thoughts.map((thought, idx) => {
+                              const isLatest = idx === thoughts.length - 1;
+                              return (
+                                <div
+                                  key={thought}
                                   style={{
-                                    color: isLatest ? "var(--accent)" : "var(--success, #59a869)",
-                                    fontWeight: 700,
-                                    flexShrink: 0,
+                                    display: "flex",
+                                    alignItems: "center",
+                                    gap: 8,
+                                    color: isLatest ? "var(--text)" : "var(--text-muted)",
+                                    lineHeight: 1.4,
                                   }}
                                 >
-                                  {isLatest ? "●" : "✓"}
-                                </span>
-                                <span>{thought}</span>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      );
-                    })()}
-                </div>
-                {displayedMarkdown ? (
-                  <div style={{ padding: 0 }}>
+                                  <span
+                                    style={{
+                                      color: isLatest ? "var(--accent)" : "var(--success, #59a869)",
+                                      fontWeight: 700,
+                                      flexShrink: 0,
+                                    }}
+                                  >
+                                    {isLatest ? "●" : "✓"}
+                                  </span>
+                                  <span>{thought}</span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        );
+                      })()}
+                  </div>
+                )}
+
+                {displayedMarkdown && (
+                  <>
                     {renderVersionBar()}
                     <ReportViewer
                       markdown={displayedMarkdown}
                       onAskSelection={handleAskSelection}
                     />
-                    <span className="dl-caret" />
+                    {activeRun && <span className="dl-caret" />}
+                  </>
+                )}
+
+                {(chatMessages.length > 0 || isSending) && (
+                  <div className="dl-ai-thread">
+                    {chatMessages.map((msg) => (
+                      <div
+                        key={msg.id}
+                        style={{ display: "flex", flexDirection: "column", gap: 4 }}
+                      >
+                        {msg.quotedText && (
+                          <div className="dl-ai-quote-chip">
+                            <Icon name="diff-magicResolveToolbar" />
+                            <span className="dl-ai-quote-text">{msg.quotedText}</span>
+                          </div>
+                        )}
+                        {msg.role === "user" ? (
+                          <div className="dl-ai-chat-msg is-user">{msg.content}</div>
+                        ) : (
+                          <div className="dl-ai-chat-msg is-assistant">
+                            <MarkdownDocument
+                              markdown={cleanChatContent(msg.content)}
+                              className="dl-ai-chat-md"
+                            />
+                            {msg.costUsd && (
+                              <div className="dl-ai-turn-cost">
+                                <Icon name="diff-magicResolveToolbar" />
+                                <span>Cost {formatReviewCostUsd(msg.costUsd)}</span>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                    {isSending && (
+                      <div className="dl-ai-chat-msg is-assistant">
+                        <div>
+                          {streamingChat ? (
+                            <MarkdownDocument
+                              markdown={cleanChatContent(streamingChat)}
+                              className="dl-ai-chat-md"
+                            />
+                          ) : (
+                            "Analyzing follow-up question…"
+                          )}
+                          <span className="dl-caret" />
+                        </div>
+                      </div>
+                    )}
                   </div>
-                ) : null}
+                )}
               </div>
-            </div>
-          ) : displayedMarkdown ? (
-            <div
-              className="dl-island-body"
-              style={{ flex: 1, overflowY: "auto", padding: "24px 32px" }}
-            >
-              {renderVersionBar()}
-              <ReportViewer markdown={displayedMarkdown} onAskSelection={handleAskSelection} />
-            </div>
+
+              {displayedMarkdown && (
+                <div className="dl-ai-composer">
+                  {quotedSelection && (
+                    <div
+                      className="dl-ai-quote-chip"
+                      style={{ alignSelf: "flex-start", marginBottom: 4 }}
+                    >
+                      <Icon name="diff-magicResolveToolbar" />
+                      <span className="dl-ai-quote-text">{quotedSelection.text}</span>
+                      <button
+                        className="dl-tbtn"
+                        type="button"
+                        style={{ width: 16, height: 16, padding: 0 }}
+                        title="Dismiss quote"
+                        aria-label="Dismiss quote"
+                        onClick={() => setQuotedSelection(null)}
+                      >
+                        <Icon name="general-close" />
+                      </button>
+                    </div>
+                  )}
+                  <div className="dl-ai-composer-row">
+                    <textarea
+                      ref={composerInputRef}
+                      className="dl-ai-composer-input dl-textarea"
+                      rows={1}
+                      placeholder="Ask about this review or request changes…"
+                      value={prompt}
+                      onChange={(e) => setPrompt(e.target.value)}
+                      onKeyDown={handleKeyDown}
+                      disabled={isSending}
+                    />
+                    {chatMessages.length > 0 && (
+                      <button
+                        className="dl-btn dl-btn-sm"
+                        type="button"
+                        title="Clear thread"
+                        aria-label="Clear thread"
+                        disabled={isSending}
+                        onClick={() => void aiClearThread()}
+                      >
+                        Clear thread
+                      </button>
+                    )}
+                    <button
+                      className="dl-btn dl-btn-primary dl-btn-sm"
+                      type="button"
+                      disabled={isSending || !prompt.trim()}
+                      onClick={handleSend}
+                    >
+                      Send
+                    </button>
+                  </div>
+                  {isSending && (
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        fontSize: 11,
+                        color: "var(--text-muted)",
+                        marginTop: 2,
+                      }}
+                    >
+                      <span>Analyzing follow-up question…</span>
+                      <button
+                        className="dl-btn dl-btn-sm"
+                        type="button"
+                        onClick={() => cancelTask("ai_followup")}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </section>
           ) : (
             <div className="dl-island-body dl-ai-state" style={{ flex: 1, overflowY: "auto" }}>
               <div className="dl-ai-card">
@@ -879,20 +1019,6 @@ export function AiReviewIsland() {
           )}
         </section>
       </div>
-      {isChatOpen && (
-        <>
-          <Splitter
-            vertical
-            label="Resize AI chat"
-            width={height}
-            min={minAiChat}
-            max={maxChatHeight}
-            onResize={setChatHeight}
-            onResizeEnd={saveChatHeight}
-          />
-          <AiChatPanel height={height} onClose={() => setAiChatOpen(false)} />
-        </>
-      )}
       {confirmRerun && (
         <Dialog label="Re-run review" onClose={() => setConfirmRerun(false)}>
           <div className="dl-dialog-title">Re-run review?</div>

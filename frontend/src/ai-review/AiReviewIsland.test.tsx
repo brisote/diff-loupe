@@ -152,10 +152,10 @@ describe("AiReviewIsland", () => {
     expect(screen.getByText("Found 1 warning.")).toBeInTheDocument();
     expect(screen.getByText("Cost $0.14")).toBeInTheDocument();
     expect(screen.getByText("Balance $9.86")).toBeInTheDocument();
-
-    const chatButton = screen.getByRole("button", { name: "Chat" });
-    fireEvent.click(chatButton);
-    expect(store.getState().isChatOpen).toBe(true);
+    expect(screen.getByRole("region", { name: "Interactive chat" })).toBeInTheDocument();
+    expect(
+      screen.getByPlaceholderText("Ask about this review or request changes…"),
+    ).toBeInTheDocument();
 
     const rerunButton = screen.getByRole("button", { name: "Re-run review" });
     fireEvent.click(rerunButton);
@@ -226,7 +226,6 @@ describe("AiReviewIsland", () => {
 
     const { store } = await renderWithStore(<AiReviewIsland />, core);
     await store.getState().loadAiState();
-    store.setState({ isChatOpen: true });
 
     expect(await screen.findByRole("region", { name: "Interactive chat" })).toBeInTheDocument();
     expect(screen.getByText("Where is currency validation defined?")).toBeInTheDocument();
@@ -578,5 +577,309 @@ describe("AiReviewIsland", () => {
     const argonOption = within(popup).getByRole("button", { name: /Gemini 4 Argon/i });
     expect(argonOption).toBeInTheDocument();
     expect(argonOption).toHaveClass("is-selected");
+  });
+
+  it("renders 13-category structured report with gauges, collapsible detail drawer, and operational risk sections", async () => {
+    const structuredPayload = {
+      schema_version: 1,
+      overview: "Branch review: invoice export currency support",
+      categories: [
+        {
+          id: "encapsulation",
+          title: "Encapsulation",
+          score: 9,
+          summary: "Clean boundaries.",
+          problems: [],
+        },
+        {
+          id: "idempotency",
+          title: "Idempotency",
+          score: 8,
+          summary: "Safe retries.",
+          problems: [],
+        },
+        {
+          id: "edge_cases",
+          title: "Edge cases & inputs",
+          score: 5,
+          summary: "Currency header export accepts raw strings without ISO-4217 validation.",
+          problems: [
+            {
+              title: "Unvalidated ISO-4217 currency code",
+              description: "Reject blank or malformed currency codes before export.",
+              location: "billing/InvoiceExporter.kt:41",
+              severity: "high",
+            },
+          ],
+        },
+        {
+          id: "error_handling",
+          title: "Error handling",
+          score: 7,
+          summary: "Explicit error paths.",
+          problems: [],
+        },
+        {
+          id: "logs",
+          title: "Logs",
+          score: 9,
+          summary: "Structured logs without secrets.",
+          problems: [],
+        },
+        {
+          id: "monitoring",
+          title: "Monitoring",
+          score: 8,
+          summary: "Export latency metric added.",
+          problems: [],
+        },
+        {
+          id: "security",
+          title: "Security",
+          score: 3,
+          summary: "Missing CSV formula escaping.",
+          problems: [],
+        },
+        {
+          id: "concurrency",
+          title: "Concurrency",
+          score: 9,
+          summary: "Stateless exporter.",
+          problems: [],
+        },
+        {
+          id: "transactions",
+          title: "Transactions & atomicity",
+          score: 8,
+          summary: "Single read transaction.",
+          problems: [],
+        },
+        {
+          id: "performance",
+          title: "Performance",
+          score: 9,
+          summary: "Streaming writer.",
+          problems: [],
+        },
+        {
+          id: "breaking_changes",
+          title: "Breaking changes",
+          score: 7,
+          summary: "Additive header column.",
+          problems: [],
+        },
+        {
+          id: "test_coverage",
+          title: "Test coverage",
+          score: 6,
+          summary: "Covers happy path export.",
+          problems: [
+            {
+              title: "Missing invalid currency test",
+              description: "Add unit test for lowercase or invalid currency codes.",
+              location: "billing/InvoiceExporterTest.kt:28",
+              severity: "medium",
+            },
+          ],
+          coverage_percent: 68,
+          test_scenarios: ["Valid USD invoice export", "Empty invoice list export"],
+        },
+        {
+          id: "dependencies",
+          title: "New dependencies",
+          score: 10,
+          summary: "Uses standard library only.",
+          problems: [],
+          dependencies_introduced: false,
+          dependency_tradeoff: "No new dependencies were introduced; zero supply-chain footprint.",
+        },
+      ],
+      blast_radius: "Affects **invoice export** endpoints and CSV serializer.",
+      deployment_risks: "Downstream CSV parsers must tolerate the new currency column.",
+      rollback_plan: "Revert the currency-export commit and redeploy.",
+    };
+
+    const core = fakeCore({
+      current_repo: () => repoInfo("acme-billing", "gs/invoice-export"),
+      ai_get_state: () => ({
+        consentAccepted: true,
+        account: { id: "u1", email: "user@example.com", balanceUsd: "9.86" },
+        review: {
+          id: 10,
+          repo: "/Users/ada/Workspace/acme-billing",
+          branch: "gs/invoice-export",
+          targetBranch: "main",
+          reportMarkdown: JSON.stringify(structuredPayload),
+          costUsd: "0.14",
+          headOid: "abc",
+          baseOid: "def",
+          model: "claude-3-5-sonnet",
+          effort: "medium",
+          createdAt: 1000,
+          updatedAt: 1000,
+          versions: [],
+        },
+        reviews: [],
+        activeReviewId: 10,
+        chatMessages: [],
+      }),
+    });
+
+    const { store } = await renderWithStore(<AiReviewIsland />, core);
+    await store.getState().loadAiState();
+
+    expect(
+      await screen.findByText("Branch review: invoice export currency support"),
+    ).toBeInTheDocument();
+
+    const gaugeGroup = screen.getByRole("group", { name: "Review categories" });
+    const gaugeButtons = within(gaugeGroup).getAllByRole("button");
+    expect(gaugeButtons).toHaveLength(13);
+    for (const btn of gaugeButtons) {
+      expect(btn).toHaveAttribute("aria-expanded", "false");
+    }
+
+    const encapsulationBtn = within(gaugeGroup).getByRole("button", { name: /Encapsulation/i });
+    expect(encapsulationBtn.querySelector(".dl-ai-gauge-ring")).toHaveClass("is-good");
+
+    const edgeCasesBtn = within(gaugeGroup).getByRole("button", { name: /Edge cases & inputs/i });
+    expect(edgeCasesBtn.querySelector(".dl-ai-gauge-ring")).toHaveClass("is-warn");
+
+    const securityBtn = within(gaugeGroup).getByRole("button", { name: /Security/i });
+    expect(securityBtn.querySelector(".dl-ai-gauge-ring")).toHaveClass("is-bad");
+
+    expect(
+      screen.queryByRole("region", { name: "Selected category details" }),
+    ).not.toBeInTheDocument();
+
+    fireEvent.click(edgeCasesBtn);
+    expect(edgeCasesBtn).toHaveAttribute("aria-expanded", "true");
+    const detailDrawer = screen.getByRole("region", { name: "Selected category details" });
+    expect(
+      within(detailDrawer).getByText(
+        "Currency header export accepts raw strings without ISO-4217 validation.",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      within(detailDrawer).getByText("Unvalidated ISO-4217 currency code"),
+    ).toBeInTheDocument();
+    expect(within(detailDrawer).getByText("billing/InvoiceExporter.kt:41")).toBeInTheDocument();
+
+    const coverageBtn = within(gaugeGroup).getByRole("button", { name: /Test coverage/i });
+    fireEvent.click(coverageBtn);
+    expect(coverageBtn).toHaveAttribute("aria-expanded", "true");
+    expect(edgeCasesBtn).toHaveAttribute("aria-expanded", "false");
+    expect(
+      within(screen.getByRole("region", { name: "Selected category details" })).getByText(/68%/),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Valid USD invoice export")).toBeInTheDocument();
+    expect(screen.getByText("Empty invoice list export")).toBeInTheDocument();
+
+    const depsBtn = within(gaugeGroup).getByRole("button", { name: /New dependencies/i });
+    fireEvent.click(depsBtn);
+    const depsDrawer = screen.getByRole("region", { name: "Selected category details" });
+    expect(within(depsDrawer).getByText(/New dependency introduced: No/i)).toBeInTheDocument();
+    expect(
+      within(depsDrawer).getByText(
+        "No new dependencies were introduced; zero supply-chain footprint.",
+      ),
+    ).toBeInTheDocument();
+
+    fireEvent.click(depsBtn);
+    expect(
+      screen.queryByRole("region", { name: "Selected category details" }),
+    ).not.toBeInTheDocument();
+
+    expect(screen.getByRole("heading", { name: "Blast radius" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Deployment risks" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Rollback plan" })).toBeInTheDocument();
+    expect(screen.getByText("invoice export")).toBeInTheDocument();
+  });
+
+  it("renders unified chat composer without toggle and displays Markdown follow-up replies below structured report", async () => {
+    let followupSent: { prompt: string } | null = null;
+    const structuredPayload = {
+      schema_version: 1,
+      overview: "Unified session review",
+      categories: [
+        { id: "encapsulation", title: "Encapsulation", score: 9, summary: "Good.", problems: [] },
+      ],
+      blast_radius: "Single module.",
+      deployment_risks: "Low.",
+      rollback_plan: "Revert commit.",
+    };
+
+    const core = fakeCore({
+      current_repo: () => repoInfo("acme-billing", "gs/invoice-export"),
+      ai_get_state: () => ({
+        consentAccepted: true,
+        account: { id: "u1", email: "user@example.com", balanceUsd: "9.86" },
+        review: {
+          id: 11,
+          repo: "/Users/ada/Workspace/acme-billing",
+          branch: "gs/invoice-export",
+          targetBranch: "main",
+          reportMarkdown: JSON.stringify(structuredPayload),
+          costUsd: "0.12",
+          headOid: "abc",
+          baseOid: "def",
+          model: "claude-3-5-sonnet",
+          effort: "medium",
+          createdAt: 1000,
+          updatedAt: 1000,
+          versions: [],
+        },
+        reviews: [],
+        activeReviewId: 11,
+        chatMessages: [
+          {
+            id: 1,
+            repo: "/Users/ada/Workspace/acme-billing",
+            branch: "gs/invoice-export",
+            targetBranch: "main",
+            role: "user",
+            content: "How should we validate the currency code?",
+            quotedText: null,
+            costUsd: null,
+            createdAt: 1001,
+          },
+          {
+            id: 2,
+            repo: "/Users/ada/Workspace/acme-billing",
+            branch: "gs/invoice-export",
+            targetBranch: "main",
+            role: "assistant",
+            content: "Use `Currency.getInstance(code)` inside **CurrencyValidator.kt**.",
+            quotedText: null,
+            costUsd: "0.01",
+            createdAt: 1002,
+          },
+        ],
+      }),
+      ai_send_followup: (args: unknown) => {
+        followupSent = args as { prompt: string };
+        return null;
+      },
+    });
+
+    const { store } = await renderWithStore(<AiReviewIsland />, core);
+    await store.getState().loadAiState();
+
+    const session = await screen.findByRole("region", { name: "Interactive chat" });
+    expect(within(session).getByText("Unified session review")).toBeInTheDocument();
+    expect(
+      within(session).getByText("How should we validate the currency code?"),
+    ).toBeInTheDocument();
+    expect(within(session).getByText("CurrencyValidator.kt")).toBeInTheDocument();
+
+    const composer = within(session).getByPlaceholderText(
+      "Ask about this review or request changes…",
+    );
+    fireEvent.change(composer, { target: { value: "Can you draft the test?" } });
+    fireEvent.click(within(session).getByRole("button", { name: "Send" }));
+
+    await waitFor(() => {
+      expect(followupSent?.prompt).toBe("Can you draft the test?");
+    });
   });
 });

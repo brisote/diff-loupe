@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "../lib/icon";
 import { MarkdownDocument } from "../markdown-diff/MarkdownDocument";
+import { type CategoryId, parseStructuredReport, scoreTier } from "./structuredReport";
 
 type ReportViewerProps = {
   markdown: string;
@@ -14,9 +15,38 @@ type FloatingAction = {
   heading?: string;
 };
 
+const GAUGE_RADIUS = 18;
+const GAUGE_CIRCUMFERENCE = 2 * Math.PI * GAUGE_RADIUS;
+
+function withUniqueKeys<T>(
+  items: T[],
+  getBaseKey: (item: T) => string,
+): Array<{ key: string; item: T }> {
+  const seen = new Map<string, number>();
+  return items.map((item) => {
+    const base = getBaseKey(item);
+    const count = seen.get(base) ?? 0;
+    seen.set(base, count + 1);
+    return { key: `${base}-${count}`, item };
+  });
+}
+
 export function ReportViewer({ markdown, onAskSelection }: ReportViewerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [floating, setFloating] = useState<FloatingAction | null>(null);
+  const [selectedId, setSelectedId] = useState<CategoryId | null>(null);
+
+  const parsed = useMemo(() => parseStructuredReport(markdown), [markdown]);
+
+  useEffect(() => {
+    if (parsed.kind === "legacy") {
+      setSelectedId(null);
+      return;
+    }
+    setSelectedId((prev) =>
+      prev && parsed.report.categories.some((cat) => cat.id === prev) ? prev : null,
+    );
+  }, [parsed]);
 
   const updateSelection = useCallback(() => {
     const selection = window.getSelection();
@@ -102,41 +132,221 @@ export function ReportViewer({ markdown, onAskSelection }: ReportViewerProps) {
     };
   }, [updateSelection]);
 
+  const floatingPill = floating ? (
+    <div className="dl-ai-float-action" style={{ top: floating.top, left: floating.left }}>
+      <button
+        className="dl-ai-action-btn"
+        type="button"
+        onMouseDown={(e) => e.preventDefault()}
+        onClick={() => {
+          onAskSelection({ text: floating.text, heading: floating.heading });
+          setFloating(null);
+        }}
+      >
+        <Icon name="diff-magicResolveToolbar" />
+        <span>Ask about selection</span>
+      </button>
+      <span style={{ color: "var(--border)" }}>|</span>
+      <button
+        className="dl-ai-action-btn"
+        type="button"
+        onMouseDown={(e) => e.preventDefault()}
+        onClick={() => {
+          onAskSelection({ text: floating.text, heading: floating.heading });
+          setFloating(null);
+        }}
+      >
+        <span>Request more data</span>
+      </button>
+    </div>
+  ) : null;
+
+  if (parsed.kind === "legacy") {
+    return (
+      <div
+        ref={containerRef}
+        className="dl-md"
+        style={{ position: "relative", maxWidth: 820, width: "100%", margin: "0 auto" }}
+      >
+        <MarkdownDocument markdown={parsed.markdown} />
+        {floatingPill}
+      </div>
+    );
+  }
+
+  const { report } = parsed;
+  const selectedCategory = selectedId
+    ? (report.categories.find((cat) => cat.id === selectedId) ?? null)
+    : null;
+
+  const opsMarkdown = [
+    `### Blast radius\n\n${report.blastRadius.trim() || "None reported."}`,
+    `### Deployment risks\n\n${report.deploymentRisks.trim() || "None reported."}`,
+    `### Rollback plan\n\n${report.rollbackPlan.trim() || "None reported."}`,
+  ].join("\n\n");
+
   return (
     <div
       ref={containerRef}
-      className="dl-md"
-      style={{ position: "relative", maxWidth: 820, margin: "0 auto" }}
+      style={{
+        position: "relative",
+        maxWidth: 920,
+        width: "100%",
+        margin: "0 auto",
+        display: "flex",
+        flexDirection: "column",
+        gap: 12,
+      }}
     >
-      <MarkdownDocument markdown={markdown} />
-      {floating && (
-        <div className="dl-ai-float-action" style={{ top: floating.top, left: floating.left }}>
-          <button
-            className="dl-ai-action-btn"
-            type="button"
-            onMouseDown={(e) => e.preventDefault()}
-            onClick={() => {
-              onAskSelection({ text: floating.text, heading: floating.heading });
-              setFloating(null);
-            }}
-          >
-            <Icon name="diff-magicResolveToolbar" />
-            <span>Ask about selection</span>
-          </button>
-          <span style={{ color: "var(--border)" }}>|</span>
-          <button
-            className="dl-ai-action-btn"
-            type="button"
-            onMouseDown={(e) => e.preventDefault()}
-            onClick={() => {
-              onAskSelection({ text: floating.text, heading: floating.heading });
-              setFloating(null);
-            }}
-          >
-            <span>Request more data</span>
-          </button>
+      <div className="dl-ai-report-card">
+        <div className="dl-ai-report-head">
+          <div className="dl-ai-report-title">{report.overview}</div>
         </div>
-      )}
+
+        <fieldset
+          className="dl-ai-gauges"
+          aria-label="Review categories"
+          style={{ border: 0, margin: 0, padding: 0, minWidth: 0 }}
+        >
+          {report.categories.map((cat) => {
+            const isSelected = selectedId === cat.id;
+            const tier = scoreTier(cat.score);
+            const dashOffset = GAUGE_CIRCUMFERENCE * (1 - cat.score / 10);
+            const metaText =
+              cat.id === "test_coverage"
+                ? `${cat.coveragePercent ?? 0}% cov`
+                : `${cat.problems.length} ${cat.problems.length === 1 ? "issue" : "issues"}`;
+
+            return (
+              <button
+                key={cat.id}
+                type="button"
+                className={`dl-ai-gauge-btn ${isSelected ? "is-selected" : ""}`}
+                aria-expanded={isSelected}
+                onClick={() => setSelectedId(isSelected ? null : cat.id)}
+              >
+                <span className={`dl-ai-gauge-ring is-${tier}`}>
+                  <svg viewBox="0 0 44 44" aria-hidden="true">
+                    <circle className="dl-ai-gauge-bg" cx="22" cy="22" r={GAUGE_RADIUS} />
+                    <circle
+                      className="dl-ai-gauge-arc"
+                      cx="22"
+                      cy="22"
+                      r={GAUGE_RADIUS}
+                      strokeDasharray={GAUGE_CIRCUMFERENCE}
+                      strokeDashoffset={dashOffset}
+                    />
+                  </svg>
+                  <span className="dl-ai-gauge-score">{cat.score}</span>
+                </span>
+                <span className="dl-ai-gauge-label">{cat.title}</span>
+                <span className="dl-ai-gauge-meta">{metaText}</span>
+              </button>
+            );
+          })}
+        </fieldset>
+
+        {selectedCategory && (
+          <section className="dl-ai-cat-detail" aria-label="Selected category details">
+            <div className="dl-ai-cat-header">
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <span className="dl-ai-cat-title">{selectedCategory.title}</span>
+                <span className="dl-ai-pill dl-ai-pill-muted">
+                  Score {selectedCategory.score}/10
+                </span>
+              </div>
+              <button
+                className="dl-btn dl-btn-sm"
+                type="button"
+                onClick={() =>
+                  onAskSelection({
+                    text: selectedCategory.summary || selectedCategory.title,
+                    heading: selectedCategory.title,
+                  })
+                }
+              >
+                Ask about category
+              </button>
+            </div>
+
+            <p className="dl-ai-cat-summary">{selectedCategory.summary}</p>
+
+            {selectedCategory.id === "test_coverage" && (
+              <>
+                <div className="dl-ai-cat-meta">
+                  <span>
+                    Test coverage for changed code: {selectedCategory.coveragePercent ?? 0}%
+                  </span>
+                </div>
+                {selectedCategory.testScenarios && selectedCategory.testScenarios.length > 0 && (
+                  <ul className="dl-ai-problem-list">
+                    {withUniqueKeys(selectedCategory.testScenarios, (s) => s).map(
+                      ({ key, item: scenario }) => (
+                        <li key={key} className="dl-ai-problem-item">
+                          {scenario}
+                        </li>
+                      ),
+                    )}
+                  </ul>
+                )}
+              </>
+            )}
+
+            {selectedCategory.id === "dependencies" && (
+              <div className="dl-ai-cat-meta">
+                <span>
+                  New dependency introduced:{" "}
+                  {selectedCategory.dependenciesIntroduced ? "Yes" : "No"}
+                </span>
+                {selectedCategory.dependencyTradeoff && (
+                  <span>{selectedCategory.dependencyTradeoff}</span>
+                )}
+              </div>
+            )}
+
+            <ul className="dl-ai-problem-list">
+              {selectedCategory.problems.length === 0 ? (
+                <li className="dl-ai-problem-item">No problems found in this category.</li>
+              ) : (
+                withUniqueKeys(
+                  selectedCategory.problems,
+                  (problem) => `${problem.title}-${problem.location ?? ""}`,
+                ).map(({ key, item: problem }) => (
+                  <li key={key} className="dl-ai-problem-item">
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        gap: 8,
+                      }}
+                    >
+                      <button
+                        type="button"
+                        className="dl-ai-action-btn"
+                        style={{ padding: 0, height: "auto", fontWeight: 600, textAlign: "left" }}
+                        onClick={() =>
+                          onAskSelection({
+                            text: `${problem.title}${problem.location ? ` (${problem.location})` : ""}: ${problem.description}`,
+                            heading: selectedCategory.title,
+                          })
+                        }
+                      >
+                        {problem.title}
+                      </button>
+                      {problem.location && <code>{problem.location}</code>}
+                    </div>
+                    {problem.description && <div>{problem.description}</div>}
+                  </li>
+                ))
+              )}
+            </ul>
+          </section>
+        )}
+      </div>
+
+      <MarkdownDocument className="dl-ai-ops-md" markdown={opsMarkdown} />
+      {floatingPill}
     </div>
   );
 }

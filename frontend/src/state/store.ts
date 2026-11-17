@@ -378,7 +378,6 @@ export type AppState = {
   streamingChat: string | null;
   quotedSelection: { text: string; heading?: string } | null;
   inlineError: string | null;
-  isChatOpen: boolean;
   modelsCatalog: ModelsCatalog | null;
   selectedModel: string | null;
   selectedEffort: string | null;
@@ -398,8 +397,6 @@ export type AppState = {
   aiAddFunds: (amount: number) => Promise<void>;
   startAiReview: () => Promise<void>;
   cancelAiReview: () => void;
-  toggleAiChat: () => void;
-  setAiChatOpen: (open: boolean) => void;
   setQuotedSelection: (quote: { text: string; heading?: string } | null) => void;
   aiSendFollowup: (args: {
     prompt: string;
@@ -623,7 +620,6 @@ export function createAppStore(backend: Backend) {
       streamingChat: null,
       quotedSelection: null,
       inlineError: null,
-      isChatOpen: false,
       modelsCatalog: null,
       selectedModel: null,
       selectedEffort: null,
@@ -1947,14 +1943,6 @@ export function createAppStore(backend: Backend) {
           get().cancelTask(run.runId);
           set({ activeRun: null });
         }
-      },
-
-      toggleAiChat: () => {
-        set((s) => ({ isChatOpen: !s.isChatOpen }));
-      },
-
-      setAiChatOpen: (open: boolean) => {
-        set({ isChatOpen: open });
       },
 
       setQuotedSelection: (quote) => {
