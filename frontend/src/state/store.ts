@@ -402,7 +402,7 @@ export type AppState = {
     prompt: string;
     quotedText?: string;
     sectionHeading?: string;
-  }) => Promise<void>;
+  }) => Promise<boolean>;
   aiClearThread: () => Promise<void>;
 };
 
@@ -1741,7 +1741,7 @@ export function createAppStore(backend: Backend) {
       },
 
       switchReview: async (reviewId: number) => {
-        set({ activeReviewId: reviewId, selectedVersionNumber: null });
+        set({ activeReviewId: reviewId, selectedVersionNumber: null, quotedSelection: null });
         await get().loadAiState(reviewId);
       },
 
@@ -1951,8 +1951,13 @@ export function createAppStore(backend: Backend) {
 
       aiSendFollowup: async ({ prompt, quotedText, sectionHeading }) => {
         const repo = get().repo;
-        if (!repo?.target) return;
+        if (!repo?.target) return false;
+        const repoPath = repo.path;
         const activeReviewId = get().activeReviewId ?? undefined;
+        const expectedReviewId = activeReviewId ?? null;
+        const isStillActive = () =>
+          get().repo?.path === repoPath && get().activeReviewId === expectedReviewId;
+        const optimisticId = Date.now();
         set({
           inlineError: null,
           streamingChat: "",
@@ -1966,22 +1971,22 @@ export function createAppStore(backend: Backend) {
           chatMessages: [
             ...get().chatMessages,
             {
-              id: Date.now(),
+              id: optimisticId,
               reviewId: activeReviewId ?? null,
-              repo: repo.path,
+              repo: repoPath,
               branch: repo.branch ?? "",
               targetBranch: repo.target,
               role: "user",
               content: prompt,
               quotedText: quotedText ?? null,
               costUsd: null,
-              createdAt: Date.now(),
+              createdAt: optimisticId,
             },
           ],
         });
         try {
           await backend.call("ai_send_followup", {
-            repo: repo.path,
+            repo: repoPath,
             branch: repo.branch ?? undefined,
             targetBranch: repo.target,
             reviewId: activeReviewId,
@@ -1989,12 +1994,28 @@ export function createAppStore(backend: Backend) {
             quotedText,
             sectionHeading,
           });
+          if (!isStillActive()) return false;
           await get().loadAiState(activeReviewId);
+          return true;
         } catch (err) {
-          const apiError = toApiError(err);
-          set({ inlineError: apiError.message, activeRun: null, streamingChat: null });
+          if (isStillActive()) {
+            const apiError = toApiError(err);
+            set({
+              inlineError: apiError.message,
+              activeRun: null,
+              streamingChat: null,
+              chatMessages: get().chatMessages.filter((msg) => msg.id !== optimisticId),
+            });
+          }
+          return false;
         } finally {
-          set({ streamingChat: null });
+          if (isStillActive()) {
+            if (get().activeRun?.runId === "ai_followup") {
+              set({ activeRun: null, streamingChat: null });
+            } else {
+              set({ streamingChat: null });
+            }
+          }
         }
       },
 

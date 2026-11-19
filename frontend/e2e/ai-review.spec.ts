@@ -144,6 +144,10 @@ const STRUCTURED_REPORT = {
 };
 
 const STRUCTURED_REPORT_JSON = JSON.stringify(STRUCTURED_REPORT);
+const UPDATED_STRUCTURED_REPORT_JSON = JSON.stringify({
+  ...STRUCTURED_REPORT,
+  overview: "Updated audit: 4 changed files with ISO-4217 validation.",
+});
 
 function createMockCloud(): Promise<MockCloudServer> {
   let currentBalance = "0.00";
@@ -259,7 +263,11 @@ function createMockCloud(): Promise<MockCloudServer> {
         'event: stage\ndata: {"stage":"analyzing","message":"Analyzing branch changes…"}\n\n',
       );
       res.write(
-        `event: report_delta\ndata: ${JSON.stringify({ delta: STRUCTURED_REPORT_JSON })}\n\n`,
+        `event: report_delta\ndata: ${JSON.stringify({ delta: '{"schema_version":1,"overview":"Streaming partial' })}\n\n`,
+      );
+      await new Promise((resolve) => setTimeout(resolve, 600));
+      res.write(
+        `event: report_delta\ndata: ${JSON.stringify({ delta: STRUCTURED_REPORT_JSON.slice('{"schema_version":1,"overview":"Streaming partial'.length) })}\n\n`,
       );
       res.write('event: billing\ndata: {"cost_usd":"0.14","balance_usd":"9.86"}\n\n');
       res.write(
@@ -278,9 +286,12 @@ function createMockCloud(): Promise<MockCloudServer> {
       const chatDelta =
         "Currency validation is implemented in **CurrencyCode.kt** via `CurrencyCode.isValid(raw)`.";
       res.write(`event: chat_delta\ndata: ${JSON.stringify({ delta: chatDelta })}\n\n`);
+      res.write(
+        `event: report_update\ndata: ${JSON.stringify({ report_markdown: UPDATED_STRUCTURED_REPORT_JSON })}\n\n`,
+      );
       res.write('event: billing\ndata: {"cost_usd":"0.0034","balance_usd":"9.85"}\n\n');
       res.write(
-        `event: done\ndata: ${JSON.stringify({ cost_usd: "0.0034", balance_usd: "9.85", chat_message: chatDelta })}\n\n`,
+        `event: done\ndata: ${JSON.stringify({ cost_usd: "0.0034", balance_usd: "9.85", chat_message: chatDelta, report_markdown: UPDATED_STRUCTURED_REPORT_JSON })}\n\n`,
       );
       res.end();
       return;
@@ -382,6 +393,9 @@ test("full AI review workflow, selection quoting, live chat dual streaming, and 
 
     await page.getByRole("button", { name: "Run review" }).first().click();
 
+    await expect(page.locator(".dl-ai-skeleton")).toBeVisible();
+    await expect(page.getByText('"schema_version"')).toHaveCount(0);
+
     await expect(
       page.getByText("Audited 4 changed files for invoice export currency support."),
     ).toBeVisible();
@@ -449,6 +463,44 @@ test("full AI review workflow, selection quoting, live chat dual streaming, and 
       chatRegion.getByText("Revert the export header commit; no database migration required."),
     ).toBeVisible();
 
+    await page.evaluate(() => {
+      const store = window as Window & { __copiedMarkdown?: string };
+      Object.defineProperty(navigator, "clipboard", {
+        value: {
+          writeText: async (text: string) => {
+            store.__copiedMarkdown = text;
+          },
+        },
+        configurable: true,
+      });
+    });
+    await chatRegion.getByRole("button", { name: "Copy as Markdown" }).click();
+    await expect(chatRegion.getByRole("button", { name: "Copied" })).toBeVisible();
+    const copiedMarkdown = await page.evaluate(
+      () => (window as Window & { __copiedMarkdown?: string }).__copiedMarkdown,
+    );
+    expect(copiedMarkdown).toContain(
+      "Audited 4 changed files for invoice export currency support.",
+    );
+
+    await page.evaluate(() => {
+      const target = document.querySelector(".dl-ai-report-title");
+      if (!target?.firstChild) return;
+      const range = document.createRange();
+      range.setStart(target.firstChild, 0);
+      range.setEnd(target.firstChild, 23);
+      const selection = window.getSelection();
+      selection?.removeAllRanges();
+      selection?.addRange(range);
+      document.dispatchEvent(new Event("selectionchange"));
+    });
+    const askSelectionBtn = chatRegion.getByRole("button", { name: "Ask about selection" });
+    await expect(askSelectionBtn).toBeVisible();
+    await askSelectionBtn.click();
+    await expect(chatRegion.locator(".dl-ai-composer .dl-ai-quote-text")).toHaveText(
+      "Audited 4 changed files",
+    );
+
     await edgeCasesBtn.click();
     await detailSection.getByRole("button", { name: "Ask about category" }).click();
 
@@ -469,6 +521,10 @@ test("full AI review workflow, selection quoting, live chat dual streaming, and 
     await expect(thread.locator("strong", { hasText: "CurrencyCode.kt" })).toBeVisible();
     await expect(thread.locator("code", { hasText: "CurrencyCode.isValid(raw)" })).toBeVisible();
     await expect(thread.getByText("Cost <$0.01")).toBeVisible();
+    await expect(chatRegion.getByText("Version 2 of 2")).toBeVisible();
+    await expect(
+      chatRegion.getByText("Updated audit: 4 changed files with ISO-4217 validation."),
+    ).toBeVisible();
 
     const followupRequest = cloud.requests.find(
       (req) => req.method === "POST" && req.path === "/v1/reviews/followup",
@@ -481,7 +537,7 @@ test("full AI review workflow, selection quoting, live chat dual streaming, and 
     await expect(page.getByRole("region", { name: "Side-by-side diff" })).toBeVisible();
     await aiBtn.click();
     await expect(
-      chatRegion.getByText("Audited 4 changed files for invoice export currency support."),
+      chatRegion.getByText("Updated audit: 4 changed files with ISO-4217 validation."),
     ).toBeVisible();
     await expect(chatRegion.locator(".dl-ai-gauge-btn")).toHaveCount(13);
     await expect(
@@ -494,8 +550,9 @@ test("full AI review workflow, selection quoting, live chat dual streaming, and 
     await page.getByRole("button", { name: "AI review" }).click();
     const restartChat = page.getByRole("region", { name: "Interactive chat" });
     await expect(restartChat).toBeVisible();
+    await expect(restartChat.getByText("Version 2 of 2")).toBeVisible();
     await expect(
-      restartChat.getByText("Audited 4 changed files for invoice export currency support."),
+      restartChat.getByText("Updated audit: 4 changed files with ISO-4217 validation."),
     ).toBeVisible();
     await expect(restartChat.locator(".dl-ai-gauge-btn")).toHaveCount(13);
     await expect(restartChat.getByRole("heading", { name: "Blast radius" })).toBeVisible();

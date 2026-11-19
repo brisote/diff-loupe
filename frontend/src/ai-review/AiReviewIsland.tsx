@@ -1,23 +1,16 @@
-import type { KeyboardEvent, RefObject } from "react";
-import { useEffect, useRef, useState } from "react";
+import type { RefObject } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { StoredAiReview } from "../api/generated/StoredAiReview";
 import { Dialog } from "../lib/dialog";
 import { Icon } from "../lib/icon";
 import { Popup, useBelow } from "../lib/popup";
 import { TargetPicker } from "../main-window/TargetPicker";
-import { MarkdownDocument } from "../markdown-diff/MarkdownDocument";
 import { useApp } from "../state/context";
+import { AiChatComposer } from "./AiChatComposer";
+import { AiChatThread } from "./AiChatThread";
 import { EffortPicker, ModelPicker } from "./ModelPicker";
 import { formatBalanceUsd, formatReviewCostUsd } from "./money";
 import { ReportViewer } from "./ReportViewer";
-
-function cleanChatContent(content: string): string {
-  if (content.includes("--- REPORT UPDATE ---")) {
-    const parts = content.split("--- REPORT UPDATE ---");
-    return (parts[0] ?? "").trim();
-  }
-  return content;
-}
 
 type ReviewPickerProps = {
   anchor: RefObject<HTMLElement | null>;
@@ -178,23 +171,25 @@ export function AiReviewIsland() {
   const [pickingModel, setPickingModel] = useState(false);
   const [pickingEffort, setPickingEffort] = useState(false);
   const [confirmRerun, setConfirmRerun] = useState(false);
-  const [prompt, setPrompt] = useState("");
 
-  const isSending = streamingChat !== null;
-
-  useEffect(() => {
-    if (quotedSelection) {
-      composerInputRef.current?.focus();
-    }
-  }, [quotedSelection]);
+  const isInitialStreaming = activeRun !== null && activeRun.runId !== "ai_followup";
+  const isFollowupStreaming = activeRun?.runId === "ai_followup" || streamingChat !== null;
+  const composerDisabled =
+    isInitialStreaming || (!activeReviewId && chatMessages.length === 0) || isFollowupStreaming;
+  const activeReviewIdRef = useRef(activeReviewId);
+  activeReviewIdRef.current = activeReviewId;
 
   useEffect(() => {
     const stream = streamRef.current;
     if (prevReviewIdRef.current !== activeReviewId) {
+      const isInitialMount = prevReviewIdRef.current === undefined;
       prevReviewIdRef.current = activeReviewId;
       prevMessageCountRef.current = chatMessages.length;
-      if (streamingChat !== null && stream) {
-        stream.scrollTop = stream.scrollHeight;
+      if (!isInitialMount) {
+        setQuotedSelection(null);
+      }
+      if (stream) {
+        stream.scrollTop = streamingChat !== null ? stream.scrollHeight : 0;
       }
       return;
     }
@@ -204,36 +199,50 @@ export function AiReviewIsland() {
     if (!stream) return;
 
     if (streamingChat !== null || (prevCount !== null && chatMessages.length > prevCount)) {
-      stream.scrollTop = stream.scrollHeight;
+      const distanceFromBottom = stream.scrollHeight - stream.scrollTop - stream.clientHeight;
+      if (distanceFromBottom < 80) {
+        stream.scrollTop = stream.scrollHeight;
+      }
     }
-  }, [activeReviewId, chatMessages.length, streamingChat]);
+  }, [activeReviewId, chatMessages.length, streamingChat, setQuotedSelection]);
 
-  const handleAskSelection = (selection: { text: string; heading?: string }) => {
-    setQuotedSelection(selection);
-    composerInputRef.current?.focus();
-  };
+  const handleAskSelection = useCallback(
+    (selection: { text: string; heading?: string }) => {
+      setQuotedSelection(selection);
+      composerInputRef.current?.focus();
+    },
+    [setQuotedSelection],
+  );
 
-  const handleSend = () => {
-    const trimmed = prompt.trim();
-    if (!trimmed || isSending) return;
+  const handleSend = useCallback(
+    async (trimmedPrompt: string): Promise<boolean> => {
+      if (composerDisabled) return false;
+      const capturedReviewId = activeReviewIdRef.current;
+      const currentQuote = quotedSelection;
+      const ok = await aiSendFollowup({
+        prompt: trimmedPrompt,
+        quotedText: currentQuote?.text,
+        sectionHeading: currentQuote?.heading,
+      });
+      if (ok && activeReviewIdRef.current === capturedReviewId) {
+        setQuotedSelection(null);
+      }
+      return ok;
+    },
+    [composerDisabled, quotedSelection, aiSendFollowup, setQuotedSelection],
+  );
 
-    const currentQuote = quotedSelection;
-    setPrompt("");
+  const handleClearQuote = useCallback(() => {
     setQuotedSelection(null);
+  }, [setQuotedSelection]);
 
-    void aiSendFollowup({
-      prompt: trimmed,
-      quotedText: currentQuote?.text,
-      sectionHeading: currentQuote?.heading,
-    });
-  };
+  const handleClearThread = useCallback(() => {
+    void aiClearThread();
+  }, [aiClearThread]);
 
-  const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      handleSend();
-    }
-  };
+  const handleCancelFollowup = useCallback(() => {
+    cancelTask("ai_followup");
+  }, [cancelTask]);
 
   if (!repo) return null;
 
@@ -512,7 +521,7 @@ export function AiReviewIsland() {
               </button>
             )}
 
-            {activeRun ? (
+            {isInitialStreaming ? (
               <>
                 <button className="dl-btn dl-btn-sm" type="button" disabled>
                   <Icon name="general-refresh" />
@@ -528,7 +537,7 @@ export function AiReviewIsland() {
                 <button
                   className="dl-btn dl-btn-sm"
                   type="button"
-                  disabled={!hasBalance || !hasTarget || !hasModels}
+                  disabled={!hasBalance || !hasTarget || !hasModels || isFollowupStreaming}
                   onClick={() => setConfirmRerun(true)}
                 >
                   <Icon name="general-refresh" />
@@ -537,7 +546,7 @@ export function AiReviewIsland() {
                 <button
                   className="dl-btn dl-btn-sm"
                   type="button"
-                  disabled={!hasBalance || !hasTarget || !hasModels}
+                  disabled={!hasBalance || !hasTarget || !hasModels || isFollowupStreaming}
                   onClick={() => void startAiReview()}
                 >
                   <Icon name="general-add" />
@@ -739,7 +748,7 @@ export function AiReviewIsland() {
               style={{ padding: 0 }}
             >
               <div className="dl-ai-session-stream" ref={streamRef}>
-                {activeRun && (
+                {isInitialStreaming && activeRun && (
                   <div
                     style={{
                       maxWidth: 920,
@@ -850,142 +859,39 @@ export function AiReviewIsland() {
                   </div>
                 )}
 
-                {displayedMarkdown && (
+                {(displayedMarkdown || isInitialStreaming) && (
                   <>
                     {renderVersionBar()}
                     <ReportViewer
-                      markdown={displayedMarkdown}
+                      markdown={displayedMarkdown ?? ""}
                       onAskSelection={handleAskSelection}
+                      isStreamingInitial={isInitialStreaming}
+                      reviewIdentity={activeReviewId}
                     />
-                    {activeRun && <span className="dl-caret" />}
+                    {isInitialStreaming && <span className="dl-caret" />}
                   </>
                 )}
 
-                {(chatMessages.length > 0 || isSending) && (
-                  <div className="dl-ai-thread">
-                    {chatMessages.map((msg) => (
-                      <div
-                        key={msg.id}
-                        style={{ display: "flex", flexDirection: "column", gap: 4 }}
-                      >
-                        {msg.quotedText && (
-                          <div className="dl-ai-quote-chip">
-                            <Icon name="diff-magicResolveToolbar" />
-                            <span className="dl-ai-quote-text">{msg.quotedText}</span>
-                          </div>
-                        )}
-                        {msg.role === "user" ? (
-                          <div className="dl-ai-chat-msg is-user">{msg.content}</div>
-                        ) : (
-                          <div className="dl-ai-chat-msg is-assistant">
-                            <MarkdownDocument
-                              markdown={cleanChatContent(msg.content)}
-                              className="dl-ai-chat-md"
-                            />
-                            {msg.costUsd && (
-                              <div className="dl-ai-turn-cost">
-                                <Icon name="diff-magicResolveToolbar" />
-                                <span>Cost {formatReviewCostUsd(msg.costUsd)}</span>
-                              </div>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                    {isSending && (
-                      <div className="dl-ai-chat-msg is-assistant">
-                        <div>
-                          {streamingChat ? (
-                            <MarkdownDocument
-                              markdown={cleanChatContent(streamingChat)}
-                              className="dl-ai-chat-md"
-                            />
-                          ) : (
-                            "Analyzing follow-up question…"
-                          )}
-                          <span className="dl-caret" />
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )}
+                <AiChatThread
+                  chatMessages={chatMessages}
+                  streamingChat={streamingChat}
+                  isFollowupStreaming={isFollowupStreaming}
+                />
               </div>
 
-              {displayedMarkdown && (
-                <div className="dl-ai-composer">
-                  {quotedSelection && (
-                    <div
-                      className="dl-ai-quote-chip"
-                      style={{ alignSelf: "flex-start", marginBottom: 4 }}
-                    >
-                      <Icon name="diff-magicResolveToolbar" />
-                      <span className="dl-ai-quote-text">{quotedSelection.text}</span>
-                      <button
-                        className="dl-tbtn"
-                        type="button"
-                        style={{ width: 16, height: 16, padding: 0 }}
-                        title="Dismiss quote"
-                        aria-label="Dismiss quote"
-                        onClick={() => setQuotedSelection(null)}
-                      >
-                        <Icon name="general-close" />
-                      </button>
-                    </div>
-                  )}
-                  <div className="dl-ai-composer-row">
-                    <textarea
-                      ref={composerInputRef}
-                      className="dl-ai-composer-input dl-textarea"
-                      rows={1}
-                      placeholder="Ask about this review or request changes…"
-                      value={prompt}
-                      onChange={(e) => setPrompt(e.target.value)}
-                      onKeyDown={handleKeyDown}
-                      disabled={isSending}
-                    />
-                    {chatMessages.length > 0 && (
-                      <button
-                        className="dl-btn dl-btn-sm"
-                        type="button"
-                        title="Clear thread"
-                        aria-label="Clear thread"
-                        disabled={isSending}
-                        onClick={() => void aiClearThread()}
-                      >
-                        Clear thread
-                      </button>
-                    )}
-                    <button
-                      className="dl-btn dl-btn-primary dl-btn-sm"
-                      type="button"
-                      disabled={isSending || !prompt.trim()}
-                      onClick={handleSend}
-                    >
-                      Send
-                    </button>
-                  </div>
-                  {isSending && (
-                    <div
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "space-between",
-                        fontSize: 11,
-                        color: "var(--text-muted)",
-                        marginTop: 2,
-                      }}
-                    >
-                      <span>Analyzing follow-up question…</span>
-                      <button
-                        className="dl-btn dl-btn-sm"
-                        type="button"
-                        onClick={() => cancelTask("ai_followup")}
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  )}
-                </div>
+              {(displayedMarkdown || isInitialStreaming) && (
+                <AiChatComposer
+                  reviewIdentity={activeReviewId}
+                  quotedSelection={quotedSelection}
+                  onClearQuote={handleClearQuote}
+                  onSend={handleSend}
+                  onClearThread={handleClearThread}
+                  onCancelFollowup={handleCancelFollowup}
+                  hasMessages={chatMessages.length > 0}
+                  isFollowupStreaming={isFollowupStreaming}
+                  disabled={composerDisabled}
+                  inputRef={composerInputRef}
+                />
               )}
             </section>
           ) : (

@@ -1,5 +1,5 @@
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { fakeCore, renderWithStore, repoInfo } from "../test/render";
 import { AiReviewIsland } from "./AiReviewIsland";
 
@@ -763,6 +763,7 @@ describe("AiReviewIsland", () => {
     expect(
       within(detailDrawer).getByText("Unvalidated ISO-4217 currency code"),
     ).toBeInTheDocument();
+    expect(within(detailDrawer).getByText("high")).toBeInTheDocument();
     expect(within(detailDrawer).getByText("billing/InvoiceExporter.kt:41")).toBeInTheDocument();
 
     const coverageBtn = within(gaugeGroup).getByRole("button", { name: /Test coverage/i });
@@ -794,6 +795,21 @@ describe("AiReviewIsland", () => {
     expect(screen.getByRole("heading", { name: "Deployment risks" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Rollback plan" })).toBeInTheDocument();
     expect(screen.getByText("invoice export")).toBeInTheDocument();
+
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      value: { writeText },
+      configurable: true,
+    });
+    const copyButton = screen.getByRole("button", { name: "Copy as Markdown" });
+    fireEvent.click(copyButton);
+    await waitFor(() => {
+      expect(writeText).toHaveBeenCalledTimes(1);
+    });
+    expect(writeText.mock.calls[0]?.[0]).toContain(
+      "Branch review: invoice export currency support",
+    );
+    expect(await screen.findByRole("button", { name: "Copied" })).toBeInTheDocument();
   });
 
   it("renders unified chat composer without toggle and displays Markdown follow-up replies below structured report", async () => {
@@ -881,5 +897,357 @@ describe("AiReviewIsland", () => {
     await waitFor(() => {
       expect(followupSent?.prompt).toBe("Can you draft the test?");
     });
+  });
+
+  it("shows loading skeleton instead of raw JSON while initial review streams and disables follow-up composer", async () => {
+    const core = fakeCore({
+      current_repo: () => repoInfo("acme-billing", "gs/invoice-export"),
+      ai_get_state: () => ({
+        consentAccepted: true,
+        account: { id: "u1", email: "user@example.com", balanceUsd: "10.00" },
+        review: null,
+        reviews: [],
+        activeReviewId: null,
+        chatMessages: [],
+      }),
+    });
+
+    const { store } = await renderWithStore(<AiReviewIsland />, core);
+    await store.getState().loadAiState();
+    store.setState({
+      activeRun: {
+        runId: "run-1",
+        stage: "analysis",
+        message: "Analyzing branch changes…",
+        thoughts: [],
+        cancellable: true,
+      },
+      reportMarkdown: '{"schema_version":1,"overview":"Streaming partial json',
+    });
+
+    await waitFor(() => {
+      expect(document.querySelector(".dl-ai-skeleton")).toBeInTheDocument();
+    });
+    expect(screen.queryByText(/Streaming partial json/)).not.toBeInTheDocument();
+    const composer = screen.queryByPlaceholderText("Ask about this review or request changes…");
+    if (composer) {
+      expect(composer).toBeDisabled();
+    }
+  });
+
+  it("disables or gates follow-up composer when activeReviewId is unavailable", async () => {
+    const core = fakeCore({
+      current_repo: () => repoInfo("acme-billing", "gs/invoice-export"),
+      ai_get_state: () => ({
+        consentAccepted: true,
+        account: { id: "u1", email: "user@example.com", balanceUsd: "10.00" },
+        review: null,
+        reviews: [],
+        activeReviewId: null,
+        chatMessages: [],
+      }),
+    });
+
+    const { store } = await renderWithStore(<AiReviewIsland />, core);
+    await store.getState().loadAiState();
+    store.setState({
+      reportMarkdown: "## Legacy report without id",
+      activeReviewId: null,
+    });
+
+    expect(await screen.findByText("Legacy report without id")).toBeInTheDocument();
+    const composer = screen.queryByPlaceholderText("Ask about this review or request changes…");
+    if (composer) {
+      expect(composer).toBeDisabled();
+    }
+  });
+
+  it("does not show top-level 'Review in progress' banner or report caret during follow-up turns", async () => {
+    const structuredPayload = {
+      schema_version: 1,
+      overview: "Follow-up run distinction",
+      categories: [
+        { id: "encapsulation", title: "Encapsulation", score: 9, summary: "Clean.", problems: [] },
+      ],
+      blast_radius: "Single module.",
+      deployment_risks: "Low.",
+      rollback_plan: "Revert.",
+    };
+    const core = fakeCore({
+      current_repo: () => repoInfo("acme-billing", "gs/invoice-export"),
+      ai_get_state: () => ({
+        consentAccepted: true,
+        account: { id: "u1", email: "user@example.com", balanceUsd: "9.86" },
+        review: {
+          id: 10,
+          repo: "/Users/ada/Workspace/acme-billing",
+          branch: "gs/invoice-export",
+          targetBranch: "main",
+          reportMarkdown: JSON.stringify(structuredPayload),
+          costUsd: "0.14",
+          headOid: "abc",
+          baseOid: "def",
+          model: "claude-3-5-sonnet",
+          effort: "medium",
+          createdAt: 1000,
+          updatedAt: 1000,
+          versions: [],
+        },
+        reviews: [],
+        activeReviewId: 10,
+        chatMessages: [],
+      }),
+    });
+
+    const { store } = await renderWithStore(<AiReviewIsland />, core);
+    await store.getState().loadAiState();
+    expect(await screen.findByText("Follow-up run distinction")).toBeInTheDocument();
+
+    store.setState({
+      activeRun: {
+        runId: "ai_followup",
+        stage: "followup",
+        message: "Analyzing follow-up question…",
+        thoughts: [],
+        cancellable: true,
+      },
+      streamingChat: "Checking CurrencyCode.kt",
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("Checking CurrencyCode.kt")).toBeInTheDocument();
+    });
+    expect(screen.queryByText("Review in progress")).not.toBeInTheDocument();
+    expect(document.querySelectorAll(".dl-ai-session-stream > .dl-caret")).toHaveLength(0);
+  });
+
+  it("does not duplicate problem description when problem title is blank", async () => {
+    const structuredPayload = {
+      schema_version: 1,
+      overview: "Blank title check",
+      categories: [
+        {
+          id: "edge_cases",
+          title: "Edge cases & inputs",
+          score: 6,
+          summary: "Input validation gap.",
+          problems: [
+            {
+              title: "",
+              description: "Missing null check on currency parameter.",
+              location: "InvoiceExporter.kt:12",
+              severity: "medium",
+            },
+          ],
+        },
+      ],
+      blast_radius: "Low.",
+      deployment_risks: "Low.",
+      rollback_plan: "Revert.",
+    };
+    const core = fakeCore({
+      current_repo: () => repoInfo("acme-billing", "gs/invoice-export"),
+      ai_get_state: () => ({
+        consentAccepted: true,
+        account: { id: "u1", email: "user@example.com", balanceUsd: "9.86" },
+        review: {
+          id: 12,
+          repo: "/Users/ada/Workspace/acme-billing",
+          branch: "gs/invoice-export",
+          targetBranch: "main",
+          reportMarkdown: JSON.stringify(structuredPayload),
+          costUsd: "0.14",
+          headOid: "abc",
+          baseOid: "def",
+          model: "claude-3-5-sonnet",
+          effort: "medium",
+          createdAt: 1000,
+          updatedAt: 1000,
+          versions: [],
+        },
+        reviews: [],
+        activeReviewId: 12,
+        chatMessages: [],
+      }),
+    });
+
+    const { store } = await renderWithStore(<AiReviewIsland />, core);
+    await store.getState().loadAiState();
+
+    const edgeCasesBtn = await screen.findByRole("button", { name: /Edge cases & inputs/i });
+    fireEvent.click(edgeCasesBtn);
+    const detailDrawer = screen.getByRole("region", { name: "Selected category details" });
+    expect(
+      within(detailDrawer).getAllByText("Missing null check on currency parameter."),
+    ).toHaveLength(1);
+    expect(within(detailDrawer).getByText("medium")).toBeInTheDocument();
+  });
+
+  it("resets selectedId, prompt, and quotedSelection when switching activeReviewId", async () => {
+    const makePayload = (overview: string) =>
+      JSON.stringify({
+        schema_version: 1,
+        overview,
+        categories: [
+          {
+            id: "encapsulation",
+            title: "Encapsulation",
+            score: 8,
+            summary: `${overview} summary.`,
+            problems: [],
+          },
+        ],
+        blast_radius: "Low.",
+        deployment_risks: "Low.",
+        rollback_plan: "Revert.",
+      });
+    const r1 = {
+      id: 1,
+      repo: "/Users/ada/Workspace/acme-billing",
+      branch: "gs/invoice-export",
+      targetBranch: "main",
+      reportMarkdown: makePayload("Review one"),
+      costUsd: "0.10",
+      headOid: "abc",
+      baseOid: "def",
+      model: "claude-3-5-sonnet",
+      effort: "medium",
+      createdAt: 1000,
+      updatedAt: 1000,
+      versions: [],
+    };
+    const r2 = {
+      id: 2,
+      repo: "/Users/ada/Workspace/acme-billing",
+      branch: "gs/invoice-export",
+      targetBranch: "main",
+      reportMarkdown: makePayload("Review two"),
+      costUsd: "0.15",
+      headOid: "abc",
+      baseOid: "def",
+      model: "claude-3-7-sonnet",
+      effort: "high",
+      createdAt: 2000,
+      updatedAt: 2000,
+      versions: [],
+    };
+    const core = fakeCore({
+      current_repo: () => repoInfo("acme-billing", "gs/invoice-export"),
+      ai_get_state: (args: unknown) => {
+        const reviewId = (args as { reviewId?: number })?.reviewId;
+        const active = reviewId === 1 ? r1 : r2;
+        return {
+          consentAccepted: true,
+          account: { id: "u1", email: "user@example.com", balanceUsd: "9.86" },
+          review: active,
+          reviews: [r2, r1],
+          activeReviewId: active.id,
+          chatMessages: [],
+        };
+      },
+    });
+
+    const { store } = await renderWithStore(<AiReviewIsland />, core);
+    await store.getState().loadAiState();
+
+    expect(await screen.findByText("Review two")).toBeInTheDocument();
+    const encapBtn = screen.getByRole("button", { name: /Encapsulation/i });
+    fireEvent.click(encapBtn);
+    const detailDrawer = screen.getByRole("region", { name: "Selected category details" });
+    fireEvent.click(within(detailDrawer).getByRole("button", { name: "Ask about category" }));
+
+    const composer = screen.getByPlaceholderText(
+      "Ask about this review or request changes…",
+    ) as HTMLTextAreaElement;
+    fireEvent.change(composer, { target: { value: "Draft follow-up" } });
+    expect(composer.value).toBe("Draft follow-up");
+    expect(document.querySelector(".dl-ai-composer .dl-ai-quote-text")).toHaveTextContent(
+      "Review two summary.",
+    );
+
+    fireEvent.click(screen.getByTitle("Review history"));
+    fireEvent.click(await screen.findByRole("button", { name: /Review #1/ }));
+
+    expect(await screen.findByText("Review one")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("region", { name: "Selected category details" }),
+    ).not.toBeInTheDocument();
+    expect(
+      (
+        screen.getByPlaceholderText(
+          "Ask about this review or request changes…",
+        ) as HTMLTextAreaElement
+      ).value,
+    ).toBe("");
+    expect(document.querySelector(".dl-ai-composer .dl-ai-quote-text")).not.toBeInTheDocument();
+  });
+
+  it("preserves prompt and quotedSelection when aiSendFollowup fails", async () => {
+    const structuredPayload = {
+      schema_version: 1,
+      overview: "Failure preservation test",
+      categories: [
+        {
+          id: "security",
+          title: "Security",
+          score: 5,
+          summary: "Check CSV escaping.",
+          problems: [],
+        },
+      ],
+      blast_radius: "Low.",
+      deployment_risks: "Low.",
+      rollback_plan: "Revert.",
+    };
+    const core = fakeCore({
+      current_repo: () => repoInfo("acme-billing", "gs/invoice-export"),
+      ai_get_state: () => ({
+        consentAccepted: true,
+        account: { id: "u1", email: "user@example.com", balanceUsd: "9.86" },
+        review: {
+          id: 15,
+          repo: "/Users/ada/Workspace/acme-billing",
+          branch: "gs/invoice-export",
+          targetBranch: "main",
+          reportMarkdown: JSON.stringify(structuredPayload),
+          costUsd: "0.14",
+          headOid: "abc",
+          baseOid: "def",
+          model: "claude-3-5-sonnet",
+          effort: "medium",
+          createdAt: 1000,
+          updatedAt: 1000,
+          versions: [],
+        },
+        reviews: [],
+        activeReviewId: 15,
+        chatMessages: [],
+      }),
+      ai_send_followup: () => {
+        throw new Error("Network failure");
+      },
+    });
+
+    const { store } = await renderWithStore(<AiReviewIsland />, core);
+    await store.getState().loadAiState();
+
+    const securityBtn = await screen.findByRole("button", { name: /Security/i });
+    fireEvent.click(securityBtn);
+    const detailDrawer = screen.getByRole("region", { name: "Selected category details" });
+    fireEvent.click(within(detailDrawer).getByRole("button", { name: "Ask about category" }));
+
+    const composer = screen.getByPlaceholderText(
+      "Ask about this review or request changes…",
+    ) as HTMLTextAreaElement;
+    fireEvent.change(composer, { target: { value: "Explain this security risk" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    await waitFor(() => {
+      expect(store.getState().inlineError).toBe("Network failure");
+    });
+    expect(composer.value).toBe("Explain this security risk");
+    expect(document.querySelector(".dl-ai-composer .dl-ai-quote-text")).toHaveTextContent(
+      "Check CSV escaping.",
+    );
   });
 });

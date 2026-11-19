@@ -1,5 +1,9 @@
-import { describe, expect, it } from "vitest";
-import { parseStructuredReport, scoreTier } from "./structuredReport";
+import { describe, expect, it, vi } from "vitest";
+import {
+  formatStructuredReportAsMarkdown,
+  parseStructuredReport,
+  scoreTier,
+} from "./structuredReport";
 
 const CANONICAL_IDS = [
   "encapsulation",
@@ -75,6 +79,11 @@ describe("scoreTier", () => {
     expect(scoreTier(3)).toBe("bad");
     expect(scoreTier(4)).toBe("bad");
   });
+
+  it("maps null or invalid scores to unknown", () => {
+    expect(scoreTier(null)).toBe("unknown");
+    expect(scoreTier(Number.NaN)).toBe("unknown");
+  });
 });
 
 describe("parseStructuredReport", () => {
@@ -123,7 +132,10 @@ describe("parseStructuredReport", () => {
     expect(result.report.categories).toHaveLength(13);
     expect(result.report.categories.map((c) => c.id)).toEqual(CANONICAL_IDS);
     expect(result.report.categories[0]?.score).toBe(9);
+    expect(result.report.categories[1]?.score).toBeNull();
+    expect(result.report.categories[1]?.summary).toBe("");
     expect(result.report.categories[6]?.score).toBe(6);
+    expect(result.report.categories[11]?.coveragePercent).toBeNull();
     expect(result.report.categories[12]?.score).toBe(10);
   });
 
@@ -208,5 +220,90 @@ describe("parseStructuredReport", () => {
       kind: "legacy",
       markdown: partialJson,
     });
+  });
+
+  it("represents missing or invalid scores and metadata explicitly as null", () => {
+    const payload = {
+      schema_version: 1,
+      overview: "Missing fields check",
+      categories: [
+        { id: "encapsulation", title: "Encapsulation", score: "invalid", summary: "Unclear." },
+        { id: "test_coverage", title: "Test coverage", summary: "Not measured." },
+        { id: "dependencies", title: "New dependencies", score: 8, summary: "Unchecked." },
+      ],
+      blast_radius: "Minimal.",
+      deployment_risks: "Minimal.",
+      rollback_plan: "Revert.",
+    };
+
+    const result = parseStructuredReport(JSON.stringify(payload));
+    expect(result.kind).toBe("structured");
+    if (result.kind !== "structured") return;
+
+    expect(result.report.categories[0]?.score).toBeNull();
+    const coverage = result.report.categories.find((c) => c.id === "test_coverage");
+    expect(coverage?.score).toBeNull();
+    expect(coverage?.coveragePercent).toBeNull();
+    const deps = result.report.categories.find((c) => c.id === "dependencies");
+    expect(deps?.dependenciesIntroduced).toBeNull();
+  });
+
+  it("falls back to legacy and warns on empty categories or unsupported schema_version", () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const emptyCategories = JSON.stringify({
+        schema_version: 1,
+        overview: "Empty categories",
+        categories: [],
+      });
+      expect(parseStructuredReport(emptyCategories)).toEqual({
+        kind: "legacy",
+        markdown: emptyCategories,
+      });
+      expect(warnSpy).toHaveBeenCalledTimes(1);
+
+      const unsupportedVersion = JSON.stringify({
+        schema_version: 2,
+        overview: "Future schema",
+        categories: [makeCategoryPayload("encapsulation", 9)],
+      });
+      expect(parseStructuredReport(unsupportedVersion)).toEqual({
+        kind: "legacy",
+        markdown: unsupportedVersion,
+      });
+      expect(warnSpy).toHaveBeenCalledTimes(2);
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+});
+
+describe("formatStructuredReportAsMarkdown", () => {
+  it("formats a structured report with overview, categories, problems, and operational sections", () => {
+    const payload = {
+      schema_version: 1,
+      overview: "Branch review: invoice export currency support",
+      categories: [
+        makeCategoryPayload("encapsulation", 9),
+        makeCategoryPayload("test_coverage", 6),
+        makeCategoryPayload("dependencies", 10),
+      ],
+      blast_radius: "Affects invoice export endpoints.",
+      deployment_risks: "Consumers must tolerate the currency column.",
+      rollback_plan: "Revert the commit.",
+    };
+
+    const parsed = parseStructuredReport(JSON.stringify(payload));
+    expect(parsed.kind).toBe("structured");
+    if (parsed.kind !== "structured") return;
+
+    const md = formatStructuredReportAsMarkdown(parsed.report);
+    expect(md).toContain("Branch review: invoice export currency support");
+    expect(md).toContain("Test coverage");
+    expect(md).toContain("Missing negative amount test");
+    expect(md).toContain("billing/InvoiceExporterTest.kt:44");
+    expect(md).toContain("Affects invoice export endpoints.");
+    expect(md).toContain("Consumers must tolerate the currency column.");
+    expect(md).toContain("Revert the commit.");
   });
 });

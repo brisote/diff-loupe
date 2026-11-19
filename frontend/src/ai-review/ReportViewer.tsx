@@ -1,11 +1,19 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "../lib/icon";
 import { MarkdownDocument } from "../markdown-diff/MarkdownDocument";
-import { type CategoryId, parseStructuredReport, scoreTier } from "./structuredReport";
+import {
+  CANONICAL_CATEGORIES,
+  type CategoryId,
+  formatStructuredReportAsMarkdown,
+  parseStructuredReport,
+  scoreTier,
+} from "./structuredReport";
 
 type ReportViewerProps = {
   markdown: string;
   onAskSelection: (selection: { text: string; heading?: string }) => void;
+  isStreamingInitial?: boolean;
+  reviewIdentity?: string | number | null;
 };
 
 type FloatingAction = {
@@ -31,12 +39,69 @@ function withUniqueKeys<T>(
   });
 }
 
-export function ReportViewer({ markdown, onAskSelection }: ReportViewerProps) {
+export const ReportViewer = memo(function ReportViewer({
+  markdown,
+  onAskSelection,
+  isStreamingInitial = false,
+  reviewIdentity = null,
+}: ReportViewerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const copyTimerRef = useRef<number | null>(null);
+  const mountedRef = useRef(true);
+  const copySeqRef = useRef(0);
   const [floating, setFloating] = useState<FloatingAction | null>(null);
   const [selectedId, setSelectedId] = useState<CategoryId | null>(null);
+  const [copied, setCopied] = useState(false);
 
-  const parsed = useMemo(() => parseStructuredReport(markdown), [markdown]);
+  const parsed = useMemo(() => {
+    if (isStreamingInitial) {
+      const trimmed = markdown.trimStart();
+      if (!trimmed || trimmed.startsWith("{") || trimmed.startsWith("```")) {
+        return { kind: "legacy" as const, markdown };
+      }
+    }
+    return parseStructuredReport(markdown);
+  }, [isStreamingInitial, markdown]);
+
+  const prevReviewIdentityRef = useRef(reviewIdentity);
+  const prevMarkdownRef = useRef(markdown);
+
+  const clearCopyTimer = useCallback(() => {
+    if (copyTimerRef.current !== null) {
+      window.clearTimeout(copyTimerRef.current);
+      copyTimerRef.current = null;
+    }
+  }, []);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      copySeqRef.current += 1;
+      clearCopyTimer();
+    };
+  }, [clearCopyTimer]);
+
+  useEffect(() => {
+    if (prevReviewIdentityRef.current !== reviewIdentity) {
+      prevReviewIdentityRef.current = reviewIdentity;
+      copySeqRef.current += 1;
+      clearCopyTimer();
+      setSelectedId(null);
+      setFloating(null);
+      setCopied(false);
+    }
+  }, [reviewIdentity, clearCopyTimer]);
+
+  useEffect(() => {
+    if (prevMarkdownRef.current !== markdown) {
+      prevMarkdownRef.current = markdown;
+      copySeqRef.current += 1;
+      clearCopyTimer();
+      setFloating(null);
+      setCopied(false);
+    }
+  }, [markdown, clearCopyTimer]);
 
   useEffect(() => {
     if (parsed.kind === "legacy") {
@@ -132,6 +197,26 @@ export function ReportViewer({ markdown, onAskSelection }: ReportViewerProps) {
     };
   }, [updateSelection]);
 
+  const handleCopyMarkdown = async () => {
+    if (parsed.kind !== "structured") return;
+    const seq = ++copySeqRef.current;
+    try {
+      await navigator.clipboard.writeText(formatStructuredReportAsMarkdown(parsed.report));
+      if (!mountedRef.current || copySeqRef.current !== seq) return;
+      setCopied(true);
+      clearCopyTimer();
+      copyTimerRef.current = window.setTimeout(() => {
+        if (mountedRef.current && copySeqRef.current === seq) {
+          setCopied(false);
+        }
+      }, 2000);
+    } catch {
+      if (mountedRef.current && copySeqRef.current === seq) {
+        setCopied(false);
+      }
+    }
+  };
+
   const floatingPill = floating ? (
     <div className="dl-ai-float-action" style={{ top: floating.top, left: floating.left }}>
       <button
@@ -161,6 +246,34 @@ export function ReportViewer({ markdown, onAskSelection }: ReportViewerProps) {
     </div>
   ) : null;
 
+  if (isStreamingInitial && parsed.kind !== "structured") {
+    return (
+      <div
+        ref={containerRef}
+        style={{
+          position: "relative",
+          maxWidth: 920,
+          width: "100%",
+          margin: "0 auto",
+        }}
+      >
+        <output
+          className="dl-ai-report-card dl-ai-skeleton"
+          aria-busy="true"
+          aria-label="Loading review report"
+        >
+          <div className="dl-ai-skeleton-line" style={{ width: "60%" }} />
+          <div className="dl-ai-skeleton-line" style={{ width: "38%" }} />
+          <div className="dl-ai-skeleton-grid">
+            {CANONICAL_CATEGORIES.map((cat) => (
+              <div key={cat.id} className="dl-ai-skeleton-tile" />
+            ))}
+          </div>
+        </output>
+      </div>
+    );
+  }
+
   if (parsed.kind === "legacy") {
     return (
       <div
@@ -179,12 +292,6 @@ export function ReportViewer({ markdown, onAskSelection }: ReportViewerProps) {
     ? (report.categories.find((cat) => cat.id === selectedId) ?? null)
     : null;
 
-  const opsMarkdown = [
-    `### Blast radius\n\n${report.blastRadius.trim() || "None reported."}`,
-    `### Deployment risks\n\n${report.deploymentRisks.trim() || "None reported."}`,
-    `### Rollback plan\n\n${report.rollbackPlan.trim() || "None reported."}`,
-  ].join("\n\n");
-
   return (
     <div
       ref={containerRef}
@@ -201,6 +308,14 @@ export function ReportViewer({ markdown, onAskSelection }: ReportViewerProps) {
       <div className="dl-ai-report-card">
         <div className="dl-ai-report-head">
           <div className="dl-ai-report-title">{report.overview}</div>
+          <button
+            type="button"
+            className="dl-btn dl-btn-sm"
+            onClick={() => void handleCopyMarkdown()}
+          >
+            <Icon name="general-copy" />
+            <span>{copied ? "Copied" : "Copy as Markdown"}</span>
+          </button>
         </div>
 
         <fieldset
@@ -211,10 +326,11 @@ export function ReportViewer({ markdown, onAskSelection }: ReportViewerProps) {
           {report.categories.map((cat) => {
             const isSelected = selectedId === cat.id;
             const tier = scoreTier(cat.score);
-            const dashOffset = GAUGE_CIRCUMFERENCE * (1 - cat.score / 10);
+            const dashOffset =
+              cat.score !== null ? GAUGE_CIRCUMFERENCE * (1 - cat.score / 10) : GAUGE_CIRCUMFERENCE;
             const metaText =
-              cat.id === "test_coverage"
-                ? `${cat.coveragePercent ?? 0}% cov`
+              cat.id === "test_coverage" && cat.coveragePercent !== null
+                ? `${cat.coveragePercent}% cov`
                 : `${cat.problems.length} ${cat.problems.length === 1 ? "issue" : "issues"}`;
 
             return (
@@ -237,7 +353,7 @@ export function ReportViewer({ markdown, onAskSelection }: ReportViewerProps) {
                       strokeDashoffset={dashOffset}
                     />
                   </svg>
-                  <span className="dl-ai-gauge-score">{cat.score}</span>
+                  <span className="dl-ai-gauge-score">{cat.score !== null ? cat.score : "?"}</span>
                 </span>
                 <span className="dl-ai-gauge-label">{cat.title}</span>
                 <span className="dl-ai-gauge-meta">{metaText}</span>
@@ -252,7 +368,9 @@ export function ReportViewer({ markdown, onAskSelection }: ReportViewerProps) {
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                 <span className="dl-ai-cat-title">{selectedCategory.title}</span>
                 <span className="dl-ai-pill dl-ai-pill-muted">
-                  Score {selectedCategory.score}/10
+                  {selectedCategory.score !== null
+                    ? `Score ${selectedCategory.score}/10`
+                    : "Unscored"}
                 </span>
               </div>
               <button
@@ -269,16 +387,18 @@ export function ReportViewer({ markdown, onAskSelection }: ReportViewerProps) {
               </button>
             </div>
 
-            <p className="dl-ai-cat-summary">{selectedCategory.summary}</p>
+            {selectedCategory.summary && (
+              <p className="dl-ai-cat-summary">{selectedCategory.summary}</p>
+            )}
 
             {selectedCategory.id === "test_coverage" && (
               <>
-                <div className="dl-ai-cat-meta">
-                  <span>
-                    Test coverage for changed code: {selectedCategory.coveragePercent ?? 0}%
-                  </span>
-                </div>
-                {selectedCategory.testScenarios && selectedCategory.testScenarios.length > 0 && (
+                {selectedCategory.coveragePercent !== null && (
+                  <div className="dl-ai-cat-meta">
+                    <span>Test coverage for changed code: {selectedCategory.coveragePercent}%</span>
+                  </div>
+                )}
+                {selectedCategory.testScenarios.length > 0 && (
                   <ul className="dl-ai-problem-list">
                     {withUniqueKeys(selectedCategory.testScenarios, (s) => s).map(
                       ({ key, item: scenario }) => (
@@ -292,17 +412,21 @@ export function ReportViewer({ markdown, onAskSelection }: ReportViewerProps) {
               </>
             )}
 
-            {selectedCategory.id === "dependencies" && (
-              <div className="dl-ai-cat-meta">
-                <span>
-                  New dependency introduced:{" "}
-                  {selectedCategory.dependenciesIntroduced ? "Yes" : "No"}
-                </span>
-                {selectedCategory.dependencyTradeoff && (
-                  <span>{selectedCategory.dependencyTradeoff}</span>
-                )}
-              </div>
-            )}
+            {selectedCategory.id === "dependencies" &&
+              (selectedCategory.dependenciesIntroduced !== null ||
+                selectedCategory.dependencyTradeoff) && (
+                <div className="dl-ai-cat-meta">
+                  {selectedCategory.dependenciesIntroduced !== null && (
+                    <span>
+                      New dependency introduced:{" "}
+                      {selectedCategory.dependenciesIntroduced ? "Yes" : "No"}
+                    </span>
+                  )}
+                  {selectedCategory.dependencyTradeoff && (
+                    <span>{selectedCategory.dependencyTradeoff}</span>
+                  )}
+                </div>
+              )}
 
             <ul className="dl-ai-problem-list">
               {selectedCategory.problems.length === 0 ? (
@@ -311,42 +435,66 @@ export function ReportViewer({ markdown, onAskSelection }: ReportViewerProps) {
                 withUniqueKeys(
                   selectedCategory.problems,
                   (problem) => `${problem.title}-${problem.location ?? ""}`,
-                ).map(({ key, item: problem }) => (
-                  <li key={key} className="dl-ai-problem-item">
-                    <div
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "space-between",
-                        gap: 8,
-                      }}
-                    >
-                      <button
-                        type="button"
-                        className="dl-ai-action-btn"
-                        style={{ padding: 0, height: "auto", fontWeight: 600, textAlign: "left" }}
-                        onClick={() =>
-                          onAskSelection({
-                            text: `${problem.title}${problem.location ? ` (${problem.location})` : ""}: ${problem.description}`,
-                            heading: selectedCategory.title,
-                          })
-                        }
-                      >
-                        {problem.title}
-                      </button>
-                      {problem.location && <code>{problem.location}</code>}
-                    </div>
-                    {problem.description && <div>{problem.description}</div>}
-                  </li>
-                ))
+                ).map(({ key, item: problem }) => {
+                  const normalizedSeverity = problem.severity?.toLowerCase();
+                  const severityClass =
+                    normalizedSeverity === "high" ||
+                    normalizedSeverity === "medium" ||
+                    normalizedSeverity === "low"
+                      ? ` is-${normalizedSeverity}`
+                      : "";
+                  const hasDistinctDescription =
+                    Boolean(problem.description) && problem.description !== problem.title;
+
+                  return (
+                    <li key={key} className="dl-ai-problem-item">
+                      <div className="dl-ai-problem-head">
+                        <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
+                          {problem.severity && (
+                            <span className={`dl-ai-severity${severityClass}`}>
+                              {problem.severity}
+                            </span>
+                          )}
+                          <button
+                            type="button"
+                            className="dl-ai-action-btn"
+                            style={{
+                              padding: 0,
+                              height: "auto",
+                              fontWeight: 600,
+                              textAlign: "left",
+                            }}
+                            onClick={() =>
+                              onAskSelection({
+                                text: `${problem.title}${problem.location ? ` (${problem.location})` : ""}${hasDistinctDescription ? `: ${problem.description}` : ""}`,
+                                heading: selectedCategory.title,
+                              })
+                            }
+                          >
+                            {problem.title}
+                          </button>
+                        </div>
+                        {problem.location && <code>{problem.location}</code>}
+                      </div>
+                      {hasDistinctDescription && <div>{problem.description}</div>}
+                    </li>
+                  );
+                })
               )}
             </ul>
           </section>
         )}
       </div>
 
-      <MarkdownDocument className="dl-ai-ops-md" markdown={opsMarkdown} />
+      <div className="dl-ai-ops-md">
+        <h3>Blast radius</h3>
+        <MarkdownDocument markdown={report.blastRadius.trim() || "None reported."} />
+        <h3>Deployment risks</h3>
+        <MarkdownDocument markdown={report.deploymentRisks.trim() || "None reported."} />
+        <h3>Rollback plan</h3>
+        <MarkdownDocument markdown={report.rollbackPlan.trim() || "None reported."} />
+      </div>
       {floatingPill}
     </div>
   );
-}
+});

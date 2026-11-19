@@ -23,13 +23,13 @@ export type CategoryProblem = {
 export type CategoryAssessment = {
   id: CategoryId;
   title: string;
-  score: number;
+  score: number | null;
   summary: string;
   problems: CategoryProblem[];
-  coveragePercent?: number;
-  testScenarios?: string[];
-  dependenciesIntroduced?: boolean;
-  dependencyTradeoff?: string;
+  coveragePercent: number | null;
+  testScenarios: string[];
+  dependenciesIntroduced: boolean | null;
+  dependencyTradeoff: string | null;
 };
 
 export type StructuredReviewReport = {
@@ -45,7 +45,7 @@ export type ParsedReviewReport =
   | { kind: "structured"; report: StructuredReviewReport }
   | { kind: "legacy"; markdown: string };
 
-const CANONICAL_CATEGORIES: ReadonlyArray<{ id: CategoryId; title: string }> = [
+export const CANONICAL_CATEGORIES: ReadonlyArray<{ id: CategoryId; title: string }> = [
   { id: "encapsulation", title: "Encapsulation" },
   { id: "idempotency", title: "Idempotency" },
   { id: "edge_cases", title: "Edge cases & inputs" },
@@ -61,14 +61,15 @@ const CANONICAL_CATEGORIES: ReadonlyArray<{ id: CategoryId; title: string }> = [
   { id: "dependencies", title: "New dependencies" },
 ];
 
-export function scoreTier(score: number): "good" | "warn" | "bad" {
+export function scoreTier(score: number | null): "good" | "warn" | "bad" | "unknown" {
+  if (score === null || !Number.isFinite(score)) return "unknown";
   if (score >= 8) return "good";
   if (score >= 5) return "warn";
   return "bad";
 }
 
-function clampScore(value: unknown): number {
-  if (typeof value !== "number" || !Number.isFinite(value)) return 8;
+function clampScore(value: unknown): number | null {
+  if (typeof value !== "number" || !Number.isFinite(value)) return null;
   return Math.max(1, Math.min(10, Math.round(value)));
 }
 
@@ -76,6 +77,10 @@ function stripJsonFence(raw: string): string {
   const trimmed = raw.trim();
   const match = /^```(?:json)?\s*\r?\n([\s\S]*?)\r?\n?```$/i.exec(trimmed);
   return match?.[1] ? match[1].trim() : trimmed;
+}
+
+function isJsonLike(raw: string, candidate: string): boolean {
+  return candidate.startsWith("{") || /^\s*```json\b/i.test(raw);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -105,15 +110,22 @@ function normalizeProblems(raw: unknown): CategoryProblem[] {
   return problems;
 }
 
-function normalizeStringArray(raw: unknown): string[] | undefined {
-  if (!Array.isArray(raw)) return undefined;
-  const items = raw.filter((v): v is string => typeof v === "string" && v.trim().length > 0);
-  return items.length > 0 ? items : [];
+function normalizeStringArray(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.filter((v): v is string => typeof v === "string" && v.trim().length > 0);
 }
 
 export function parseStructuredReport(raw: string): ParsedReviewReport {
+  if (typeof raw !== "string") {
+    return { kind: "legacy", markdown: "" };
+  }
   const candidate = stripJsonFence(raw);
   if (!candidate.startsWith("{")) {
+    if (isJsonLike(raw, candidate)) {
+      console.warn(
+        "Structured review report JSON fence could not be parsed; falling back to legacy",
+      );
+    }
     return { kind: "legacy", markdown: raw };
   }
 
@@ -121,14 +133,29 @@ export function parseStructuredReport(raw: string): ParsedReviewReport {
   try {
     parsed = JSON.parse(candidate);
   } catch {
+    console.warn("Structured review report JSON failed to parse; falling back to legacy");
     return { kind: "legacy", markdown: raw };
   }
 
   if (!isRecord(parsed)) {
+    console.warn("Structured review report payload is not an object; falling back to legacy");
     return { kind: "legacy", markdown: raw };
   }
 
-  if (typeof parsed.overview !== "string" || !Array.isArray(parsed.categories)) {
+  const rawVersion = parsed.schema_version ?? parsed.schemaVersion;
+  if (rawVersion !== undefined && rawVersion !== 1) {
+    console.warn(
+      `Unsupported structured review schema_version: ${String(rawVersion)}; falling back to legacy`,
+    );
+    return { kind: "legacy", markdown: raw };
+  }
+
+  if (
+    typeof parsed.overview !== "string" ||
+    !Array.isArray(parsed.categories) ||
+    parsed.categories.length === 0
+  ) {
+    console.warn("Structured review report missing overview or categories; falling back to legacy");
     return { kind: "legacy", markdown: raw };
   }
 
@@ -139,57 +166,65 @@ export function parseStructuredReport(raw: string): ParsedReviewReport {
     }
   }
 
+  const missingIds: string[] = [];
   const categories: CategoryAssessment[] = CANONICAL_CATEGORIES.map(({ id, title }) => {
     const entry = byId.get(id);
     if (!entry) {
+      missingIds.push(id);
       return {
         id,
         title,
-        score: 8,
-        summary: "No issues reported.",
+        score: null,
+        summary: "",
         problems: [],
+        coveragePercent: null,
+        testScenarios: [],
+        dependenciesIntroduced: null,
+        dependencyTradeoff: null,
       };
     }
 
-    const assessment: CategoryAssessment = {
+    const cov = entry.coverage_percent ?? entry.coveragePercent;
+    const coveragePercent =
+      id === "test_coverage" && typeof cov === "number" && Number.isFinite(cov)
+        ? Math.max(0, Math.min(100, Math.round(cov)))
+        : null;
+
+    const testScenarios =
+      id === "test_coverage"
+        ? normalizeStringArray(entry.test_scenarios ?? entry.testScenarios)
+        : [];
+
+    const introduced = entry.dependencies_introduced ?? entry.dependenciesIntroduced;
+    const dependenciesIntroduced =
+      id === "dependencies" && typeof introduced === "boolean" ? introduced : null;
+
+    const tradeoff = entry.dependency_tradeoff ?? entry.dependencyTradeoff;
+    const dependencyTradeoff =
+      id === "dependencies" && typeof tradeoff === "string" && tradeoff.trim()
+        ? tradeoff.trim()
+        : null;
+
+    return {
       id,
       title: typeof entry.title === "string" && entry.title.trim() ? entry.title.trim() : title,
       score: clampScore(entry.score),
       summary: typeof entry.summary === "string" ? entry.summary.trim() : "",
       problems: normalizeProblems(entry.problems),
+      coveragePercent,
+      testScenarios,
+      dependenciesIntroduced,
+      dependencyTradeoff,
     };
-
-    if (id === "test_coverage") {
-      const cov = entry.coverage_percent ?? entry.coveragePercent;
-      if (typeof cov === "number" && Number.isFinite(cov)) {
-        assessment.coveragePercent = Math.max(0, Math.min(100, Math.round(cov)));
-      }
-      const scenarios = normalizeStringArray(entry.test_scenarios ?? entry.testScenarios);
-      if (scenarios !== undefined) {
-        assessment.testScenarios = scenarios;
-      }
-    }
-
-    if (id === "dependencies") {
-      const introduced = entry.dependencies_introduced ?? entry.dependenciesIntroduced;
-      if (typeof introduced === "boolean") {
-        assessment.dependenciesIntroduced = introduced;
-      }
-      const tradeoff = entry.dependency_tradeoff ?? entry.dependencyTradeoff;
-      if (typeof tradeoff === "string" && tradeoff.trim()) {
-        assessment.dependencyTradeoff = tradeoff.trim();
-      }
-    }
-
-    return assessment;
   });
 
-  const schemaVersion =
-    typeof parsed.schema_version === "number"
-      ? parsed.schema_version
-      : typeof parsed.schemaVersion === "number"
-        ? parsed.schemaVersion
-        : 1;
+  if (missingIds.length > 0) {
+    console.warn(
+      `Structured review report omitted ${missingIds.length} canonical categories: ${missingIds.join(", ")}`,
+    );
+  }
+
+  const schemaVersion = typeof rawVersion === "number" ? rawVersion : 1;
 
   const blastRadius =
     typeof parsed.blast_radius === "string"
@@ -223,4 +258,66 @@ export function parseStructuredReport(raw: string): ParsedReviewReport {
       rollbackPlan,
     },
   };
+}
+
+export function formatStructuredReportAsMarkdown(report: StructuredReviewReport): string {
+  const sections: string[] = [];
+
+  if (report.overview.trim()) {
+    sections.push(`## ${report.overview.trim()}`);
+  }
+
+  for (const cat of report.categories) {
+    const scoreLabel = cat.score !== null ? `${cat.score}/10` : "Unscored";
+    const lines: string[] = [`### ${cat.title} (${scoreLabel})`];
+
+    if (cat.summary) {
+      lines.push("", cat.summary);
+    }
+
+    if (cat.id === "test_coverage") {
+      if (cat.coveragePercent !== null) {
+        lines.push("", `- Test coverage: ${cat.coveragePercent}%`);
+      }
+      if (cat.testScenarios.length > 0) {
+        lines.push("", "Test scenarios:");
+        for (const scenario of cat.testScenarios) {
+          lines.push(`- ${scenario}`);
+        }
+      }
+    }
+
+    if (cat.id === "dependencies") {
+      if (cat.dependenciesIntroduced !== null) {
+        lines.push(
+          "",
+          `- New dependencies introduced: ${cat.dependenciesIntroduced ? "Yes" : "No"}`,
+        );
+      }
+      if (cat.dependencyTradeoff) {
+        lines.push("", `- Dependency tradeoff: ${cat.dependencyTradeoff}`);
+      }
+    }
+
+    if (cat.problems.length > 0) {
+      lines.push("", "Problems:");
+      for (const problem of cat.problems) {
+        const severityPrefix = problem.severity ? `[${problem.severity}] ` : "";
+        const locationSuffix = problem.location ? ` (${problem.location})` : "";
+        const descriptionSuffix =
+          problem.description && problem.description !== problem.title
+            ? `: ${problem.description}`
+            : "";
+        lines.push(`- ${severityPrefix}**${problem.title}**${locationSuffix}${descriptionSuffix}`);
+      }
+    }
+
+    sections.push(lines.join("\n"));
+  }
+
+  sections.push(`### Blast radius\n\n${report.blastRadius.trim() || "None reported."}`);
+  sections.push(`### Deployment risks\n\n${report.deploymentRisks.trim() || "None reported."}`);
+  sections.push(`### Rollback plan\n\n${report.rollbackPlan.trim() || "None reported."}`);
+
+  return sections.join("\n\n");
 }
