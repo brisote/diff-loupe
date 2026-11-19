@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  type CategoryAssessment,
+  formatCategoryAsMarkdown,
   formatStructuredReportAsMarkdown,
   parseStructuredReport,
   scoreTier,
@@ -340,5 +342,124 @@ describe("formatStructuredReportAsMarkdown", () => {
     expect(md).not.toContain("Affects invoice export endpoints.");
     expect(md).not.toContain("Consumers must tolerate the currency column.");
     expect(md).not.toContain("Revert the commit.");
+  });
+});
+
+describe("formatCategoryAsMarkdown", () => {
+  it("formats scored category heading, summary, and exact problems with severity and location", () => {
+    const category: CategoryAssessment = {
+      id: "security",
+      title: "Security",
+      score: 4,
+      summary: "Found two input validation issues.",
+      problems: [
+        {
+          title: "CSV formula injection",
+          description: "Prefix cells starting with = or +.",
+          location: "InvoiceExporter.kt:12",
+          severity: "critical",
+        },
+        {
+          title: "Unbounded export size",
+          description: "Unbounded export size",
+        },
+      ],
+      coveragePercent: null,
+      testScenarios: [],
+      dependenciesIntroduced: null,
+      dependencyTradeoff: null,
+    };
+
+    expect(formatCategoryAsMarkdown(category)).toBe(
+      [
+        "### Security (4/10)",
+        "",
+        "Found two input validation issues.",
+        "",
+        "Problems:",
+        "- [critical] **CSV formula injection** (InvoiceExporter.kt:12): Prefix cells starting with = or +.",
+        "- **Unbounded export size**",
+      ].join("\n"),
+    );
+  });
+
+  it("formats unscored category heading as (Unscored)", () => {
+    const category: CategoryAssessment = {
+      id: "idempotency",
+      title: "Idempotency",
+      score: null,
+      summary: "",
+      problems: [],
+      coveragePercent: null,
+      testScenarios: [],
+      dependenciesIntroduced: null,
+      dependencyTradeoff: null,
+    };
+
+    expect(formatCategoryAsMarkdown(category)).toBe("### Idempotency (Unscored)");
+  });
+
+  it("includes coverage metadata for test_coverage when present", () => {
+    const category: CategoryAssessment = {
+      id: "test_coverage",
+      title: "Test coverage",
+      score: 7,
+      summary: "Covers happy path and fallback.",
+      problems: [
+        {
+          title: "Missing negative amount test",
+          description: "Add unit test for negative invoice totals.",
+          location: "billing/InvoiceExporterTest.kt:44",
+          severity: "medium",
+        },
+      ],
+      coveragePercent: 72,
+      testScenarios: ["Valid ISO-4217 currency export", "Null currency fallback"],
+      dependenciesIntroduced: null,
+      dependencyTradeoff: null,
+    };
+
+    expect(formatCategoryAsMarkdown(category)).toBe(
+      [
+        "### Test coverage (7/10)",
+        "",
+        "Covers happy path and fallback.",
+        "",
+        "- Test coverage: 72%",
+        "",
+        "Test scenarios:",
+        "- Valid ISO-4217 currency export",
+        "- Null currency fallback",
+        "",
+        "Problems:",
+        "- [medium] **Missing negative amount test** (billing/InvoiceExporterTest.kt:44): Add unit test for negative invoice totals.",
+      ].join("\n"),
+    );
+  });
+
+  it("includes dependency metadata for dependencies when present", () => {
+    const category: CategoryAssessment = {
+      id: "dependencies",
+      title: "New dependencies",
+      score: 10,
+      summary: "No new runtime dependencies added.",
+      problems: [],
+      coveragePercent: null,
+      testScenarios: [],
+      dependenciesIntroduced: false,
+      dependencyTradeoff: "No new dependencies were introduced; avoids supply-chain overhead.",
+    };
+
+    expect(formatCategoryAsMarkdown(category)).toBe(
+      [
+        "### New dependencies (10/10)",
+        "",
+        "No new runtime dependencies added.",
+        "",
+        "- New dependencies introduced: No",
+        "",
+        "- Dependency tradeoff: No new dependencies were introduced; avoids supply-chain overhead.",
+      ].join("\n"),
+    );
   });
 });

@@ -4,6 +4,7 @@ import { MarkdownDocument } from "../markdown-diff/MarkdownDocument";
 import {
   CANONICAL_CATEGORIES,
   type CategoryId,
+  formatCategoryAsMarkdown,
   formatStructuredReportAsMarkdown,
   parseStructuredReport,
   scoreTier,
@@ -64,11 +65,14 @@ export const ReportViewer = memo(function ReportViewer({
 }: ReportViewerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const copyTimerRef = useRef<number | null>(null);
+  const catCopyTimerRef = useRef<number | null>(null);
   const mountedRef = useRef(true);
   const copySeqRef = useRef(0);
+  const catCopySeqRef = useRef(0);
   const [floating, setFloating] = useState<FloatingAction | null>(null);
   const [selectedId, setSelectedId] = useState<CategoryId | null>(null);
   const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
+  const [catCopyState, setCatCopyState] = useState<"idle" | "copied" | "failed">("idle");
 
   const parsed = useMemo(() => {
     if (isStreamingInitial) {
@@ -82,6 +86,7 @@ export const ReportViewer = memo(function ReportViewer({
 
   const prevReviewIdentityRef = useRef(reviewIdentity);
   const prevMarkdownRef = useRef(markdown);
+  const prevSelectedIdRef = useRef(selectedId);
 
   const clearCopyTimer = useCallback(() => {
     if (copyTimerRef.current !== null) {
@@ -90,35 +95,59 @@ export const ReportViewer = memo(function ReportViewer({
     }
   }, []);
 
+  const clearCatCopyTimer = useCallback(() => {
+    if (catCopyTimerRef.current !== null) {
+      window.clearTimeout(catCopyTimerRef.current);
+      catCopyTimerRef.current = null;
+    }
+  }, []);
+
   useEffect(() => {
     mountedRef.current = true;
     return () => {
       mountedRef.current = false;
       copySeqRef.current += 1;
+      catCopySeqRef.current += 1;
       clearCopyTimer();
+      clearCatCopyTimer();
     };
-  }, [clearCopyTimer]);
+  }, [clearCopyTimer, clearCatCopyTimer]);
 
   useEffect(() => {
     if (prevReviewIdentityRef.current !== reviewIdentity) {
       prevReviewIdentityRef.current = reviewIdentity;
       copySeqRef.current += 1;
+      catCopySeqRef.current += 1;
       clearCopyTimer();
+      clearCatCopyTimer();
       setSelectedId(null);
       setFloating(null);
       setCopyState("idle");
+      setCatCopyState("idle");
     }
-  }, [reviewIdentity, clearCopyTimer]);
+  }, [reviewIdentity, clearCopyTimer, clearCatCopyTimer]);
 
   useEffect(() => {
     if (prevMarkdownRef.current !== markdown) {
       prevMarkdownRef.current = markdown;
       copySeqRef.current += 1;
+      catCopySeqRef.current += 1;
       clearCopyTimer();
+      clearCatCopyTimer();
       setFloating(null);
       setCopyState("idle");
+      setCatCopyState("idle");
     }
-  }, [markdown, clearCopyTimer]);
+  }, [markdown, clearCopyTimer, clearCatCopyTimer]);
+
+  useEffect(() => {
+    if (prevSelectedIdRef.current !== selectedId) {
+      prevSelectedIdRef.current = selectedId;
+      catCopySeqRef.current += 1;
+      clearCatCopyTimer();
+      setCatCopyState("idle");
+    }
+  }, [selectedId, clearCatCopyTimer]);
 
   useEffect(() => {
     if (parsed.kind === "legacy") {
@@ -326,6 +355,44 @@ export const ReportViewer = memo(function ReportViewer({
     ? (report.categories.find((cat) => cat.id === selectedId) ?? null)
     : null;
 
+  const catCopyLabel =
+    catCopyState === "copied"
+      ? "Copied category"
+      : catCopyState === "failed"
+        ? "Copy failed"
+        : "Copy category as Markdown";
+
+  const handleCopyCategory = async () => {
+    if (!selectedCategory) return;
+    const seq = ++catCopySeqRef.current;
+    const scheduleReset = () => {
+      clearCatCopyTimer();
+      catCopyTimerRef.current = window.setTimeout(() => {
+        if (mountedRef.current && catCopySeqRef.current === seq) {
+          setCatCopyState("idle");
+        }
+      }, 2000);
+    };
+    try {
+      if (!navigator.clipboard?.writeText) {
+        if (mountedRef.current && catCopySeqRef.current === seq) {
+          setCatCopyState("failed");
+          scheduleReset();
+        }
+        return;
+      }
+      await navigator.clipboard.writeText(formatCategoryAsMarkdown(selectedCategory));
+      if (!mountedRef.current || catCopySeqRef.current !== seq) return;
+      setCatCopyState("copied");
+      scheduleReset();
+    } catch {
+      if (mountedRef.current && catCopySeqRef.current === seq) {
+        setCatCopyState("failed");
+        scheduleReset();
+      }
+    }
+  };
+
   return (
     <div
       ref={containerRef}
@@ -413,18 +480,29 @@ export const ReportViewer = memo(function ReportViewer({
                     : "Unscored"}
                 </span>
               </div>
-              <button
-                className="dl-btn dl-btn-sm"
-                type="button"
-                onClick={() =>
-                  onAskSelection({
-                    text: selectedCategory.summary || selectedCategory.title,
-                    heading: selectedCategory.title,
-                  })
-                }
-              >
-                Ask about category
-              </button>
+              <div className="dl-ai-cat-actions">
+                <button
+                  type="button"
+                  className="dl-btn dl-btn-sm dl-btn-icon"
+                  aria-label={catCopyLabel}
+                  title={catCopyLabel}
+                  onClick={() => void handleCopyCategory()}
+                >
+                  <Icon name="general-copy" />
+                </button>
+                <button
+                  className="dl-btn dl-btn-sm"
+                  type="button"
+                  onClick={() =>
+                    onAskSelection({
+                      text: selectedCategory.summary || selectedCategory.title,
+                      heading: selectedCategory.title,
+                    })
+                  }
+                >
+                  Ask about category
+                </button>
+              </div>
             </div>
 
             {selectedCategory.summary && (

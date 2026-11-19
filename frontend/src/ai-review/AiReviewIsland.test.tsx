@@ -2,6 +2,7 @@ import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { fakeCore, renderWithStore, repoInfo } from "../test/render";
 import { AiReviewIsland } from "./AiReviewIsland";
+import { formatCategoryAsMarkdown, parseStructuredReport } from "./structuredReport";
 
 describe("AiReviewIsland", () => {
   it("shows disclosure and handles consent", async () => {
@@ -1551,5 +1552,95 @@ describe("AiReviewIsland", () => {
       return list as HTMLElement;
     });
     expect(historyList.querySelectorAll(".dl-ai-history-item")).toHaveLength(2);
+  });
+
+  it("renders an icon-only Copy category as Markdown button next to Ask about category and copies the selected category", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      value: { writeText },
+      configurable: true,
+    });
+
+    const structuredPayload = {
+      schema_version: 1,
+      overview: "Branch review: invoice export currency support",
+      categories: [
+        {
+          id: "security",
+          title: "Security",
+          score: 4,
+          summary: "CSV formula cells must be escaped.",
+          problems: [
+            {
+              title: "CSV formula injection",
+              description: "Prefix cells starting with = or +.",
+              location: "InvoiceExporter.kt:12",
+              severity: "critical",
+            },
+          ],
+        },
+      ],
+      blast_radius: "Low.",
+      deployment_risks: "Low.",
+      rollback_plan: "Revert.",
+    };
+
+    const rawReport = JSON.stringify(structuredPayload);
+    const parsed = parseStructuredReport(rawReport);
+    expect(parsed.kind).toBe("structured");
+    if (parsed.kind !== "structured") return;
+    const securityCategory = parsed.report.categories.find((c) => c.id === "security");
+    expect(securityCategory).toBeDefined();
+    if (!securityCategory) return;
+
+    const core = fakeCore({
+      current_repo: () => repoInfo("acme-billing", "gs/invoice-export"),
+      ai_get_state: () => ({
+        consentAccepted: true,
+        account: { id: "u1", email: "user@example.com", balanceUsd: "9.86" },
+        review: {
+          id: 21,
+          repo: "/Users/ada/Workspace/acme-billing",
+          branch: "gs/invoice-export",
+          targetBranch: "main",
+          reportMarkdown: rawReport,
+          costUsd: "0.14",
+          headOid: "abc",
+          baseOid: "def",
+          model: "claude-3-5-sonnet",
+          effort: "medium",
+          createdAt: 1000,
+          updatedAt: 1000,
+          versions: [],
+        },
+        reviews: [],
+        activeReviewId: 21,
+        chatMessages: [],
+      }),
+    });
+
+    const { store } = await renderWithStore(<AiReviewIsland />, core);
+    await store.getState().loadAiState();
+
+    fireEvent.click(await screen.findByRole("button", { name: /Security/i }));
+    const detailDrawer = screen.getByRole("region", { name: "Selected category details" });
+
+    const askButton = within(detailDrawer).getByRole("button", { name: "Ask about category" });
+    const copyCatButton = within(detailDrawer).getByRole("button", {
+      name: "Copy category as Markdown",
+    });
+    expect(copyCatButton.textContent?.trim()).toBe("");
+    expect(copyCatButton.parentElement).toBe(askButton.parentElement);
+
+    fireEvent.click(copyCatButton);
+    await waitFor(() => {
+      expect(writeText).toHaveBeenCalledTimes(1);
+    });
+    expect(writeText).toHaveBeenCalledWith(formatCategoryAsMarkdown(securityCategory));
+
+    const copiedButton = await within(detailDrawer).findByRole("button", {
+      name: "Copied category",
+    });
+    expect(copiedButton).toHaveAttribute("title", "Copied category");
   });
 });

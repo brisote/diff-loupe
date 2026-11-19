@@ -249,6 +249,51 @@ export function truncateWords(text: string, maxWords: number): string {
   return words.slice(0, maxWords).join(" ");
 }
 
+export function formatCategoryAsMarkdown(cat: CategoryAssessment): string {
+  const scoreLabel = cat.score !== null ? `${cat.score}/10` : "Unscored";
+  const lines: string[] = [`### ${cat.title} (${scoreLabel})`];
+
+  if (cat.summary) {
+    lines.push("", cat.summary);
+  }
+
+  if (cat.id === "test_coverage") {
+    if (cat.coveragePercent !== null) {
+      lines.push("", `- Test coverage: ${cat.coveragePercent}%`);
+    }
+    if (cat.testScenarios.length > 0) {
+      lines.push("", "Test scenarios:");
+      for (const scenario of cat.testScenarios) {
+        lines.push(`- ${scenario}`);
+      }
+    }
+  }
+
+  if (cat.id === "dependencies") {
+    if (cat.dependenciesIntroduced !== null) {
+      lines.push("", `- New dependencies introduced: ${cat.dependenciesIntroduced ? "Yes" : "No"}`);
+    }
+    if (cat.dependencyTradeoff) {
+      lines.push("", `- Dependency tradeoff: ${cat.dependencyTradeoff}`);
+    }
+  }
+
+  if (cat.problems.length > 0) {
+    lines.push("", "Problems:");
+    for (const problem of cat.problems) {
+      const severityPrefix = problem.severity ? `[${problem.severity}] ` : "";
+      const locationSuffix = problem.location ? ` (${problem.location})` : "";
+      const descriptionSuffix =
+        problem.description && problem.description !== problem.title
+          ? `: ${problem.description}`
+          : "";
+      lines.push(`- ${severityPrefix}**${problem.title}**${locationSuffix}${descriptionSuffix}`);
+    }
+  }
+
+  return lines.join("\n");
+}
+
 export function formatStructuredReportAsMarkdown(report: StructuredReviewReport): string {
   const sections: string[] = [];
 
@@ -258,51 +303,7 @@ export function formatStructuredReportAsMarkdown(report: StructuredReviewReport)
   }
 
   for (const cat of report.categories) {
-    const scoreLabel = cat.score !== null ? `${cat.score}/10` : "Unscored";
-    const lines: string[] = [`### ${cat.title} (${scoreLabel})`];
-
-    if (cat.summary) {
-      lines.push("", cat.summary);
-    }
-
-    if (cat.id === "test_coverage") {
-      if (cat.coveragePercent !== null) {
-        lines.push("", `- Test coverage: ${cat.coveragePercent}%`);
-      }
-      if (cat.testScenarios.length > 0) {
-        lines.push("", "Test scenarios:");
-        for (const scenario of cat.testScenarios) {
-          lines.push(`- ${scenario}`);
-        }
-      }
-    }
-
-    if (cat.id === "dependencies") {
-      if (cat.dependenciesIntroduced !== null) {
-        lines.push(
-          "",
-          `- New dependencies introduced: ${cat.dependenciesIntroduced ? "Yes" : "No"}`,
-        );
-      }
-      if (cat.dependencyTradeoff) {
-        lines.push("", `- Dependency tradeoff: ${cat.dependencyTradeoff}`);
-      }
-    }
-
-    if (cat.problems.length > 0) {
-      lines.push("", "Problems:");
-      for (const problem of cat.problems) {
-        const severityPrefix = problem.severity ? `[${problem.severity}] ` : "";
-        const locationSuffix = problem.location ? ` (${problem.location})` : "";
-        const descriptionSuffix =
-          problem.description && problem.description !== problem.title
-            ? `: ${problem.description}`
-            : "";
-        lines.push(`- ${severityPrefix}**${problem.title}**${locationSuffix}${descriptionSuffix}`);
-      }
-    }
-
-    sections.push(lines.join("\n"));
+    sections.push(formatCategoryAsMarkdown(cat));
   }
 
   return sections.join("\n\n");
