@@ -1,20 +1,17 @@
 import type { RefObject } from "react";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { StoredAiReview } from "../api/generated/StoredAiReview";
 import { Dialog } from "../lib/dialog";
 import { Icon } from "../lib/icon";
 import { Popup, useBelow } from "../lib/popup";
-import { clampWidth, Splitter } from "../main-window/Splitter";
 import { TargetPicker } from "../main-window/TargetPicker";
 import { useApp } from "../state/context";
-import { AiChatPanel } from "./AiChatPanel";
+import { isFollowupRunId } from "../state/store";
+import { AiChatComposer } from "./AiChatComposer";
+import { AiChatThread } from "./AiChatThread";
 import { EffortPicker, ModelPicker } from "./ModelPicker";
 import { formatBalanceUsd, formatReviewCostUsd } from "./money";
 import { ReportViewer } from "./ReportViewer";
-
-export const aiChatHeightKey = "aiChatHeight";
-export const defaultAiChat = 240;
-export const minAiChat = 140;
 
 type ReviewPickerProps = {
   anchor: RefObject<HTMLElement | null>;
@@ -61,7 +58,7 @@ function ReviewPicker({ anchor, reviews, activeId, onSelect, onNew, onClose }: R
           New review
         </button>
       </div>
-      <div style={{ maxHeight: 260, overflowY: "auto" }}>
+      <div className="dl-ai-history-list">
         {reviews.map((rev, index) => {
           const isSelected = rev.id === activeId;
           const reviewNumber = reviews.length - index;
@@ -75,17 +72,7 @@ function ReviewPicker({ anchor, reviews, activeId, onSelect, onNew, onClose }: R
             <button
               key={rev.id}
               type="button"
-              className={`dl-row ${isSelected ? "is-selected" : ""}`}
-              style={{
-                display: "flex",
-                flexDirection: "column",
-                alignItems: "flex-start",
-                padding: "8px 10px",
-                gap: 2,
-                textAlign: "left",
-                width: "100%",
-                borderBottom: "1px solid var(--border-subtle, var(--border))",
-              }}
+              className={`dl-row dl-ai-history-item ${isSelected ? "is-selected" : ""}`}
               onClick={() => {
                 onSelect(rev.id);
                 onClose();
@@ -126,7 +113,6 @@ function ReviewPicker({ anchor, reviews, activeId, onSelect, onNew, onClose }: R
 }
 
 export function AiReviewIsland() {
-  const backend = useApp((state) => state.backend);
   const repo = useApp((state) => state.repo);
   const setWorkspaceMode = useApp((state) => state.setWorkspaceMode);
   const consentAccepted = useApp((state) => state.consentAccepted);
@@ -144,10 +130,13 @@ export function AiReviewIsland() {
   const aiRevertVersion = useApp((state) => state.aiRevertVersion);
   const selectVersion = useApp((state) => state.selectVersion);
   const inlineError = useApp((state) => state.inlineError);
-  const isChatOpen = useApp((state) => state.isChatOpen);
-  const toggleAiChat = useApp((state) => state.toggleAiChat);
-  const setAiChatOpen = useApp((state) => state.setAiChatOpen);
+  const chatMessages = useApp((state) => state.chatMessages);
+  const streamingChat = useApp((state) => state.streamingChat);
+  const quotedSelection = useApp((state) => state.quotedSelection);
   const setQuotedSelection = useApp((state) => state.setQuotedSelection);
+  const aiSendFollowup = useApp((state) => state.aiSendFollowup);
+  const aiClearThread = useApp((state) => state.aiClearThread);
+  const cancelTask = useApp((state) => state.cancelTask);
   const aiSignIn = useApp((state) => state.aiSignIn);
   const cancelAiSignIn = useApp((state) => state.cancelAiSignIn);
   const aiSignOut = useApp((state) => state.aiSignOut);
@@ -164,43 +153,98 @@ export function AiReviewIsland() {
   const targetAnchor = useRef<HTMLButtonElement>(null);
   const modelAnchor = useRef<HTMLButtonElement>(null);
   const effortAnchor = useRef<HTMLButtonElement>(null);
+  const composerInputRef = useRef<HTMLTextAreaElement>(null);
+  const streamRef = useRef<HTMLDivElement>(null);
+  const prevReviewIdRef = useRef<number | null | undefined>(undefined);
+  const prevMessageCountRef = useRef<number | null>(null);
   const [pickingReview, setPickingReview] = useState(false);
   const [pickingTarget, setPickingTarget] = useState(false);
   const [pickingModel, setPickingModel] = useState(false);
   const [pickingEffort, setPickingEffort] = useState(false);
   const [confirmRerun, setConfirmRerun] = useState(false);
-  const [chatHeight, setChatHeight] = useState(defaultAiChat);
-  const [maxChatHeight, setMaxChatHeight] = useState(600);
+
+  const isInitialStreaming = activeRun !== null && !isFollowupRunId(activeRun.runId);
+  const isFollowupStreaming = isFollowupRunId(activeRun?.runId) || streamingChat !== null;
+  const composerDisabled =
+    isInitialStreaming || (!activeReviewId && chatMessages.length === 0) || isFollowupStreaming;
+  const activeReviewIdRef = useRef(activeReviewId);
+  activeReviewIdRef.current = activeReviewId;
+  const quotedSelectionRef = useRef(quotedSelection);
+  quotedSelectionRef.current = quotedSelection;
 
   useEffect(() => {
-    void backend
-      .call("get_ui_value", { key: aiChatHeightKey })
-      .then((saved) => {
-        const value = Number(saved);
-        if (saved && Number.isFinite(value)) setChatHeight(value);
-      })
-      .catch(() => undefined);
-  }, [backend]);
+    const stream = streamRef.current;
+    if (prevReviewIdRef.current !== activeReviewId) {
+      const isInitialMount = prevReviewIdRef.current === undefined;
+      prevReviewIdRef.current = activeReviewId;
+      prevMessageCountRef.current = chatMessages.length;
+      if (!isInitialMount) {
+        setQuotedSelection(null);
+      }
+      if (stream) {
+        stream.scrollTop = streamingChat !== null ? stream.scrollHeight : 0;
+      }
+      return;
+    }
 
-  useEffect(() => {
-    const updateMax = () => {
-      setMaxChatHeight(Math.round(window.innerHeight * 0.7));
-    };
-    updateMax();
-    window.addEventListener("resize", updateMax);
-    return () => window.removeEventListener("resize", updateMax);
-  }, []);
+    const prevCount = prevMessageCountRef.current;
+    prevMessageCountRef.current = chatMessages.length;
+    if (!stream) return;
 
-  const saveChatHeight = (value: number) => {
-    void backend
-      .call("set_ui_value", { key: aiChatHeightKey, value: String(value) })
-      .catch(() => undefined);
-  };
+    const messageAdded = prevCount !== null && chatMessages.length > prevCount;
+    if (messageAdded) {
+      stream.scrollTop = stream.scrollHeight;
+    } else if (streamingChat !== null) {
+      const distanceFromBottom = stream.scrollHeight - stream.scrollTop - stream.clientHeight;
+      if (distanceFromBottom < 80) {
+        stream.scrollTop = stream.scrollHeight;
+      }
+    }
+  }, [activeReviewId, chatMessages.length, streamingChat, setQuotedSelection]);
 
-  const handleAskSelection = (selection: { text: string; heading?: string }) => {
-    setQuotedSelection(selection);
-    setAiChatOpen(true);
-  };
+  const handleAskSelection = useCallback(
+    (selection: { text: string; heading?: string }) => {
+      setQuotedSelection(selection);
+      composerInputRef.current?.focus();
+    },
+    [setQuotedSelection],
+  );
+
+  const handleSend = useCallback(
+    async (trimmedPrompt: string): Promise<boolean> => {
+      if (composerDisabled) return false;
+      const capturedReviewId = activeReviewIdRef.current;
+      const currentQuote = quotedSelection;
+      const ok = await aiSendFollowup({
+        prompt: trimmedPrompt,
+        quotedText: currentQuote?.text,
+        sectionHeading: currentQuote?.heading,
+      });
+      if (
+        ok &&
+        activeReviewIdRef.current === capturedReviewId &&
+        quotedSelectionRef.current === currentQuote
+      ) {
+        setQuotedSelection(null);
+      }
+      return ok;
+    },
+    [composerDisabled, quotedSelection, aiSendFollowup, setQuotedSelection],
+  );
+
+  const handleClearQuote = useCallback(() => {
+    setQuotedSelection(null);
+  }, [setQuotedSelection]);
+
+  const handleClearThread = useCallback(() => {
+    void aiClearThread();
+  }, [aiClearThread]);
+
+  const handleCancelFollowup = useCallback(() => {
+    if (activeRun && isFollowupRunId(activeRun.runId)) {
+      cancelTask(activeRun.runId);
+    }
+  }, [activeRun, cancelTask]);
 
   if (!repo) return null;
 
@@ -208,7 +252,6 @@ export function AiReviewIsland() {
   const hasTarget = Boolean(repo.target && !targetIsBranch);
   const parsedBalance = account ? Number.parseFloat(account.balanceUsd) : 0;
   const hasBalance = Boolean(account && Number.isFinite(parsedBalance) && parsedBalance > 0);
-  const height = clampWidth(chatHeight, minAiChat, maxChatHeight);
 
   const availableModels = modelsCatalog?.models ?? [];
   const hasModels = availableModels.length > 0;
@@ -327,6 +370,95 @@ export function AiReviewIsland() {
         >
           <header className="dl-island-header">
             <span className="dl-island-title">AI review</span>
+            <span className="dl-toolbar-spacer" />
+
+            {account && (
+              <button
+                className="dl-ai-pill dl-ai-pill-btn"
+                type="button"
+                onClick={() => void aiAddFunds(10)}
+                title="Add funds"
+              >
+                <Icon name="diff-magicResolveToolbar" />
+                <span>Balance {formatBalanceUsd(account.balanceUsd)}</span>
+              </button>
+            )}
+
+            {reportMarkdown && reviewCostUsd && (
+              <span className="dl-ai-pill dl-ai-pill-muted">
+                <span>Cost {formatReviewCostUsd(reviewCostUsd)}</span>
+              </span>
+            )}
+
+            {account && (
+              <button
+                className="dl-btn dl-btn-sm"
+                type="button"
+                onClick={() => void aiAddFunds(10)}
+              >
+                Add funds
+              </button>
+            )}
+
+            {isInitialStreaming ? (
+              <>
+                <button className="dl-btn dl-btn-sm" type="button" disabled>
+                  <Icon name="general-refresh" />
+                  Re-run review
+                </button>
+                <button className="dl-btn dl-btn-sm" type="button" onClick={cancelAiReview}>
+                  <Icon name="general-close" />
+                  Cancel review
+                </button>
+              </>
+            ) : displayedMarkdown ? (
+              <>
+                <button
+                  className="dl-btn dl-btn-sm"
+                  type="button"
+                  disabled={!hasBalance || !hasTarget || !hasModels || isFollowupStreaming}
+                  onClick={() => setConfirmRerun(true)}
+                >
+                  <Icon name="general-refresh" />
+                  Re-run review
+                </button>
+                <button
+                  className="dl-btn dl-btn-sm"
+                  type="button"
+                  disabled={!hasBalance || !hasTarget || !hasModels || isFollowupStreaming}
+                  onClick={() => void startAiReview()}
+                >
+                  <Icon name="general-add" />
+                  New review
+                </button>
+              </>
+            ) : (
+              <button
+                className="dl-btn dl-btn-sm dl-btn-primary"
+                type="button"
+                disabled={!consentAccepted || !account || !hasBalance || !hasTarget || !hasModels}
+                onClick={() => void startAiReview()}
+              >
+                Run review
+              </button>
+            )}
+
+            {account ? (
+              <button className="dl-btn dl-btn-sm" type="button" onClick={() => void aiSignOut()}>
+                Sign out
+              </button>
+            ) : consentAccepted ? (
+              <button
+                className="dl-btn dl-btn-primary dl-btn-sm"
+                type="button"
+                onClick={() => void aiSignIn()}
+              >
+                Sign in
+              </button>
+            ) : null}
+          </header>
+
+          <div className="dl-ai-subheader">
             {reviews.length > 0 && (
               <>
                 <button
@@ -334,6 +466,7 @@ export function AiReviewIsland() {
                   className={`dl-combo ${pickingReview ? "is-focused" : ""}`}
                   type="button"
                   title="Review history"
+                  disabled={isFollowupStreaming}
                   onClick={() => {
                     setPickingReview(!pickingReview);
                     setPickingModel(false);
@@ -449,104 +582,7 @@ export function AiReviewIsland() {
                 )}
               </>
             )}
-
-            <span className="dl-toolbar-spacer" />
-
-            {account && (
-              <button
-                className="dl-ai-pill dl-ai-pill-btn"
-                type="button"
-                onClick={() => void aiAddFunds(10)}
-                title="Add funds"
-              >
-                <Icon name="diff-magicResolveToolbar" />
-                <span>Balance {formatBalanceUsd(account.balanceUsd)}</span>
-              </button>
-            )}
-
-            {reportMarkdown && reviewCostUsd && (
-              <span className="dl-ai-pill dl-ai-pill-muted">
-                <span>Cost {formatReviewCostUsd(reviewCostUsd)}</span>
-              </span>
-            )}
-
-            {account && (
-              <button
-                className="dl-btn dl-btn-sm"
-                type="button"
-                onClick={() => void aiAddFunds(10)}
-              >
-                Add funds
-              </button>
-            )}
-
-            {activeRun ? (
-              <>
-                <button className="dl-btn dl-btn-sm" type="button" disabled>
-                  <Icon name="general-refresh" />
-                  Re-run review
-                </button>
-                <button className="dl-btn dl-btn-sm" type="button" onClick={cancelAiReview}>
-                  <Icon name="general-close" />
-                  Cancel review
-                </button>
-              </>
-            ) : displayedMarkdown ? (
-              <>
-                <button
-                  className="dl-btn dl-btn-sm"
-                  type="button"
-                  disabled={!hasBalance || !hasTarget || !hasModels}
-                  onClick={() => setConfirmRerun(true)}
-                >
-                  <Icon name="general-refresh" />
-                  Re-run review
-                </button>
-                <button
-                  className="dl-btn dl-btn-sm"
-                  type="button"
-                  disabled={!hasBalance || !hasTarget || !hasModels}
-                  onClick={() => void startAiReview()}
-                >
-                  <Icon name="general-add" />
-                  New review
-                </button>
-                <button
-                  className={`dl-tbtn ${isChatOpen ? "is-toggled" : ""}`}
-                  type="button"
-                  title="Chat"
-                  aria-label="Chat"
-                  aria-pressed={isChatOpen}
-                  onClick={toggleAiChat}
-                >
-                  <Icon name="toolwindows-terminal" />
-                </button>
-              </>
-            ) : (
-              <button
-                className="dl-btn dl-btn-sm dl-btn-primary"
-                type="button"
-                disabled={!consentAccepted || !account || !hasBalance || !hasTarget || !hasModels}
-                onClick={() => void startAiReview()}
-              >
-                Run review
-              </button>
-            )}
-
-            {account ? (
-              <button className="dl-btn dl-btn-sm" type="button" onClick={() => void aiSignOut()}>
-                Sign out
-              </button>
-            ) : consentAccepted ? (
-              <button
-                className="dl-btn dl-btn-primary dl-btn-sm"
-                type="button"
-                onClick={() => void aiSignIn()}
-              >
-                Sign in
-              </button>
-            ) : null}
-          </header>
+          </div>
 
           {inlineError && (
             <div className="dl-banner is-error" style={{ margin: "8px 16px" }}>
@@ -710,144 +746,159 @@ export function AiReviewIsland() {
                 </div>
               </div>
             </div>
-          ) : activeRun ? (
-            <div
-              className="dl-island-body"
-              style={{ flex: 1, overflowY: "auto", padding: "24px 32px" }}
+          ) : activeRun || displayedMarkdown ? (
+            <section
+              className="dl-island-body dl-ai-session"
+              aria-label="Interactive chat"
+              style={{ padding: 0 }}
             >
-              <div
-                style={{
-                  maxWidth: 820,
-                  margin: "0 auto",
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: 20,
-                }}
-              >
-                <div
-                  style={{
-                    display: "flex",
-                    flexDirection: "column",
-                    gap: 12,
-                    padding: "16px 20px",
-                    border: "1px solid var(--border)",
-                    borderRadius: "var(--radius-6)",
-                    background: "var(--panel-bg-inline)",
-                  }}
-                >
+              <div className="dl-ai-session-stream" ref={streamRef}>
+                {isInitialStreaming && activeRun && (
                   <div
                     style={{
+                      maxWidth: 920,
+                      width: "100%",
+                      margin: "0 auto",
                       display: "flex",
-                      alignItems: "center",
-                      justifyContent: "space-between",
+                      flexDirection: "column",
+                      gap: 12,
+                      padding: "16px 20px",
+                      border: "1px solid var(--border)",
+                      borderRadius: "var(--radius-6)",
+                      background: "var(--panel-bg-inline)",
+                      boxSizing: "border-box",
                     }}
                   >
-                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                      <span
-                        className="dl-caret"
-                        style={{
-                          width: 10,
-                          height: 10,
-                          borderRadius: "50%",
-                          background: "var(--accent)",
-                        }}
-                      />
-                      <span style={{ fontWeight: 600, fontSize: 14 }}>Review in progress</span>
-                    </div>
-                    <span style={{ fontSize: 12, color: "var(--text-muted)" }}>
-                      Comparing {repo.branch} against {repo.target}
-                    </span>
-                  </div>
-
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13 }}>
-                    <span style={{ fontWeight: 500, color: "var(--text)" }}>
-                      {activeRun.message || activeRun.stage || "Analyzing branch changes…"}
-                    </span>
-                  </div>
-
-                  {activeRun.thoughts &&
-                    activeRun.thoughts.length > 0 &&
-                    (() => {
-                      const thoughts = activeRun.thoughts;
-                      return (
-                        <div
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                      }}
+                    >
+                      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                        <span
+                          className="dl-caret"
                           style={{
-                            marginTop: 4,
-                            padding: "10px 12px",
-                            background: "var(--window-bg)",
-                            borderRadius: "var(--radius-4)",
-                            border: "1px solid var(--border)",
-                            display: "flex",
-                            flexDirection: "column",
-                            gap: 6,
-                            maxHeight: 180,
-                            overflowY: "auto",
-                            fontSize: 12,
-                            fontFamily: "var(--font-code, monospace)",
+                            width: 10,
+                            height: 10,
+                            borderRadius: "50%",
+                            background: "var(--accent)",
                           }}
-                        >
+                        />
+                        <span style={{ fontWeight: 600, fontSize: 14 }}>Review in progress</span>
+                      </div>
+                      <span style={{ fontSize: 12, color: "var(--text-muted)" }}>
+                        Comparing {repo.branch} against {repo.target}
+                      </span>
+                    </div>
+
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13 }}>
+                      <span style={{ fontWeight: 500, color: "var(--text)" }}>
+                        {activeRun.message || activeRun.stage || "Analyzing branch changes…"}
+                      </span>
+                    </div>
+
+                    {activeRun.thoughts &&
+                      activeRun.thoughts.length > 0 &&
+                      (() => {
+                        const thoughts = activeRun.thoughts;
+                        return (
                           <div
                             style={{
-                              fontSize: 11,
-                              fontWeight: 600,
-                              color: "var(--text-muted)",
-                              textTransform: "uppercase",
-                              letterSpacing: 0.5,
-                              marginBottom: 2,
+                              marginTop: 4,
+                              padding: "10px 12px",
+                              background: "var(--window-bg)",
+                              borderRadius: "var(--radius-4)",
+                              border: "1px solid var(--border)",
+                              display: "flex",
+                              flexDirection: "column",
+                              gap: 6,
+                              maxHeight: 180,
+                              overflowY: "auto",
+                              fontSize: 12,
+                              fontFamily: "var(--font-code, monospace)",
                             }}
                           >
-                            Model Thinking
-                          </div>
-                          {thoughts.map((thought, idx) => {
-                            const isLatest = idx === thoughts.length - 1;
-                            return (
-                              <div
-                                key={thought}
-                                style={{
-                                  display: "flex",
-                                  alignItems: "center",
-                                  gap: 8,
-                                  color: isLatest ? "var(--text)" : "var(--text-muted)",
-                                  lineHeight: 1.4,
-                                }}
-                              >
-                                <span
+                            <div
+                              style={{
+                                fontSize: 11,
+                                fontWeight: 600,
+                                color: "var(--text-muted)",
+                                textTransform: "uppercase",
+                                letterSpacing: 0.5,
+                                marginBottom: 2,
+                              }}
+                            >
+                              Model Thinking
+                            </div>
+                            {thoughts.map((thought, idx) => {
+                              const isLatest = idx === thoughts.length - 1;
+                              return (
+                                <div
+                                  key={thought}
                                   style={{
-                                    color: isLatest ? "var(--accent)" : "var(--success, #59a869)",
-                                    fontWeight: 700,
-                                    flexShrink: 0,
+                                    display: "flex",
+                                    alignItems: "center",
+                                    gap: 8,
+                                    color: isLatest ? "var(--text)" : "var(--text-muted)",
+                                    lineHeight: 1.4,
                                   }}
                                 >
-                                  {isLatest ? "●" : "✓"}
-                                </span>
-                                <span>{thought}</span>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      );
-                    })()}
-                </div>
-                {displayedMarkdown ? (
-                  <div style={{ padding: 0 }}>
+                                  <span
+                                    style={{
+                                      color: isLatest ? "var(--accent)" : "var(--success, #59a869)",
+                                      fontWeight: 700,
+                                      flexShrink: 0,
+                                    }}
+                                  >
+                                    {isLatest ? "●" : "✓"}
+                                  </span>
+                                  <span>{thought}</span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        );
+                      })()}
+                  </div>
+                )}
+
+                {(displayedMarkdown || isInitialStreaming) && (
+                  <>
                     {renderVersionBar()}
                     <ReportViewer
-                      markdown={displayedMarkdown}
+                      markdown={displayedMarkdown ?? ""}
                       onAskSelection={handleAskSelection}
+                      isStreamingInitial={isInitialStreaming}
+                      reviewIdentity={activeReviewId}
                     />
-                    <span className="dl-caret" />
-                  </div>
-                ) : null}
+                    {isInitialStreaming && <span className="dl-caret" />}
+                  </>
+                )}
+
+                <AiChatThread
+                  chatMessages={chatMessages}
+                  streamingChat={streamingChat}
+                  isFollowupStreaming={isFollowupStreaming}
+                />
               </div>
-            </div>
-          ) : displayedMarkdown ? (
-            <div
-              className="dl-island-body"
-              style={{ flex: 1, overflowY: "auto", padding: "24px 32px" }}
-            >
-              {renderVersionBar()}
-              <ReportViewer markdown={displayedMarkdown} onAskSelection={handleAskSelection} />
-            </div>
+
+              {(displayedMarkdown || isInitialStreaming) && (
+                <AiChatComposer
+                  reviewIdentity={activeReviewId}
+                  quotedSelection={quotedSelection}
+                  onClearQuote={handleClearQuote}
+                  onSend={handleSend}
+                  onClearThread={handleClearThread}
+                  onCancelFollowup={handleCancelFollowup}
+                  hasMessages={chatMessages.length > 0}
+                  isFollowupStreaming={isFollowupStreaming}
+                  disabled={composerDisabled}
+                  inputRef={composerInputRef}
+                />
+              )}
+            </section>
           ) : (
             <div className="dl-island-body dl-ai-state" style={{ flex: 1, overflowY: "auto" }}>
               <div className="dl-ai-card">
@@ -879,20 +930,6 @@ export function AiReviewIsland() {
           )}
         </section>
       </div>
-      {isChatOpen && (
-        <>
-          <Splitter
-            vertical
-            label="Resize AI chat"
-            width={height}
-            min={minAiChat}
-            max={maxChatHeight}
-            onResize={setChatHeight}
-            onResizeEnd={saveChatHeight}
-          />
-          <AiChatPanel height={height} onClose={() => setAiChatOpen(false)} />
-        </>
-      )}
       {confirmRerun && (
         <Dialog label="Re-run review" onClose={() => setConfirmRerun(false)}>
           <div className="dl-dialog-title">Re-run review?</div>

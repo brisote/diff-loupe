@@ -712,3 +712,233 @@ fn ai_commands_are_blocked_when_feature_flag_is_disabled() {
     let err = core.dispatch("ai_get_models", Value::Null).unwrap_err();
     assert_eq!(err.code, ErrorCode::AiService);
 }
+
+#[test]
+fn structured_report_round_trip_and_followup_context() {
+    let repo = TempRepo::with_commit();
+    let (data, core, _, repo_path) = open_repo_core(&repo);
+
+    core.dispatch("ai_set_consent", json!({ "accepted": true }))
+        .unwrap();
+
+    let auth = StoredCloudAuth {
+        access_token: "test_tok".into(),
+        account: CloudAccount {
+            id: "usr_1".into(),
+            email: "ada@example.com".into(),
+            balance_usd: "20.00".into(),
+        },
+    };
+    aireview::write_auth(data.path(), &auth).unwrap();
+
+    let structured_report = json!({
+        "schema_version": 1,
+        "overview": "Audited invoice export currency changes.",
+        "categories": [
+            { "id": "encapsulation", "title": "Encapsulation", "score": 9, "summary": "Clean module boundaries.", "problems": [] },
+            { "id": "idempotency", "title": "Idempotency", "score": 8, "summary": "Exports are repeatable.", "problems": [] },
+            { "id": "edge_cases", "title": "Edge cases & inputs", "score": 6, "summary": "Missing empty currency check.", "problems": [{ "title": "Blank currency allowed", "description": "Empty string passes through.", "location": "InvoiceExporter.kt:41", "severity": "warning" }] },
+            { "id": "error_handling", "title": "Error handling", "score": 7, "summary": "Throws generic error.", "problems": [] },
+            { "id": "logs", "title": "Logs", "score": 8, "summary": "Structured logs present.", "problems": [] },
+            { "id": "monitoring", "title": "Monitoring", "score": 8, "summary": "Metrics emitted.", "problems": [] },
+            { "id": "security", "title": "Security", "score": 9, "summary": "No injection surface.", "problems": [] },
+            { "id": "concurrency", "title": "Concurrency", "score": 9, "summary": "Stateless exporter.", "problems": [] },
+            { "id": "transactions", "title": "Transactions & atomicity", "score": 8, "summary": "Read-only query.", "problems": [] },
+            { "id": "performance", "title": "Performance", "score": 8, "summary": "Linear streaming.", "problems": [] },
+            { "id": "breaking_changes", "title": "Breaking changes", "score": 5, "summary": "CSV header adds 4th column.", "problems": [] },
+            { "id": "test_coverage", "title": "Test coverage", "score": 6, "summary": "Needs invalid currency test.", "problems": [], "coverage_percent": 72, "test_scenarios": ["Valid USD export"] },
+            { "id": "dependencies", "title": "New dependencies", "score": 10, "summary": "No new dependencies.", "problems": [], "dependencies_introduced": false, "dependency_tradeoff": "Uses existing CurrencyCode." }
+        ],
+        "blast_radius": "Affects CSV billing exports.",
+        "deployment_risks": "Downstream parsers expecting 3 columns.",
+        "rollback_plan": "Revert commit on invoice exporter."
+    });
+    let report_json = serde_json::to_string(&structured_report).unwrap();
+    let report_json_for_server = report_json.clone();
+
+    let captured_followup = Arc::new(Mutex::new(Option::<Value>::None));
+    let captured_followup_clone = captured_followup.clone();
+
+    let server = spawn_server(move |_, path, body, stream| {
+        if path == "/v1/reviews/stream" {
+            let delta_payload = json!({ "delta": report_json_for_server }).to_string();
+            let done_payload = json!({
+                "cost_usd": "0.14",
+                "balance_usd": "19.86",
+                "report_markdown": report_json_for_server
+            })
+            .to_string();
+            let sse = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nConnection: close\r\n\r\n\
+                 event: stage\r\ndata: {{\"stage\":\"analyzing\"}}\r\n\r\n\
+                 event: report_delta\r\ndata: {delta_payload}\r\n\r\n\
+                 event: billing\r\ndata: {{\"cost_usd\":\"0.14\",\"balance_usd\":\"19.86\"}}\r\n\r\n\
+                 event: done\r\ndata: {done_payload}\r\n\r\n"
+            );
+            let _ = stream.write_all(sse.as_bytes());
+        } else if path == "/v1/reviews/followup" {
+            let parsed_body: Value = serde_json::from_slice(body).unwrap();
+            *captured_followup_clone.lock().unwrap() = Some(parsed_body);
+            let chat_payload = json!({ "delta": "Use `CurrencyCode.isValid(raw)`." }).to_string();
+            let done_payload = json!({
+                "cost_usd": "0.01",
+                "balance_usd": "19.85",
+                "chat_message": "Use `CurrencyCode.isValid(raw)`."
+            })
+            .to_string();
+            let sse = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nConnection: close\r\n\r\n\
+                 event: chat_delta\r\ndata: {chat_payload}\r\n\r\n\
+                 event: billing\r\ndata: {{\"cost_usd\":\"0.01\",\"balance_usd\":\"19.85\"}}\r\n\r\n\
+                 event: done\r\ndata: {done_payload}\r\n\r\n"
+            );
+            let _ = stream.write_all(sse.as_bytes());
+        }
+    });
+    core.set_cloud_url(&server.url);
+
+    core.dispatch("ai_start_review", json!({ "repo": repo_path }))
+        .unwrap();
+
+    let state = core
+        .dispatch("ai_get_state", json!({ "repo": repo_path }))
+        .unwrap();
+    let stored_report_str = state["review"]["reportMarkdown"].as_str().unwrap();
+    let stored_report: Value = serde_json::from_str(stored_report_str).unwrap();
+    assert_eq!(stored_report["categories"].as_array().unwrap().len(), 13);
+    assert_eq!(
+        stored_report["blast_radius"],
+        "Affects CSV billing exports."
+    );
+
+    core.dispatch(
+        "ai_send_followup",
+        json!({
+            "repo": repo_path,
+            "prompt": "How should we validate currency?",
+        }),
+    )
+    .unwrap();
+
+    let followup_req = captured_followup.lock().unwrap().clone().unwrap();
+    assert_eq!(followup_req["prompt"], "How should we validate currency?");
+    assert_eq!(followup_req["current_report_markdown"], stored_report_str);
+
+    drop(core);
+
+    let events2 = Arc::new(RecordedEvents::default());
+    let core2 = Core::new(data.path(), test_env(), events2).unwrap();
+    core2.set_ai_review_enabled(true);
+    core2
+        .dispatch("open_repo", json!({"path": repo.path()}))
+        .unwrap();
+    let persisted = core2
+        .dispatch("ai_get_state", json!({ "repo": repo_path }))
+        .unwrap();
+    assert_eq!(persisted["review"]["reportMarkdown"], stored_report_str);
+    let msgs = persisted["chatMessages"].as_array().unwrap();
+    assert_eq!(msgs.len(), 2);
+    assert_eq!(msgs[0]["role"], "user");
+    assert_eq!(msgs[1]["content"], "Use `CurrencyCode.isValid(raw)`.");
+
+    drop(data);
+}
+
+#[test]
+fn followup_failure_retry_does_not_duplicate_user_messages() {
+    let repo = TempRepo::with_commit();
+    let (data, core, _, repo_path) = open_repo_core(&repo);
+
+    core.dispatch("ai_set_consent", json!({ "accepted": true }))
+        .unwrap();
+
+    let auth = StoredCloudAuth {
+        access_token: "test_tok".into(),
+        account: CloudAccount {
+            id: "usr_1".into(),
+            email: "ada@example.com".into(),
+            balance_usd: "20.00".into(),
+        },
+    };
+    aireview::write_auth(data.path(), &auth).unwrap();
+
+    let followup_attempts = Arc::new(AtomicUsize::new(0));
+    let followup_attempts_server = followup_attempts.clone();
+
+    let server = spawn_server(move |_, path, _, stream| {
+        if path == "/v1/reviews/stream" {
+            let done_payload = json!({
+                "cost_usd": "0.14",
+                "balance_usd": "19.86",
+                "report_markdown": "## Branch review\n\nLooks good."
+            })
+            .to_string();
+            let sse = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nConnection: close\r\n\r\n\
+                 event: billing\r\ndata: {{\"cost_usd\":\"0.14\",\"balance_usd\":\"19.86\"}}\r\n\r\n\
+                 event: done\r\ndata: {done_payload}\r\n\r\n"
+            );
+            let _ = stream.write_all(sse.as_bytes());
+        } else if path == "/v1/reviews/followup" {
+            let attempt = followup_attempts_server.fetch_add(1, Ordering::SeqCst);
+            if attempt == 0 {
+                let _ = stream.write_all(
+                    b"HTTP/1.1 500 Internal Server Error\r\nContent-Length: 11\r\nConnection: close\r\n\r\nserver down",
+                );
+            } else {
+                let chat_payload = json!({ "delta": "Validated in CurrencyCode." }).to_string();
+                let done_payload = json!({
+                    "cost_usd": "0.01",
+                    "balance_usd": "19.85",
+                    "chat_message": "Validated in CurrencyCode."
+                })
+                .to_string();
+                let sse = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nConnection: close\r\n\r\n\
+                     event: chat_delta\r\ndata: {chat_payload}\r\n\r\n\
+                     event: billing\r\ndata: {{\"cost_usd\":\"0.01\",\"balance_usd\":\"19.85\"}}\r\n\r\n\
+                     event: done\r\ndata: {done_payload}\r\n\r\n"
+                );
+                let _ = stream.write_all(sse.as_bytes());
+            }
+        }
+    });
+    core.set_cloud_url(&server.url);
+
+    core.dispatch("ai_start_review", json!({ "repo": repo_path }))
+        .unwrap();
+
+    let first_err = core.dispatch(
+        "ai_send_followup",
+        json!({
+            "repo": repo_path,
+            "prompt": "Where is currency validated?",
+        }),
+    );
+    assert!(first_err.is_err());
+
+    core.dispatch(
+        "ai_send_followup",
+        json!({
+            "repo": repo_path,
+            "prompt": "Where is currency validated?",
+        }),
+    )
+    .unwrap();
+
+    assert_eq!(followup_attempts.load(Ordering::SeqCst), 2);
+
+    let state = core
+        .dispatch("ai_get_state", json!({ "repo": repo_path }))
+        .unwrap();
+    let msgs = state["chatMessages"].as_array().unwrap();
+    assert_eq!(msgs.len(), 2);
+    assert_eq!(msgs.iter().filter(|m| m["role"] == "user").count(), 1);
+    assert_eq!(msgs[0]["role"], "user");
+    assert_eq!(msgs[0]["content"], "Where is currency validated?");
+    assert_eq!(msgs[1]["role"], "assistant");
+    assert_eq!(msgs[1]["content"], "Validated in CurrencyCode.");
+
+    drop(core);
+    drop(data);
+}

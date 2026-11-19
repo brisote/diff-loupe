@@ -356,6 +356,26 @@ test("ai review screens", async ({ page, workspace, startApp }) => {
       return;
     }
 
+    if (method === "GET" && url.pathname === "/v1/models") {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(
+        JSON.stringify({
+          models: [
+            { id: "claude-3-7-sonnet", name: "Claude 3.7 Sonnet" },
+            { id: "claude-3-5-sonnet", name: "Claude 3.5 Sonnet" },
+          ],
+          efforts: [
+            { id: "low", name: "Low" },
+            { id: "medium", name: "Medium" },
+            { id: "high", name: "High" },
+          ],
+          default_model: "claude-3-5-sonnet",
+          default_effort: "medium",
+        }),
+      );
+      return;
+    }
+
     if (
       method === "POST" &&
       (url.pathname === "/v1/billing/checkout-session" || url.pathname === "/v1/billing/checkout")
@@ -378,15 +398,146 @@ test("ai review screens", async ({ page, workspace, startApp }) => {
       res.write(
         'event: stage\ndata: {"stage":"analyzing","message":"Analyzing branch changes…"}\n\n',
       );
-      const partial =
-        "## Branch review: invoice export currency support\n\nAudited 4 changed files against repository conventions. Found 1 potential contract regression and 1 missing test case.";
-      res.write(`event: report_delta\ndata: ${JSON.stringify({ delta: partial })}\n\n`);
 
       await new Promise<void>((resolve) => {
         releaseStream = resolve;
       });
 
-      const fullReport = `## Branch review: invoice export currency support\n\nAudited 4 changed files against repository conventions. Found 1 potential contract regression and 1 missing test case.\n\n| File | Severity | Summary |\n| --- | --- | --- |\n| \`InvoiceExporter.kt:41\` | <span class="dl-chip" style="color: var(--text-warning); border-color: var(--feedback-warning-border);">Warning</span> | ISO-4217 currency code validation missing in CSV header |\n| \`InvoiceExporterTest.kt:28\` | <span class="dl-chip">Suggestion</span> | Update assertions for 4-column export headers |\n\n### Findings\n\n#### 1. Unvalidated currency serialization\n\n\`billing/src/main/kotlin/acme/billing/InvoiceExporter.kt:41\`\n\nInvoiceExporter.kt adds currency to the exported header without validating ISO-4217 codes. Downstream billing parsers assume standard three-letter uppercase currency symbols.\n\n\`\`\`kotlin\ncompanion object {\n    val HEADER = listOf("number", "customer", "amount", "currency")\n}\n\`\`\`\n\n#### 2. Missing test for currency column export\n\n\`billing/src/test/kotlin/acme/billing/InvoiceExporterTest.kt:28\`\n\nUnit tests assert header length 3 instead of 4, leaving empty or invalid currency parameters uncovered in export pipelines.`;
+      const fullReport = JSON.stringify({
+        schema_version: 1,
+        overview: "Audited 4 changed files for invoice export currency support.",
+        categories: [
+          {
+            id: "encapsulation",
+            title: "Encapsulation",
+            score: 9,
+            summary: "Currency formatting stays encapsulated in InvoiceExporter.",
+            problems: [],
+          },
+          {
+            id: "idempotency",
+            title: "Idempotency",
+            score: 8,
+            summary: "CSV export is pure and repeatable for identical inputs.",
+            problems: [],
+          },
+          {
+            id: "edge_cases",
+            title: "Edge cases & inputs",
+            score: 6,
+            summary:
+              "InvoiceExporter.kt adds currency to the exported header without validating ISO-4217 codes.",
+            problems: [
+              {
+                title: "Unvalidated currency serialization",
+                description:
+                  "Downstream billing parsers assume standard three-letter uppercase currency symbols.",
+                location: "InvoiceExporter.kt:41",
+                severity: "warning",
+              },
+            ],
+          },
+          {
+            id: "error_handling",
+            title: "Error handling",
+            score: 5,
+            summary: "Missing explicit exception when currency is blank.",
+            problems: [
+              {
+                title: "Silent fallback on blank currency",
+                description: "Blank currency codes emit an empty CSV column.",
+                location: "InvoiceExporter.kt:48",
+                severity: "warning",
+              },
+            ],
+          },
+          {
+            id: "logs",
+            title: "Logs",
+            score: 8,
+            summary: "Export count logging remains intact without sensitive data.",
+            problems: [],
+          },
+          {
+            id: "monitoring",
+            title: "Monitoring",
+            score: 8,
+            summary: "Existing export duration metrics cover the new column.",
+            problems: [],
+          },
+          {
+            id: "security",
+            title: "Security",
+            score: 9,
+            summary: "No injection or credential exposure introduced.",
+            problems: [],
+          },
+          {
+            id: "concurrency",
+            title: "Concurrency",
+            score: 9,
+            summary: "Exporter holds no mutable shared state.",
+            problems: [],
+          },
+          {
+            id: "transactions",
+            title: "Transactions & atomicity",
+            score: 8,
+            summary: "Read-only export query runs in a single snapshot.",
+            problems: [],
+          },
+          {
+            id: "performance",
+            title: "Performance",
+            score: 8,
+            summary: "Appending one column adds negligible serialization overhead.",
+            problems: [],
+          },
+          {
+            id: "breaking_changes",
+            title: "Breaking changes",
+            score: 4,
+            summary: "CSV header expands from 3 to 4 columns.",
+            problems: [
+              {
+                title: "CSV header column added",
+                description: "Downstream parsers expecting 3 columns may fail.",
+                location: "InvoiceExporter.kt:41",
+                severity: "warning",
+              },
+            ],
+          },
+          {
+            id: "test_coverage",
+            title: "Test coverage",
+            score: 6,
+            summary: "Happy-path USD export is tested; invalid currency codes are not.",
+            problems: [
+              {
+                title: "Missing test for invalid currency",
+                description: "No unit test verifies rejection of malformed ISO-4217 codes.",
+                location: "InvoiceExporterTest.kt:28",
+                severity: "suggestion",
+              },
+            ],
+            coverage_percent: 72,
+            test_scenarios: ["Exports 4-column CSV header with USD", "Preserves decimal rounding"],
+          },
+          {
+            id: "dependencies",
+            title: "New dependencies",
+            score: 10,
+            summary: "Uses existing standard library and CurrencyCode helper.",
+            problems: [],
+            dependencies_introduced: false,
+            dependency_tradeoff:
+              "Reuses internal CurrencyCode module instead of adding a new library.",
+          },
+        ],
+        blast_radius: "Affects **CSV invoice exports** for all billing tenants.",
+        deployment_risks: "Downstream CSV consumers must handle the `currency` column.",
+        rollback_plan: "Revert the export header commit; no database migration required.",
+      });
       res.write(
         `event: report_update\ndata: ${JSON.stringify({ report_markdown: fullReport })}\n\n`,
       );
@@ -405,13 +556,11 @@ test("ai review screens", async ({ page, workspace, startApp }) => {
         Connection: "close",
       });
       const chatDelta =
-        "Currency validation is implemented in CurrencyCode.kt via CurrencyCode.isValid(raw). Call this before header serialization.";
+        "Currency validation is implemented in **CurrencyCode.kt** via `CurrencyCode.isValid(raw)`. Call this before header serialization.";
       res.write(`event: chat_delta\ndata: ${JSON.stringify({ delta: chatDelta })}\n\n`);
-      const updated = `## Branch review: invoice export currency support\n\nAudited 4 changed files against repository conventions. Found 1 potential contract regression and 1 missing test case.\n\n<div class="dl-banner is-info" style="margin: 12px 0;">\n<span class="dl-i dl-i-status-info" aria-hidden="true"></span>\n<span class="dl-banner-text"><strong>Live update:</strong> Added recommendation to validate currency via <code>CurrencyCode.isValid(raw)</code> before CSV export.</span>\n</div>\n\n### Findings\n\n#### 1. Unvalidated currency serialization\n\n\`billing/src/main/kotlin/acme/billing/InvoiceExporter.kt:41\`\n\nInvoiceExporter.kt adds currency to the exported header without validating ISO-4217 codes. Downstream billing parsers assume standard three-letter uppercase currency symbols.\n\n\`\`\`kotlin\ncompanion object {\n    val HEADER = listOf("number", "customer", "amount", "currency")\n}\n\`\`\`\n`;
-      res.write(`event: report_update\ndata: ${JSON.stringify({ report_markdown: updated })}\n\n`);
       res.write('event: billing\ndata: {"cost_usd":"0.0034","balance_usd":"9.85"}\n\n');
       res.write(
-        `event: done\ndata: ${JSON.stringify({ cost_usd: "0.0034", balance_usd: "9.85", chat_message: chatDelta, report_markdown: updated })}\n\n`,
+        `event: done\ndata: ${JSON.stringify({ cost_usd: "0.0034", balance_usd: "9.85", chat_message: chatDelta })}\n\n`,
       );
       res.end();
       return;
@@ -458,9 +607,12 @@ test("ai review screens", async ({ page, workspace, startApp }) => {
 
     (releaseStream as (() => void) | null)?.();
 
-    await page.getByText("Unvalidated currency serialization").waitFor();
+    await page.getByText("Audited 4 changed files for invoice export currency support.").waitFor();
     await page.waitForTimeout(300);
     await shoot(page, "AiReviewReport");
+
+    await page.getByRole("button", { name: /Edge cases & inputs/ }).click();
+    await page.getByText("Unvalidated currency serialization").waitFor();
 
     await page.evaluate(() => {
       const p = Array.from(document.querySelectorAll("p")).find((el) =>
@@ -487,7 +639,10 @@ test("ai review screens", async ({ page, workspace, startApp }) => {
     await composer.fill("Where is ISO-4217 validation handled in the rest of the billing module?");
     await page.keyboard.press("Enter");
 
-    await chatRegion.getByText("Currency validation is implemented in CurrencyCode.kt").waitFor();
+    await chatRegion
+      .locator(".dl-ai-thread")
+      .getByText("Currency validation is implemented in")
+      .waitFor();
     await page.waitForTimeout(300);
     await shoot(page, "AiReviewChat");
   } finally {

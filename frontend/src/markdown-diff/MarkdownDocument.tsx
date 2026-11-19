@@ -1,6 +1,6 @@
 import type { Root as HastRoot } from "hast";
 import { toHast } from "mdast-util-to-hast";
-import type { ReactNode } from "react";
+import { memo, type ReactNode, useMemo } from "react";
 import { parse } from "./blocks";
 import { htmlAsCode } from "./mark";
 import { render } from "./render";
@@ -25,14 +25,13 @@ export function renderMarkdown(markdown: string): ReactNode {
   return render(tree, () => null);
 }
 
-export function MarkdownDocument({
+export const MarkdownDocument = memo(function MarkdownDocument({
   markdown,
   className,
 }: {
   markdown: string;
   className?: string;
 }) {
-  return (
-    <div className={`dl-md${className ? ` ${className}` : ""}`}>{renderMarkdown(markdown)}</div>
-  );
-}
+  const content = useMemo(() => renderMarkdown(markdown), [markdown]);
+  return <div className={`dl-md${className ? ` ${className}` : ""}`}>{content}</div>;
+});

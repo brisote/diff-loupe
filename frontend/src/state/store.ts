@@ -236,6 +236,10 @@ export const diffMeasure = "select-to-diff";
 export const tabsKey = (path: string) => `repo.tabs:${path}`;
 export const modeKey = (path: string) => `repo.mode:${path}`;
 
+export function isFollowupRunId(runId: string | undefined): boolean {
+  return runId === "ai_followup" || runId?.startsWith("ai_followup:") === true;
+}
+
 export type AppState = {
   backend: Backend;
   started: boolean;
@@ -378,7 +382,6 @@ export type AppState = {
   streamingChat: string | null;
   quotedSelection: { text: string; heading?: string } | null;
   inlineError: string | null;
-  isChatOpen: boolean;
   modelsCatalog: ModelsCatalog | null;
   selectedModel: string | null;
   selectedEffort: string | null;
@@ -398,14 +401,12 @@ export type AppState = {
   aiAddFunds: (amount: number) => Promise<void>;
   startAiReview: () => Promise<void>;
   cancelAiReview: () => void;
-  toggleAiChat: () => void;
-  setAiChatOpen: (open: boolean) => void;
   setQuotedSelection: (quote: { text: string; heading?: string } | null) => void;
   aiSendFollowup: (args: {
     prompt: string;
     quotedText?: string;
     sectionHeading?: string;
-  }) => Promise<void>;
+  }) => Promise<boolean>;
   aiClearThread: () => Promise<void>;
 };
 
@@ -623,7 +624,6 @@ export function createAppStore(backend: Backend) {
       streamingChat: null,
       quotedSelection: null,
       inlineError: null,
-      isChatOpen: false,
       modelsCatalog: null,
       selectedModel: null,
       selectedEffort: null,
@@ -1745,7 +1745,7 @@ export function createAppStore(backend: Backend) {
       },
 
       switchReview: async (reviewId: number) => {
-        set({ activeReviewId: reviewId, selectedVersionNumber: null });
+        set({ activeReviewId: reviewId, selectedVersionNumber: null, quotedSelection: null });
         await get().loadAiState(reviewId);
       },
 
@@ -1949,22 +1949,19 @@ export function createAppStore(backend: Backend) {
         }
       },
 
-      toggleAiChat: () => {
-        set((s) => ({ isChatOpen: !s.isChatOpen }));
-      },
-
-      setAiChatOpen: (open: boolean) => {
-        set({ isChatOpen: open });
-      },
-
       setQuotedSelection: (quote) => {
         set({ quotedSelection: quote });
       },
 
       aiSendFollowup: async ({ prompt, quotedText, sectionHeading }) => {
         const repo = get().repo;
-        if (!repo?.target) return;
+        if (!repo?.target) return false;
+        const repoPath = repo.path;
         const activeReviewId = get().activeReviewId ?? undefined;
+        const expectedReviewId = activeReviewId ?? null;
+        const isStillActive = () =>
+          get().repo?.path === repoPath && get().activeReviewId === expectedReviewId;
+        const optimisticId = Date.now();
         set({
           inlineError: null,
           streamingChat: "",
@@ -1978,22 +1975,22 @@ export function createAppStore(backend: Backend) {
           chatMessages: [
             ...get().chatMessages,
             {
-              id: Date.now(),
+              id: optimisticId,
               reviewId: activeReviewId ?? null,
-              repo: repo.path,
+              repo: repoPath,
               branch: repo.branch ?? "",
               targetBranch: repo.target,
               role: "user",
               content: prompt,
               quotedText: quotedText ?? null,
               costUsd: null,
-              createdAt: Date.now(),
+              createdAt: optimisticId,
             },
           ],
         });
         try {
           await backend.call("ai_send_followup", {
-            repo: repo.path,
+            repo: repoPath,
             branch: repo.branch ?? undefined,
             targetBranch: repo.target,
             reviewId: activeReviewId,
@@ -2001,12 +1998,28 @@ export function createAppStore(backend: Backend) {
             quotedText,
             sectionHeading,
           });
+          if (!isStillActive()) return false;
           await get().loadAiState(activeReviewId);
+          return true;
         } catch (err) {
-          const apiError = toApiError(err);
-          set({ inlineError: apiError.message, activeRun: null, streamingChat: null });
+          if (isStillActive()) {
+            const apiError = toApiError(err);
+            set({
+              inlineError: apiError.message,
+              activeRun: null,
+              streamingChat: null,
+              chatMessages: get().chatMessages.filter((msg) => msg.id !== optimisticId),
+            });
+          }
+          return false;
         } finally {
-          set({ streamingChat: null });
+          if (isStillActive()) {
+            if (isFollowupRunId(get().activeRun?.runId)) {
+              set({ activeRun: null, streamingChat: null });
+            } else {
+              set({ streamingChat: null });
+            }
+          }
         }
       },
 
