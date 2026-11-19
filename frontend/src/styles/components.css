@@ -282,10 +282,13 @@ body{margin:0;font-family:var(--font-ui);font-size:13px;line-height:16px;color:v
 .dl-ai-composer-input:focus{outline:none;border-color:var(--focus-ring);box-shadow:0 0 0 1px var(--focus-ring)}
 .dl-ai-session{flex:1;min-height:0;display:flex;flex-direction:column}
 .dl-ai-session-stream{flex:1;min-height:0;overflow-y:auto;padding:var(--space-16) var(--space-24);display:flex;flex-direction:column;gap:var(--space-12)}
+.dl-ai-subheader{display:flex;align-items:center;flex-wrap:wrap;gap:var(--space-6);padding:var(--space-6) var(--space-12);border-bottom:1px solid var(--border);background:var(--panel-bg-inline);flex:none}
+.dl-ai-history-list{max-height:260px;overflow-y:auto;padding:var(--space-6);display:flex;flex-direction:column;gap:var(--space-4);box-sizing:border-box}
+.dl-ai-history-item{height:auto;min-height:44px;display:flex;flex-direction:column;align-items:flex-start;gap:var(--space-2);margin:0;padding:var(--space-8) var(--space-12);border-radius:var(--radius-6);text-align:left;width:100%;box-sizing:border-box}
 .dl-ai-report-card{max-width:920px;width:100%;margin:0 auto;display:flex;flex-direction:column;gap:var(--space-12);padding:var(--space-16);border:1px solid var(--border);border-radius:var(--radius-6);background:var(--panel-bg-inline);box-sizing:border-box}
-.dl-ai-report-head{display:flex;align-items:center;justify-content:space-between;gap:var(--space-8)}
-.dl-ai-report-title{font-size:14px;line-height:18px;font-weight:600;color:var(--text)}
-.dl-ai-report-sub{font-size:12px;line-height:16px;color:var(--text-muted)}
+.dl-ai-report-head{display:flex;align-items:flex-start;justify-content:space-between;gap:var(--space-12)}
+.dl-ai-report-title{min-width:0;flex:1;font-size:14px;line-height:18px;font-weight:600;color:var(--text)}
+.dl-ai-copy-btn{flex:none;white-space:nowrap}
 .dl-ai-gauges{display:grid;grid-template-columns:repeat(auto-fill,minmax(112px,1fr));gap:var(--space-6)}
 .dl-ai-gauge-btn{display:flex;flex-direction:column;align-items:center;gap:var(--space-4);padding:var(--space-8) var(--space-4);border:1px solid var(--border);border-radius:var(--radius-6);background:var(--panel-bg);color:var(--text);font:inherit;text-align:center;cursor:default;box-sizing:border-box}
 .dl-ai-gauge-btn:hover{border-color:var(--control-border)}

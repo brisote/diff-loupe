@@ -963,6 +963,7 @@ describe("AiReviewIsland", () => {
   });
 
   it("does not show top-level 'Review in progress' banner or report caret during follow-up turns", async () => {
+    let cancelledId: string | null = null;
     const structuredPayload = {
       schema_version: 1,
       overview: "Follow-up run distinction",
@@ -973,30 +974,35 @@ describe("AiReviewIsland", () => {
       deployment_risks: "Low.",
       rollback_plan: "Revert.",
     };
+    const review = {
+      id: 10,
+      repo: "/Users/ada/Workspace/acme-billing",
+      branch: "gs/invoice-export",
+      targetBranch: "main",
+      reportMarkdown: JSON.stringify(structuredPayload),
+      costUsd: "0.14",
+      headOid: "abc",
+      baseOid: "def",
+      model: "claude-3-5-sonnet",
+      effort: "medium",
+      createdAt: 1000,
+      updatedAt: 1000,
+      versions: [],
+    };
     const core = fakeCore({
       current_repo: () => repoInfo("acme-billing", "gs/invoice-export"),
       ai_get_state: () => ({
         consentAccepted: true,
         account: { id: "u1", email: "user@example.com", balanceUsd: "9.86" },
-        review: {
-          id: 10,
-          repo: "/Users/ada/Workspace/acme-billing",
-          branch: "gs/invoice-export",
-          targetBranch: "main",
-          reportMarkdown: JSON.stringify(structuredPayload),
-          costUsd: "0.14",
-          headOid: "abc",
-          baseOid: "def",
-          model: "claude-3-5-sonnet",
-          effort: "medium",
-          createdAt: 1000,
-          updatedAt: 1000,
-          versions: [],
-        },
-        reviews: [],
+        review,
+        reviews: [review],
         activeReviewId: 10,
         chatMessages: [],
       }),
+      cancel: (args: unknown) => {
+        cancelledId = (args as { id: string }).id;
+        return null;
+      },
     });
 
     const { store } = await renderWithStore(<AiReviewIsland />, core);
@@ -1014,11 +1020,31 @@ describe("AiReviewIsland", () => {
       streamingChat: "Checking CurrencyCode.kt",
     });
 
+    core.emit({
+      type: "aiReviewStream",
+      repo: "/Users/ada/Workspace/acme-billing",
+      branch: "feat/currency",
+      targetBranch: "main",
+      runId: "ai_followup:/tmp/repo:1",
+      event: {
+        kind: "stage",
+        stage: "followup",
+        message: "Streaming follow-up…",
+      },
+    });
+
     await waitFor(() => {
       expect(screen.getByText("Checking CurrencyCode.kt")).toBeInTheDocument();
+      expect(store.getState().activeRun?.runId).toBe("ai_followup:/tmp/repo:1");
     });
     expect(screen.queryByText("Review in progress")).not.toBeInTheDocument();
     expect(document.querySelectorAll(".dl-ai-session-stream > .dl-caret")).toHaveLength(0);
+    expect(screen.getByTitle("Review history")).toBeDisabled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    await waitFor(() => {
+      expect(cancelledId).toBe("ai_followup:/tmp/repo:1");
+    });
   });
 
   it("does not duplicate problem description when problem title is blank", async () => {
@@ -1249,5 +1275,281 @@ describe("AiReviewIsland", () => {
     expect(document.querySelector(".dl-ai-composer .dl-ai-quote-text")).toHaveTextContent(
       "Check CSV escaping.",
     );
+  });
+
+  it("preserves newly quoted selection and disables Dismiss quote while follow-up is in flight", async () => {
+    const deferred: { resolve: (() => void) | null } = { resolve: null };
+    const structuredPayload = {
+      schema_version: 1,
+      overview: "In-flight quote preservation",
+      categories: [
+        {
+          id: "security",
+          title: "Security",
+          score: 5,
+          summary: "Escape CSV formula cells.",
+          problems: [],
+        },
+      ],
+      blast_radius: "Low.",
+      deployment_risks: "Low.",
+      rollback_plan: "Revert.",
+    };
+    const core = fakeCore({
+      current_repo: () => repoInfo("acme-billing", "gs/invoice-export"),
+      ai_get_state: () => ({
+        consentAccepted: true,
+        account: { id: "u1", email: "user@example.com", balanceUsd: "9.86" },
+        review: {
+          id: 16,
+          repo: "/Users/ada/Workspace/acme-billing",
+          branch: "gs/invoice-export",
+          targetBranch: "main",
+          reportMarkdown: JSON.stringify(structuredPayload),
+          costUsd: "0.14",
+          headOid: "abc",
+          baseOid: "def",
+          model: "claude-3-5-sonnet",
+          effort: "medium",
+          createdAt: 1000,
+          updatedAt: 1000,
+          versions: [],
+        },
+        reviews: [],
+        activeReviewId: 16,
+        chatMessages: [],
+      }),
+      ai_send_followup: () =>
+        new Promise<null>((resolve) => {
+          deferred.resolve = () => resolve(null);
+        }),
+    });
+
+    const { store } = await renderWithStore(<AiReviewIsland />, core);
+    await store.getState().loadAiState();
+
+    const composer = (await screen.findByPlaceholderText(
+      "Ask about this review or request changes…",
+    )) as HTMLTextAreaElement;
+    fireEvent.change(composer, { target: { value: "Initial follow-up" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    await waitFor(() => {
+      expect(composer).toBeDisabled();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /Security/i }));
+    const detailDrawer = screen.getByRole("region", { name: "Selected category details" });
+    fireEvent.click(within(detailDrawer).getByRole("button", { name: "Ask about category" }));
+
+    expect(document.querySelector(".dl-ai-composer .dl-ai-quote-text")).toHaveTextContent(
+      "Escape CSV formula cells.",
+    );
+    expect(screen.getByRole("button", { name: "Dismiss quote" })).toBeDisabled();
+
+    deferred.resolve?.();
+
+    await waitFor(() => {
+      expect(composer).not.toBeDisabled();
+    });
+    expect(document.querySelector(".dl-ai-composer .dl-ai-quote-text")).toHaveTextContent(
+      "Escape CSV formula cells.",
+    );
+    expect(screen.getByRole("button", { name: "Dismiss quote" })).not.toBeDisabled();
+  });
+
+  it("clamps report title to 10 words, maps severity badges, quotes problem on title click, and shows Copy failed", async () => {
+    const writeTextSpy = vi.fn().mockRejectedValue(new Error("Clipboard denied"));
+    Object.defineProperty(navigator, "clipboard", {
+      value: { writeText: writeTextSpy },
+      configurable: true,
+    });
+
+    const longOverview = "One two three four five six seven eight nine ten eleven twelve thirteen";
+    const structuredPayload = {
+      schema_version: 1,
+      overview: longOverview,
+      categories: [
+        {
+          id: "security",
+          title: "Security",
+          score: 4,
+          summary: "Three findings.",
+          problems: [
+            {
+              title: "CSV formula injection",
+              description: "Prefix cells starting with = or +.",
+              location: "InvoiceExporter.kt:12",
+              severity: "critical",
+            },
+            {
+              title: "Missing rate limit",
+              description: "Throttle export endpoint.",
+              location: "ExportController.kt:44",
+              severity: "warning",
+            },
+            {
+              title: "Verbose header name",
+              description: "Consider shorter column header.",
+              location: "CsvSchema.kt:8",
+              severity: "suggestion",
+            },
+          ],
+        },
+      ],
+      blast_radius: "Low.",
+      deployment_risks: "Low.",
+      rollback_plan: "Revert.",
+    };
+
+    const core = fakeCore({
+      current_repo: () => repoInfo("acme-billing", "gs/invoice-export"),
+      ai_get_state: () => ({
+        consentAccepted: true,
+        account: { id: "u1", email: "user@example.com", balanceUsd: "9.86" },
+        review: {
+          id: 17,
+          repo: "/Users/ada/Workspace/acme-billing",
+          branch: "gs/invoice-export",
+          targetBranch: "main",
+          reportMarkdown: JSON.stringify(structuredPayload),
+          costUsd: "0.14",
+          headOid: "abc",
+          baseOid: "def",
+          model: "claude-3-5-sonnet",
+          effort: "medium",
+          createdAt: 1000,
+          updatedAt: 1000,
+          versions: [],
+        },
+        reviews: [],
+        activeReviewId: 17,
+        chatMessages: [],
+      }),
+    });
+
+    const { store } = await renderWithStore(<AiReviewIsland />, core);
+    await store.getState().loadAiState();
+
+    const titleEl = await waitFor(() => {
+      const el = document.querySelector(".dl-ai-report-title");
+      expect(el).toBeInTheDocument();
+      return el as HTMLElement;
+    });
+    const titleText = titleEl.textContent ?? "";
+    expect(titleText.trim().split(/\s+/).length).toBeLessThanOrEqual(10);
+    expect(titleText).toContain("ten");
+    expect(titleText).not.toContain("eleven");
+
+    fireEvent.click(screen.getByRole("button", { name: /Security/i }));
+    const detailDrawer = screen.getByRole("region", { name: "Selected category details" });
+    expect(detailDrawer.querySelector(".dl-ai-severity.is-high")).toHaveTextContent("critical");
+    expect(detailDrawer.querySelector(".dl-ai-severity.is-medium")).toHaveTextContent("warning");
+    expect(detailDrawer.querySelector(".dl-ai-severity.is-low")).toHaveTextContent("suggestion");
+
+    const problemTitleBtn = within(detailDrawer).getByRole("button", {
+      name: /CSV formula injection/,
+    });
+    fireEvent.click(problemTitleBtn);
+    expect(document.querySelector(".dl-ai-composer .dl-ai-quote-text")).toHaveTextContent(
+      "Prefix cells starting with = or +.",
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Copy as Markdown" }));
+    expect(await screen.findByRole("button", { name: "Copy failed" })).toBeInTheDocument();
+  });
+
+  it("renders progressive Markdown instead of skeleton when streaming legacy plain-Markdown text", async () => {
+    const core = fakeCore({
+      current_repo: () => repoInfo("acme-billing", "gs/invoice-export"),
+      ai_get_state: () => ({
+        consentAccepted: true,
+        account: { id: "u1", email: "user@example.com", balanceUsd: "9.86" },
+        review: null,
+        reviews: [],
+        activeReviewId: null,
+        chatMessages: [],
+      }),
+    });
+
+    const { store } = await renderWithStore(<AiReviewIsland />, core);
+    await store.getState().loadAiState();
+
+    store.setState({
+      activeRun: {
+        runId: "run-legacy-1",
+        stage: "report",
+        message: "Drafting review…",
+        thoughts: [],
+        cancellable: true,
+      },
+      reportMarkdown: "## Legacy review\n\nStreaming paragraph.",
+    });
+
+    expect(await screen.findByText("Legacy review")).toBeInTheDocument();
+    expect(screen.getByText("Streaming paragraph.")).toBeInTheDocument();
+    expect(document.querySelector(".dl-ai-skeleton")).not.toBeInTheDocument();
+  });
+
+  it("renders toolbar selectors inside .dl-ai-subheader and ReviewPicker items with history classes", async () => {
+    const makeReview = (id: number, overview: string) => ({
+      id,
+      repo: "/Users/ada/Workspace/acme-billing",
+      branch: "gs/invoice-export",
+      targetBranch: "main",
+      reportMarkdown: JSON.stringify({
+        schema_version: 1,
+        overview,
+        categories: [
+          { id: "encapsulation", title: "Encapsulation", score: 8, summary: "Ok.", problems: [] },
+        ],
+        blast_radius: "Low.",
+        deployment_risks: "Low.",
+        rollback_plan: "Revert.",
+      }),
+      costUsd: "0.10",
+      headOid: "abc",
+      baseOid: "def",
+      model: "claude-3-5-sonnet",
+      effort: "medium",
+      createdAt: id * 1000,
+      updatedAt: id * 1000,
+      versions: [],
+    });
+    const r1 = makeReview(1, "First review");
+    const r2 = makeReview(2, "Second review");
+
+    const core = fakeCore({
+      current_repo: () => repoInfo("acme-billing", "gs/invoice-export"),
+      ai_get_state: () => ({
+        consentAccepted: true,
+        account: { id: "u1", email: "user@example.com", balanceUsd: "9.86" },
+        review: r2,
+        reviews: [r2, r1],
+        activeReviewId: 2,
+        chatMessages: [],
+      }),
+    });
+
+    const { store } = await renderWithStore(<AiReviewIsland />, core);
+    await store.getState().loadAiState();
+    expect(await screen.findByText("Second review")).toBeInTheDocument();
+
+    const subheader = document.querySelector(".dl-ai-subheader") as HTMLElement | null;
+    expect(subheader).toBeInTheDocument();
+    if (!subheader) return;
+    expect(within(subheader).getByText("review:")).toBeInTheDocument();
+    expect(within(subheader).getByText("branch:")).toBeInTheDocument();
+    expect(within(subheader).getByText("target:")).toBeInTheDocument();
+    expect(within(subheader).getByText("model:")).toBeInTheDocument();
+    expect(within(subheader).getByText("effort:")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTitle("Review history"));
+    const historyList = await waitFor(() => {
+      const list = document.querySelector(".dl-ai-history-list");
+      expect(list).toBeInTheDocument();
+      return list as HTMLElement;
+    });
+    expect(historyList.querySelectorAll(".dl-ai-history-item")).toHaveLength(2);
   });
 });

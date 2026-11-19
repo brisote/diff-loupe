@@ -85,6 +85,7 @@ export const AiChatComposer = memo(function AiChatComposer({
             style={{ width: 16, height: 16, padding: 0 }}
             title="Dismiss quote"
             aria-label="Dismiss quote"
+            disabled={disabled}
             onClick={onClearQuote}
           >
             <Icon name="general-close" />

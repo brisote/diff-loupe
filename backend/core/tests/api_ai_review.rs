@@ -843,3 +843,102 @@ fn structured_report_round_trip_and_followup_context() {
 
     drop(data);
 }
+
+#[test]
+fn followup_failure_retry_does_not_duplicate_user_messages() {
+    let repo = TempRepo::with_commit();
+    let (data, core, _, repo_path) = open_repo_core(&repo);
+
+    core.dispatch("ai_set_consent", json!({ "accepted": true }))
+        .unwrap();
+
+    let auth = StoredCloudAuth {
+        access_token: "test_tok".into(),
+        account: CloudAccount {
+            id: "usr_1".into(),
+            email: "ada@example.com".into(),
+            balance_usd: "20.00".into(),
+        },
+    };
+    aireview::write_auth(data.path(), &auth).unwrap();
+
+    let followup_attempts = Arc::new(AtomicUsize::new(0));
+    let followup_attempts_server = followup_attempts.clone();
+
+    let server = spawn_server(move |_, path, _, stream| {
+        if path == "/v1/reviews/stream" {
+            let done_payload = json!({
+                "cost_usd": "0.14",
+                "balance_usd": "19.86",
+                "report_markdown": "## Branch review\n\nLooks good."
+            })
+            .to_string();
+            let sse = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nConnection: close\r\n\r\n\
+                 event: billing\r\ndata: {{\"cost_usd\":\"0.14\",\"balance_usd\":\"19.86\"}}\r\n\r\n\
+                 event: done\r\ndata: {done_payload}\r\n\r\n"
+            );
+            let _ = stream.write_all(sse.as_bytes());
+        } else if path == "/v1/reviews/followup" {
+            let attempt = followup_attempts_server.fetch_add(1, Ordering::SeqCst);
+            if attempt == 0 {
+                let _ = stream.write_all(
+                    b"HTTP/1.1 500 Internal Server Error\r\nContent-Length: 11\r\nConnection: close\r\n\r\nserver down",
+                );
+            } else {
+                let chat_payload = json!({ "delta": "Validated in CurrencyCode." }).to_string();
+                let done_payload = json!({
+                    "cost_usd": "0.01",
+                    "balance_usd": "19.85",
+                    "chat_message": "Validated in CurrencyCode."
+                })
+                .to_string();
+                let sse = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nConnection: close\r\n\r\n\
+                     event: chat_delta\r\ndata: {chat_payload}\r\n\r\n\
+                     event: billing\r\ndata: {{\"cost_usd\":\"0.01\",\"balance_usd\":\"19.85\"}}\r\n\r\n\
+                     event: done\r\ndata: {done_payload}\r\n\r\n"
+                );
+                let _ = stream.write_all(sse.as_bytes());
+            }
+        }
+    });
+    core.set_cloud_url(&server.url);
+
+    core.dispatch("ai_start_review", json!({ "repo": repo_path }))
+        .unwrap();
+
+    let first_err = core.dispatch(
+        "ai_send_followup",
+        json!({
+            "repo": repo_path,
+            "prompt": "Where is currency validated?",
+        }),
+    );
+    assert!(first_err.is_err());
+
+    core.dispatch(
+        "ai_send_followup",
+        json!({
+            "repo": repo_path,
+            "prompt": "Where is currency validated?",
+        }),
+    )
+    .unwrap();
+
+    assert_eq!(followup_attempts.load(Ordering::SeqCst), 2);
+
+    let state = core
+        .dispatch("ai_get_state", json!({ "repo": repo_path }))
+        .unwrap();
+    let msgs = state["chatMessages"].as_array().unwrap();
+    assert_eq!(msgs.len(), 2);
+    assert_eq!(msgs.iter().filter(|m| m["role"] == "user").count(), 1);
+    assert_eq!(msgs[0]["role"], "user");
+    assert_eq!(msgs[0]["content"], "Where is currency validated?");
+    assert_eq!(msgs[1]["role"], "assistant");
+    assert_eq!(msgs[1]["content"], "Validated in CurrencyCode.");
+
+    drop(core);
+    drop(data);
+}

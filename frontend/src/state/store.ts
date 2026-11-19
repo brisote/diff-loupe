@@ -236,6 +236,10 @@ export const diffMeasure = "select-to-diff";
 export const tabsKey = (path: string) => `repo.tabs:${path}`;
 export const modeKey = (path: string) => `repo.mode:${path}`;
 
+export function isFollowupRunId(runId: string | undefined): boolean {
+  return runId === "ai_followup" || runId?.startsWith("ai_followup:") === true;
+}
+
 export type AppState = {
   backend: Backend;
   started: boolean;
@@ -2010,7 +2014,7 @@ export function createAppStore(backend: Backend) {
           return false;
         } finally {
           if (isStillActive()) {
-            if (get().activeRun?.runId === "ai_followup") {
+            if (isFollowupRunId(get().activeRun?.runId)) {
               set({ activeRun: null, streamingChat: null });
             } else {
               set({ streamingChat: null });

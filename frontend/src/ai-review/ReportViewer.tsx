@@ -7,6 +7,7 @@ import {
   formatStructuredReportAsMarkdown,
   parseStructuredReport,
   scoreTier,
+  truncateWords,
 } from "./structuredReport";
 
 type ReportViewerProps = {
@@ -39,6 +40,22 @@ function withUniqueKeys<T>(
   });
 }
 
+function severityClassName(severity?: string): string {
+  switch (severity?.toLowerCase()) {
+    case "critical":
+    case "high":
+      return " is-high";
+    case "warning":
+    case "medium":
+      return " is-medium";
+    case "suggestion":
+    case "low":
+      return " is-low";
+    default:
+      return "";
+  }
+}
+
 export const ReportViewer = memo(function ReportViewer({
   markdown,
   onAskSelection,
@@ -51,7 +68,7 @@ export const ReportViewer = memo(function ReportViewer({
   const copySeqRef = useRef(0);
   const [floating, setFloating] = useState<FloatingAction | null>(null);
   const [selectedId, setSelectedId] = useState<CategoryId | null>(null);
-  const [copied, setCopied] = useState(false);
+  const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
 
   const parsed = useMemo(() => {
     if (isStreamingInitial) {
@@ -89,7 +106,7 @@ export const ReportViewer = memo(function ReportViewer({
       clearCopyTimer();
       setSelectedId(null);
       setFloating(null);
-      setCopied(false);
+      setCopyState("idle");
     }
   }, [reviewIdentity, clearCopyTimer]);
 
@@ -99,7 +116,7 @@ export const ReportViewer = memo(function ReportViewer({
       copySeqRef.current += 1;
       clearCopyTimer();
       setFloating(null);
-      setCopied(false);
+      setCopyState("idle");
     }
   }, [markdown, clearCopyTimer]);
 
@@ -200,19 +217,30 @@ export const ReportViewer = memo(function ReportViewer({
   const handleCopyMarkdown = async () => {
     if (parsed.kind !== "structured") return;
     const seq = ++copySeqRef.current;
-    try {
-      await navigator.clipboard.writeText(formatStructuredReportAsMarkdown(parsed.report));
-      if (!mountedRef.current || copySeqRef.current !== seq) return;
-      setCopied(true);
+    const scheduleReset = () => {
       clearCopyTimer();
       copyTimerRef.current = window.setTimeout(() => {
         if (mountedRef.current && copySeqRef.current === seq) {
-          setCopied(false);
+          setCopyState("idle");
         }
       }, 2000);
+    };
+    try {
+      if (!navigator.clipboard?.writeText) {
+        if (mountedRef.current && copySeqRef.current === seq) {
+          setCopyState("failed");
+          scheduleReset();
+        }
+        return;
+      }
+      await navigator.clipboard.writeText(formatStructuredReportAsMarkdown(parsed.report));
+      if (!mountedRef.current || copySeqRef.current !== seq) return;
+      setCopyState("copied");
+      scheduleReset();
     } catch {
       if (mountedRef.current && copySeqRef.current === seq) {
-        setCopied(false);
+        setCopyState("failed");
+        scheduleReset();
       }
     }
   };
@@ -246,7 +274,13 @@ export const ReportViewer = memo(function ReportViewer({
     </div>
   ) : null;
 
-  if (isStreamingInitial && parsed.kind !== "structured") {
+  const trimmedStart = markdown.trimStart();
+  const shouldShowSkeleton =
+    isStreamingInitial &&
+    parsed.kind !== "structured" &&
+    (trimmedStart.length === 0 || trimmedStart.startsWith("{") || trimmedStart.startsWith("```"));
+
+  if (shouldShowSkeleton) {
     return (
       <div
         ref={containerRef}
@@ -307,14 +341,20 @@ export const ReportViewer = memo(function ReportViewer({
     >
       <div className="dl-ai-report-card">
         <div className="dl-ai-report-head">
-          <div className="dl-ai-report-title">{report.overview}</div>
+          <div className="dl-ai-report-title">{truncateWords(report.overview, 10)}</div>
           <button
             type="button"
-            className="dl-btn dl-btn-sm"
+            className="dl-btn dl-btn-sm dl-ai-copy-btn"
             onClick={() => void handleCopyMarkdown()}
           >
             <Icon name="general-copy" />
-            <span>{copied ? "Copied" : "Copy as Markdown"}</span>
+            <span>
+              {copyState === "copied"
+                ? "Copied"
+                : copyState === "failed"
+                  ? "Copy failed"
+                  : "Copy as Markdown"}
+            </span>
           </button>
         </div>
 
@@ -436,13 +476,7 @@ export const ReportViewer = memo(function ReportViewer({
                   selectedCategory.problems,
                   (problem) => `${problem.title}-${problem.location ?? ""}`,
                 ).map(({ key, item: problem }) => {
-                  const normalizedSeverity = problem.severity?.toLowerCase();
-                  const severityClass =
-                    normalizedSeverity === "high" ||
-                    normalizedSeverity === "medium" ||
-                    normalizedSeverity === "low"
-                      ? ` is-${normalizedSeverity}`
-                      : "";
+                  const severityClass = severityClassName(problem.severity);
                   const hasDistinctDescription =
                     Boolean(problem.description) && problem.description !== problem.title;
 

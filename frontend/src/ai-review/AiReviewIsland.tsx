@@ -6,6 +6,7 @@ import { Icon } from "../lib/icon";
 import { Popup, useBelow } from "../lib/popup";
 import { TargetPicker } from "../main-window/TargetPicker";
 import { useApp } from "../state/context";
+import { isFollowupRunId } from "../state/store";
 import { AiChatComposer } from "./AiChatComposer";
 import { AiChatThread } from "./AiChatThread";
 import { EffortPicker, ModelPicker } from "./ModelPicker";
@@ -57,7 +58,7 @@ function ReviewPicker({ anchor, reviews, activeId, onSelect, onNew, onClose }: R
           New review
         </button>
       </div>
-      <div style={{ maxHeight: 260, overflowY: "auto" }}>
+      <div className="dl-ai-history-list">
         {reviews.map((rev, index) => {
           const isSelected = rev.id === activeId;
           const reviewNumber = reviews.length - index;
@@ -71,17 +72,7 @@ function ReviewPicker({ anchor, reviews, activeId, onSelect, onNew, onClose }: R
             <button
               key={rev.id}
               type="button"
-              className={`dl-row ${isSelected ? "is-selected" : ""}`}
-              style={{
-                display: "flex",
-                flexDirection: "column",
-                alignItems: "flex-start",
-                padding: "8px 10px",
-                gap: 2,
-                textAlign: "left",
-                width: "100%",
-                borderBottom: "1px solid var(--border-subtle, var(--border))",
-              }}
+              className={`dl-row dl-ai-history-item ${isSelected ? "is-selected" : ""}`}
               onClick={() => {
                 onSelect(rev.id);
                 onClose();
@@ -172,12 +163,14 @@ export function AiReviewIsland() {
   const [pickingEffort, setPickingEffort] = useState(false);
   const [confirmRerun, setConfirmRerun] = useState(false);
 
-  const isInitialStreaming = activeRun !== null && activeRun.runId !== "ai_followup";
-  const isFollowupStreaming = activeRun?.runId === "ai_followup" || streamingChat !== null;
+  const isInitialStreaming = activeRun !== null && !isFollowupRunId(activeRun.runId);
+  const isFollowupStreaming = isFollowupRunId(activeRun?.runId) || streamingChat !== null;
   const composerDisabled =
     isInitialStreaming || (!activeReviewId && chatMessages.length === 0) || isFollowupStreaming;
   const activeReviewIdRef = useRef(activeReviewId);
   activeReviewIdRef.current = activeReviewId;
+  const quotedSelectionRef = useRef(quotedSelection);
+  quotedSelectionRef.current = quotedSelection;
 
   useEffect(() => {
     const stream = streamRef.current;
@@ -198,7 +191,10 @@ export function AiReviewIsland() {
     prevMessageCountRef.current = chatMessages.length;
     if (!stream) return;
 
-    if (streamingChat !== null || (prevCount !== null && chatMessages.length > prevCount)) {
+    const messageAdded = prevCount !== null && chatMessages.length > prevCount;
+    if (messageAdded) {
+      stream.scrollTop = stream.scrollHeight;
+    } else if (streamingChat !== null) {
       const distanceFromBottom = stream.scrollHeight - stream.scrollTop - stream.clientHeight;
       if (distanceFromBottom < 80) {
         stream.scrollTop = stream.scrollHeight;
@@ -224,7 +220,11 @@ export function AiReviewIsland() {
         quotedText: currentQuote?.text,
         sectionHeading: currentQuote?.heading,
       });
-      if (ok && activeReviewIdRef.current === capturedReviewId) {
+      if (
+        ok &&
+        activeReviewIdRef.current === capturedReviewId &&
+        quotedSelectionRef.current === currentQuote
+      ) {
         setQuotedSelection(null);
       }
       return ok;
@@ -241,8 +241,10 @@ export function AiReviewIsland() {
   }, [aiClearThread]);
 
   const handleCancelFollowup = useCallback(() => {
-    cancelTask("ai_followup");
-  }, [cancelTask]);
+    if (activeRun && isFollowupRunId(activeRun.runId)) {
+      cancelTask(activeRun.runId);
+    }
+  }, [activeRun, cancelTask]);
 
   if (!repo) return null;
 
@@ -368,6 +370,95 @@ export function AiReviewIsland() {
         >
           <header className="dl-island-header">
             <span className="dl-island-title">AI review</span>
+            <span className="dl-toolbar-spacer" />
+
+            {account && (
+              <button
+                className="dl-ai-pill dl-ai-pill-btn"
+                type="button"
+                onClick={() => void aiAddFunds(10)}
+                title="Add funds"
+              >
+                <Icon name="diff-magicResolveToolbar" />
+                <span>Balance {formatBalanceUsd(account.balanceUsd)}</span>
+              </button>
+            )}
+
+            {reportMarkdown && reviewCostUsd && (
+              <span className="dl-ai-pill dl-ai-pill-muted">
+                <span>Cost {formatReviewCostUsd(reviewCostUsd)}</span>
+              </span>
+            )}
+
+            {account && (
+              <button
+                className="dl-btn dl-btn-sm"
+                type="button"
+                onClick={() => void aiAddFunds(10)}
+              >
+                Add funds
+              </button>
+            )}
+
+            {isInitialStreaming ? (
+              <>
+                <button className="dl-btn dl-btn-sm" type="button" disabled>
+                  <Icon name="general-refresh" />
+                  Re-run review
+                </button>
+                <button className="dl-btn dl-btn-sm" type="button" onClick={cancelAiReview}>
+                  <Icon name="general-close" />
+                  Cancel review
+                </button>
+              </>
+            ) : displayedMarkdown ? (
+              <>
+                <button
+                  className="dl-btn dl-btn-sm"
+                  type="button"
+                  disabled={!hasBalance || !hasTarget || !hasModels || isFollowupStreaming}
+                  onClick={() => setConfirmRerun(true)}
+                >
+                  <Icon name="general-refresh" />
+                  Re-run review
+                </button>
+                <button
+                  className="dl-btn dl-btn-sm"
+                  type="button"
+                  disabled={!hasBalance || !hasTarget || !hasModels || isFollowupStreaming}
+                  onClick={() => void startAiReview()}
+                >
+                  <Icon name="general-add" />
+                  New review
+                </button>
+              </>
+            ) : (
+              <button
+                className="dl-btn dl-btn-sm dl-btn-primary"
+                type="button"
+                disabled={!consentAccepted || !account || !hasBalance || !hasTarget || !hasModels}
+                onClick={() => void startAiReview()}
+              >
+                Run review
+              </button>
+            )}
+
+            {account ? (
+              <button className="dl-btn dl-btn-sm" type="button" onClick={() => void aiSignOut()}>
+                Sign out
+              </button>
+            ) : consentAccepted ? (
+              <button
+                className="dl-btn dl-btn-primary dl-btn-sm"
+                type="button"
+                onClick={() => void aiSignIn()}
+              >
+                Sign in
+              </button>
+            ) : null}
+          </header>
+
+          <div className="dl-ai-subheader">
             {reviews.length > 0 && (
               <>
                 <button
@@ -375,6 +466,7 @@ export function AiReviewIsland() {
                   className={`dl-combo ${pickingReview ? "is-focused" : ""}`}
                   type="button"
                   title="Review history"
+                  disabled={isFollowupStreaming}
                   onClick={() => {
                     setPickingReview(!pickingReview);
                     setPickingModel(false);
@@ -490,94 +582,7 @@ export function AiReviewIsland() {
                 )}
               </>
             )}
-
-            <span className="dl-toolbar-spacer" />
-
-            {account && (
-              <button
-                className="dl-ai-pill dl-ai-pill-btn"
-                type="button"
-                onClick={() => void aiAddFunds(10)}
-                title="Add funds"
-              >
-                <Icon name="diff-magicResolveToolbar" />
-                <span>Balance {formatBalanceUsd(account.balanceUsd)}</span>
-              </button>
-            )}
-
-            {reportMarkdown && reviewCostUsd && (
-              <span className="dl-ai-pill dl-ai-pill-muted">
-                <span>Cost {formatReviewCostUsd(reviewCostUsd)}</span>
-              </span>
-            )}
-
-            {account && (
-              <button
-                className="dl-btn dl-btn-sm"
-                type="button"
-                onClick={() => void aiAddFunds(10)}
-              >
-                Add funds
-              </button>
-            )}
-
-            {isInitialStreaming ? (
-              <>
-                <button className="dl-btn dl-btn-sm" type="button" disabled>
-                  <Icon name="general-refresh" />
-                  Re-run review
-                </button>
-                <button className="dl-btn dl-btn-sm" type="button" onClick={cancelAiReview}>
-                  <Icon name="general-close" />
-                  Cancel review
-                </button>
-              </>
-            ) : displayedMarkdown ? (
-              <>
-                <button
-                  className="dl-btn dl-btn-sm"
-                  type="button"
-                  disabled={!hasBalance || !hasTarget || !hasModels || isFollowupStreaming}
-                  onClick={() => setConfirmRerun(true)}
-                >
-                  <Icon name="general-refresh" />
-                  Re-run review
-                </button>
-                <button
-                  className="dl-btn dl-btn-sm"
-                  type="button"
-                  disabled={!hasBalance || !hasTarget || !hasModels || isFollowupStreaming}
-                  onClick={() => void startAiReview()}
-                >
-                  <Icon name="general-add" />
-                  New review
-                </button>
-              </>
-            ) : (
-              <button
-                className="dl-btn dl-btn-sm dl-btn-primary"
-                type="button"
-                disabled={!consentAccepted || !account || !hasBalance || !hasTarget || !hasModels}
-                onClick={() => void startAiReview()}
-              >
-                Run review
-              </button>
-            )}
-
-            {account ? (
-              <button className="dl-btn dl-btn-sm" type="button" onClick={() => void aiSignOut()}>
-                Sign out
-              </button>
-            ) : consentAccepted ? (
-              <button
-                className="dl-btn dl-btn-primary dl-btn-sm"
-                type="button"
-                onClick={() => void aiSignIn()}
-              >
-                Sign in
-              </button>
-            ) : null}
-          </header>
+          </div>
 
           {inlineError && (
             <div className="dl-banner is-error" style={{ margin: "8px 16px" }}>

@@ -79,10 +79,6 @@ function stripJsonFence(raw: string): string {
   return match?.[1] ? match[1].trim() : trimmed;
 }
 
-function isJsonLike(raw: string, candidate: string): boolean {
-  return candidate.startsWith("{") || /^\s*```json\b/i.test(raw);
-}
-
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -121,11 +117,6 @@ export function parseStructuredReport(raw: string): ParsedReviewReport {
   }
   const candidate = stripJsonFence(raw);
   if (!candidate.startsWith("{")) {
-    if (isJsonLike(raw, candidate)) {
-      console.warn(
-        "Structured review report JSON fence could not be parsed; falling back to legacy",
-      );
-    }
     return { kind: "legacy", markdown: raw };
   }
 
@@ -133,20 +124,15 @@ export function parseStructuredReport(raw: string): ParsedReviewReport {
   try {
     parsed = JSON.parse(candidate);
   } catch {
-    console.warn("Structured review report JSON failed to parse; falling back to legacy");
     return { kind: "legacy", markdown: raw };
   }
 
   if (!isRecord(parsed)) {
-    console.warn("Structured review report payload is not an object; falling back to legacy");
     return { kind: "legacy", markdown: raw };
   }
 
   const rawVersion = parsed.schema_version ?? parsed.schemaVersion;
   if (rawVersion !== undefined && rawVersion !== 1) {
-    console.warn(
-      `Unsupported structured review schema_version: ${String(rawVersion)}; falling back to legacy`,
-    );
     return { kind: "legacy", markdown: raw };
   }
 
@@ -155,7 +141,6 @@ export function parseStructuredReport(raw: string): ParsedReviewReport {
     !Array.isArray(parsed.categories) ||
     parsed.categories.length === 0
   ) {
-    console.warn("Structured review report missing overview or categories; falling back to legacy");
     return { kind: "legacy", markdown: raw };
   }
 
@@ -166,11 +151,13 @@ export function parseStructuredReport(raw: string): ParsedReviewReport {
     }
   }
 
-  const missingIds: string[] = [];
+  if (!CANONICAL_CATEGORIES.some(({ id }) => byId.has(id))) {
+    return { kind: "legacy", markdown: raw };
+  }
+
   const categories: CategoryAssessment[] = CANONICAL_CATEGORIES.map(({ id, title }) => {
     const entry = byId.get(id);
     if (!entry) {
-      missingIds.push(id);
       return {
         id,
         title,
@@ -218,12 +205,6 @@ export function parseStructuredReport(raw: string): ParsedReviewReport {
     };
   });
 
-  if (missingIds.length > 0) {
-    console.warn(
-      `Structured review report omitted ${missingIds.length} canonical categories: ${missingIds.join(", ")}`,
-    );
-  }
-
   const schemaVersion = typeof rawVersion === "number" ? rawVersion : 1;
 
   const blastRadius =
@@ -260,11 +241,20 @@ export function parseStructuredReport(raw: string): ParsedReviewReport {
   };
 }
 
+export function truncateWords(text: string, maxWords: number): string {
+  const normalized = text.trim().replace(/\s+/g, " ");
+  if (!normalized || maxWords <= 0) return "";
+  const words = normalized.split(" ");
+  if (words.length <= maxWords) return normalized;
+  return words.slice(0, maxWords).join(" ");
+}
+
 export function formatStructuredReportAsMarkdown(report: StructuredReviewReport): string {
   const sections: string[] = [];
 
-  if (report.overview.trim()) {
-    sections.push(`## ${report.overview.trim()}`);
+  const normalizedOverview = report.overview.trim().replace(/\s+/g, " ");
+  if (normalizedOverview) {
+    sections.push(`## ${normalizedOverview}`);
   }
 
   for (const cat of report.categories) {
@@ -314,10 +304,6 @@ export function formatStructuredReportAsMarkdown(report: StructuredReviewReport)
 
     sections.push(lines.join("\n"));
   }
-
-  sections.push(`### Blast radius\n\n${report.blastRadius.trim() || "None reported."}`);
-  sections.push(`### Deployment risks\n\n${report.deploymentRisks.trim() || "None reported."}`);
-  sections.push(`### Rollback plan\n\n${report.rollbackPlan.trim() || "None reported."}`);
 
   return sections.join("\n\n");
 }

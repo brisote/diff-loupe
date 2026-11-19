@@ -3,6 +3,7 @@ import {
   formatStructuredReportAsMarkdown,
   parseStructuredReport,
   scoreTier,
+  truncateWords,
 } from "./structuredReport";
 
 const CANONICAL_IDS = [
@@ -248,7 +249,7 @@ describe("parseStructuredReport", () => {
     expect(deps?.dependenciesIntroduced).toBeNull();
   });
 
-  it("falls back to legacy and warns on empty categories or unsupported schema_version", () => {
+  it("falls back to legacy without calling console.warn on empty, non-canonical, or unsupported schema_version", () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     try {
       const emptyCategories = JSON.stringify({
@@ -260,7 +261,24 @@ describe("parseStructuredReport", () => {
         kind: "legacy",
         markdown: emptyCategories,
       });
-      expect(warnSpy).toHaveBeenCalledTimes(1);
+
+      const nonCanonicalCategories = JSON.stringify({
+        schema_version: 1,
+        overview: "Non-canonical categories",
+        categories: [
+          {
+            id: "custom_unknown_category",
+            title: "Custom",
+            score: 8,
+            summary: "Unknown id.",
+            problems: [],
+          },
+        ],
+      });
+      expect(parseStructuredReport(nonCanonicalCategories)).toEqual({
+        kind: "legacy",
+        markdown: nonCanonicalCategories,
+      });
 
       const unsupportedVersion = JSON.stringify({
         schema_version: 2,
@@ -271,18 +289,31 @@ describe("parseStructuredReport", () => {
         kind: "legacy",
         markdown: unsupportedVersion,
       });
-      expect(warnSpy).toHaveBeenCalledTimes(2);
+      expect(warnSpy).not.toHaveBeenCalled();
     } finally {
       warnSpy.mockRestore();
     }
   });
 });
 
+describe("truncateWords", () => {
+  it("clamps titles to at most 10 words", () => {
+    expect(truncateWords("Short branch review title", 10)).toBe("Short branch review title");
+    const longTitle = "one two three four five six seven eight nine ten eleven twelve";
+    const clamped = truncateWords(longTitle, 10);
+    expect(clamped.split(/\s+/).length).toBeLessThanOrEqual(10);
+    expect(clamped).toContain("one");
+    expect(clamped).toContain("ten");
+    expect(clamped).not.toContain("eleven");
+    expect(clamped).not.toContain("twelve");
+  });
+});
+
 describe("formatStructuredReportAsMarkdown", () => {
-  it("formats a structured report with overview, categories, problems, and operational sections", () => {
+  it("collapses overview newlines and exports only the first section without operational sections", () => {
     const payload = {
       schema_version: 1,
-      overview: "Branch review: invoice export currency support",
+      overview: "Branch review:\ninvoice export\n\ncurrency support",
       categories: [
         makeCategoryPayload("encapsulation", 9),
         makeCategoryPayload("test_coverage", 6),
@@ -299,11 +330,15 @@ describe("formatStructuredReportAsMarkdown", () => {
 
     const md = formatStructuredReportAsMarkdown(parsed.report);
     expect(md).toContain("Branch review: invoice export currency support");
+    expect(md).not.toContain("Branch review:\ninvoice export");
     expect(md).toContain("Test coverage");
     expect(md).toContain("Missing negative amount test");
     expect(md).toContain("billing/InvoiceExporterTest.kt:44");
-    expect(md).toContain("Affects invoice export endpoints.");
-    expect(md).toContain("Consumers must tolerate the currency column.");
-    expect(md).toContain("Revert the commit.");
+    expect(md).not.toContain("Blast radius");
+    expect(md).not.toContain("Deployment risks");
+    expect(md).not.toContain("Rollback plan");
+    expect(md).not.toContain("Affects invoice export endpoints.");
+    expect(md).not.toContain("Consumers must tolerate the currency column.");
+    expect(md).not.toContain("Revert the commit.");
   });
 });

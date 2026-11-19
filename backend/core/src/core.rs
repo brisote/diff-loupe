@@ -1504,38 +1504,19 @@ impl Core {
             };
             let review_id = active_review.as_ref().map(|r| r.id);
 
-            store.append_ai_chat_message(&NewAiChatMessage {
-                review_id,
-                repo: &repo_str,
-                branch: &branch,
-                target_branch: &target_branch,
-                role: "user",
-                content: &a.prompt,
-                quoted_text: a.quoted_text.as_deref(),
-                cost_usd: None,
-                created_at: now,
-            })?;
-
             let current_report = active_review
                 .as_ref()
                 .map(|r| r.report_markdown.clone())
                 .unwrap_or_default();
             let msgs = store.get_ai_chat_messages(review_id, &repo_str, &branch, &target_branch)?;
-            let chat_history: Vec<serde_json::Value> = msgs
+            let mut chat_history: Vec<serde_json::Value> = msgs
                 .iter()
                 .map(|m| serde_json::json!({ "role": m.role, "content": m.content }))
                 .collect();
+            chat_history.push(serde_json::json!({ "role": "user", "content": a.prompt }));
             (active_review, current_report, chat_history)
         };
         let review_id = active_review.as_ref().map(|r| r.id);
-
-        let run_id = self.run_id("ai_followup", &root);
-        let watch = self.cancels.watch(&run_id);
-        let mut task = Task::cancellable(
-            self.events.as_ref(),
-            &run_id,
-            "Analyzing follow-up question…".to_string(),
-        );
 
         let cloud_url = self.cloud_url();
         let resp = ureq::post(&format!("{cloud_url}/v1/reviews/followup"))
@@ -1551,6 +1532,24 @@ impl Core {
             .map_err(aireview::map_ureq_error)?;
 
         let store_guard = self.store()?;
+        store_guard.append_ai_chat_message(&NewAiChatMessage {
+            review_id,
+            repo: &repo_str,
+            branch: &branch,
+            target_branch: &target_branch,
+            role: "user",
+            content: &a.prompt,
+            quoted_text: a.quoted_text.as_deref(),
+            cost_usd: None,
+            created_at: now,
+        })?;
+        let run_id = self.run_id("ai_followup", &root);
+        let watch = self.cancels.watch(&run_id);
+        let mut task = Task::cancellable(
+            self.events.as_ref(),
+            &run_id,
+            "Analyzing follow-up question…".to_string(),
+        );
         let ctx = aireview::StreamContext {
             repo: &repo_str,
             branch: &branch,

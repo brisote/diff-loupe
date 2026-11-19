@@ -482,6 +482,26 @@ test("full AI review workflow, selection quoting, live chat dual streaming, and 
     expect(copiedMarkdown).toContain(
       "Audited 4 changed files for invoice export currency support.",
     );
+    for (const categoryTitle of [
+      "Encapsulation",
+      "Idempotency",
+      "Edge cases & inputs",
+      "Error handling",
+      "Logs",
+      "Monitoring",
+      "Security",
+      "Concurrency",
+      "Transactions & atomicity",
+      "Performance",
+      "Breaking changes",
+      "Test coverage",
+      "New dependencies",
+    ]) {
+      expect(copiedMarkdown).toContain(categoryTitle);
+    }
+    expect(copiedMarkdown).not.toContain("Blast radius");
+    expect(copiedMarkdown).not.toContain("Deployment risks");
+    expect(copiedMarkdown).not.toContain("Rollback plan");
 
     await page.evaluate(() => {
       const target = document.querySelector(".dl-ai-report-title");
