@@ -5,9 +5,9 @@ use crate::api::{
     AiSignInResult, AiStartReviewArgs, AiState, AppInfo, ApplyMergeArgs, BranchArgs, CloudAccount,
     CommitArgs, CommitIdArgs, DiffArgs, ImageArgs, ModelsCatalog, PathArgs, PrepareArgs,
     ProjectDirArgs, ProjectFileArgs, RecentRepo, RepoInfo, RepoViewArgs, ReportEnv, RollbackArgs,
-    SaveFileArgs, SettingsArgs, StatusArgs, TargetArgs, TaskArgs, TerminalAckArgs,
-    TerminalOpenArgs, TerminalResizeArgs, TerminalWriteArgs, ToolTab, UiKeyArgs, UiValueArgs,
-    VersionArgs,
+    SaveFileArgs, SettingsArgs, StatusArgs, SymbolSearchArgs, TargetArgs, TaskArgs,
+    TerminalAckArgs, TerminalOpenArgs, TerminalResizeArgs, TerminalWriteArgs, ToolTab, UiKeyArgs,
+    UiValueArgs, VersionArgs,
 };
 use crate::diffcache::{DiffCache, Prepare};
 use crate::error::{ApiError, Error, Result};
@@ -418,6 +418,17 @@ impl Core {
                 let a: ProjectFileArgs = parse(args)?;
                 let (_, root, _) = self.open_root(&a.path)?;
                 reply(crate::project::read_file(&root, &a.file)?)
+            }
+            "search_symbol" => {
+                let a: SymbolSearchArgs = parse(args)?;
+                let (_, root, _) = self.open_root(&a.path)?;
+                reply(crate::project::search_symbol(
+                    &self.env,
+                    &root,
+                    &a.symbol,
+                    a.current_file.as_deref(),
+                    a.current_line,
+                )?)
             }
             "read_image" => {
                 let a: ImageArgs = parse(args)?;

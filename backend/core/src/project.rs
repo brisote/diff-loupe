@@ -1,4 +1,4 @@
-use crate::api::{ProjectEntry, ProjectFile};
+use crate::api::{ProjectEntry, ProjectFile, SymbolMatch, SymbolSearchResult};
 use crate::error::{Error, Result};
 use crate::filediff::{self, Content};
 use crate::platform;
@@ -7,6 +7,10 @@ use std::collections::HashSet;
 use std::io::Write;
 use std::path::{Component, Path, PathBuf};
 use std::process::Stdio;
+
+const SEARCH_FILE_LIMIT: u64 = 2 * 1024 * 1024;
+const SEARCH_MATCH_LIMIT: usize = 200;
+const PREVIEW_LIMIT: usize = 160;
 
 pub fn list_dir(env: &ShellEnv, root: &Path, dir: &str) -> Result<Vec<ProjectEntry>> {
     let rel = validate_relative(dir, true)?;
@@ -115,6 +119,163 @@ pub fn read_file(root: &Path, file: &str) -> Result<ProjectFile> {
         encoding: encoding.to_string(),
         size,
     })
+}
+
+pub fn search_symbol(
+    env: &ShellEnv,
+    root: &Path,
+    symbol: &str,
+    current_file: Option<&str>,
+    current_line: Option<u32>,
+) -> Result<SymbolSearchResult> {
+    let symbol = symbol.trim();
+    if symbol.is_empty() || !symbol.bytes().all(is_ident_byte) {
+        return Err(Error::InvalidArgs("invalid symbol name".into()));
+    }
+    let files = list_searchable_files(env, root);
+    let current_normalized = current_file.map(|f| f.replace('\\', "/"));
+    let mut matches = Vec::new();
+    for rel in files {
+        let Ok(rel_path) = validate_relative(&rel, false) else {
+            continue;
+        };
+        let Ok(target) = resolve_inside(root, &rel_path) else {
+            continue;
+        };
+        let Ok(meta) = std::fs::metadata(&target) else {
+            continue;
+        };
+        if !meta.is_file() || meta.len() > SEARCH_FILE_LIMIT || filediff::is_image(&rel) {
+            continue;
+        }
+        let Ok(bytes) = std::fs::read(&target) else {
+            continue;
+        };
+        if filediff::is_binary(&bytes) {
+            continue;
+        }
+        let Ok(text) = std::str::from_utf8(&bytes) else {
+            continue;
+        };
+        let is_current_file = current_normalized.as_deref() == Some(rel.as_str());
+        for (idx, raw_line) in text.lines().enumerate() {
+            let line_num = (idx + 1) as u32;
+            if is_current_file && current_line == Some(line_num) {
+                continue;
+            }
+            if let Some(col) = find_whole_word(raw_line, symbol) {
+                let preview: String = raw_line.trim().chars().take(PREVIEW_LIMIT).collect();
+                matches.push(SymbolMatch {
+                    file: rel.clone(),
+                    line: line_num,
+                    column: (col + 1) as u32,
+                    preview,
+                    is_declaration: is_declaration_line(raw_line, symbol),
+                });
+            }
+        }
+    }
+    matches.sort_by(|a, b| {
+        b.is_declaration
+            .cmp(&a.is_declaration)
+            .then_with(|| a.file.cmp(&b.file))
+            .then_with(|| a.line.cmp(&b.line))
+    });
+    let truncated = matches.len() > SEARCH_MATCH_LIMIT;
+    if truncated {
+        matches.truncate(SEARCH_MATCH_LIMIT);
+    }
+    Ok(SymbolSearchResult {
+        symbol: symbol.to_string(),
+        matches,
+        truncated,
+    })
+}
+
+fn list_searchable_files(env: &ShellEnv, root: &Path) -> Vec<String> {
+    let mut cmd = env.git(root);
+    cmd.args([
+        "ls-files",
+        "--cached",
+        "--others",
+        "--exclude-standard",
+        "-z",
+    ])
+    .stdout(Stdio::piped())
+    .stderr(Stdio::null());
+    let Ok(output) = cmd.output() else {
+        return Vec::new();
+    };
+    if !output.status.success() {
+        return Vec::new();
+    }
+    output
+        .stdout
+        .split(|&b| b == 0)
+        .filter(|slice| !slice.is_empty())
+        .map(|slice| String::from_utf8_lossy(slice).replace('\\', "/"))
+        .collect()
+}
+
+fn is_ident_byte(b: u8) -> bool {
+    b.is_ascii_alphanumeric() || b == b'_'
+}
+
+fn find_whole_word(line: &str, symbol: &str) -> Option<usize> {
+    let bytes = line.as_bytes();
+    let sym_len = symbol.len();
+    let mut start = 0;
+    while let Some(offset) = line[start..].find(symbol) {
+        let pos = start + offset;
+        let before_ok = pos == 0 || !is_ident_byte(bytes[pos - 1]);
+        let after_pos = pos + sym_len;
+        let after_ok = after_pos >= bytes.len() || !is_ident_byte(bytes[after_pos]);
+        if before_ok && after_ok {
+            return Some(pos);
+        }
+        start = pos + 1;
+    }
+    None
+}
+
+fn is_declaration_line(line: &str, symbol: &str) -> bool {
+    let trimmed = line.trim();
+    let prefixes = [
+        "fn ",
+        "fun ",
+        "func ",
+        "def ",
+        "function ",
+        "class ",
+        "interface ",
+        "struct ",
+        "enum ",
+        "trait ",
+        "type ",
+        "const ",
+        "let ",
+        "var ",
+        "val ",
+    ];
+    for kw in prefixes {
+        let pattern = format!("{kw}{symbol}");
+        if let Some(idx) = trimmed.find(&pattern) {
+            let after = idx + pattern.len();
+            let before_ok = idx == 0 || !is_ident_byte(trimmed.as_bytes()[idx - 1]);
+            let after_ok = after >= trimmed.len() || !is_ident_byte(trimmed.as_bytes()[after]);
+            if before_ok && after_ok {
+                return true;
+            }
+        }
+    }
+    let modifiers = ["public ", "private ", "protected "];
+    if modifiers.iter().any(|m| trimmed.starts_with(m)) {
+        let call = format!("{symbol}(");
+        if trimmed.contains(&call) && !trimmed.ends_with(';') {
+            return true;
+        }
+    }
+    false
 }
 
 fn check_ignored(env: &ShellEnv, root: &Path, entries: &[ProjectEntry]) -> HashSet<String> {
@@ -256,5 +417,23 @@ mod tests {
         let img = read_file(&root, "pic.png").unwrap();
         assert_eq!(img.content, Content::Image);
         assert!(img.text.is_empty());
+    }
+
+    #[test]
+    fn matches_whole_words_and_ranks_declarations() {
+        assert_eq!(find_whole_word("fooBar foo_1 foo()", "foo"), Some(13));
+        assert_eq!(find_whole_word("foobar", "foo"), None);
+        assert!(is_declaration_line(
+            "pub fn getLatestObservation(id: u64) {",
+            "getLatestObservation"
+        ));
+        assert!(is_declaration_line(
+            "public Optional<Obs> getLatestObservation(long id)",
+            "getLatestObservation"
+        ));
+        assert!(!is_declaration_line(
+            "let x = svc.getLatestObservation(id);",
+            "getLatestObservation"
+        ));
     }
 }

@@ -493,3 +493,37 @@ pub struct ProjectFile {
     #[ts(type = "number")]
     pub size: u64,
 }
+
+#[derive(Debug, Clone, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct SymbolSearchArgs {
+    pub path: String,
+    pub symbol: String,
+    #[serde(default)]
+    #[ts(optional)]
+    pub current_file: Option<String>,
+    #[serde(default)]
+    #[ts(optional)]
+    pub current_line: Option<u32>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct SymbolMatch {
+    pub file: String,
+    pub line: u32,
+    pub column: u32,
+    pub preview: String,
+    pub is_declaration: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct SymbolSearchResult {
+    pub symbol: String,
+    pub matches: Vec<SymbolMatch>,
+    pub truncated: bool,
+}

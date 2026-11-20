@@ -47,6 +47,8 @@ import type { Settings } from "./generated/Settings";
 import type { SettingsArgs } from "./generated/SettingsArgs";
 import type { StatusArgs } from "./generated/StatusArgs";
 import type { StoredAiReview } from "./generated/StoredAiReview";
+import type { SymbolSearchArgs } from "./generated/SymbolSearchArgs";
+import type { SymbolSearchResult } from "./generated/SymbolSearchResult";
 import type { TargetArgs } from "./generated/TargetArgs";
 import type { TaskArgs } from "./generated/TaskArgs";
 import type { TerminalAckArgs } from "./generated/TerminalAckArgs";
@@ -94,6 +96,7 @@ export type Commands = {
   save_file: [SaveFileArgs, null];
   list_project_dir: [ProjectDirArgs, ProjectEntry[]];
   read_project_file: [ProjectFileArgs, ProjectFile];
+  search_symbol: [SymbolSearchArgs, SymbolSearchResult];
   cancel: [TaskArgs, boolean];
   read_image: [ImageArgs, string | null];
   terminal_open: [TerminalOpenArgs, TerminalSession];

@@ -148,3 +148,52 @@ fn read_project_file_rejects_symlink_escaping_repo() {
         .unwrap_err();
     assert_eq!(json!(err)["code"], "invalidArgs");
 }
+
+#[test]
+fn search_symbol_ranks_declarations_first_skips_origin_and_ignored() {
+    let repo = TempRepo::with_commit();
+    repo.write(".gitignore", "ignored.java\n");
+    repo.write(
+        "src/Service.java",
+        "public class Service {\n    public String getLatestObservation(long id)\n    {\n        return \"ok\";\n    }\n}\n",
+    );
+    repo.write(
+        "src/Controller.java",
+        "class Controller {\n    void run() {\n        service.getLatestObservation(1);\n    }\n}\n",
+    );
+    repo.write("ignored.java", "service.getLatestObservation(2);\n");
+    fs::write(repo.path().join("bin.dat"), b"\0getLatestObservation\0").unwrap();
+
+    let (_data, core) = core();
+    let info = call(&core, "open_repo", json!({ "path": repo.path() }));
+    let path = info["path"].as_str().unwrap();
+
+    let from_call = call(
+        &core,
+        "search_symbol",
+        json!({
+            "path": path,
+            "symbol": "getLatestObservation",
+            "currentFile": "src/Controller.java",
+            "currentLine": 3
+        }),
+    );
+    let matches = from_call["matches"].as_array().unwrap();
+    assert_eq!(matches.len(), 1);
+    assert_eq!(matches[0]["file"], "src/Service.java");
+    assert_eq!(matches[0]["line"], 2);
+    assert_eq!(matches[0]["isDeclaration"], true);
+
+    let all = call(
+        &core,
+        "search_symbol",
+        json!({
+            "path": path,
+            "symbol": "getLatestObservation"
+        }),
+    );
+    let all_matches = all["matches"].as_array().unwrap();
+    assert_eq!(all_matches.len(), 2);
+    assert_eq!(all_matches[0]["file"], "src/Service.java");
+    assert_eq!(all_matches[1]["file"], "src/Controller.java");
+}

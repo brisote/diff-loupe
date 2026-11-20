@@ -34,6 +34,8 @@ export type { SaveFileArgs } from "./generated/SaveFileArgs";
 export type { Settings } from "./generated/Settings";
 export type { StoredAiChatMessage } from "./generated/StoredAiChatMessage";
 export type { StoredAiReview } from "./generated/StoredAiReview";
+export type { SymbolMatch } from "./generated/SymbolMatch";
+export type { SymbolSearchResult } from "./generated/SymbolSearchResult";
 export type { ToolTab } from "./generated/ToolTab";
 export type { UpdateCheck } from "./generated/UpdateCheck";
 export type { UpdateReady } from "./generated/UpdateReady";
