@@ -1,7 +1,7 @@
 import type { Extension, Text } from "@codemirror/state";
 import { Decoration, EditorView } from "@codemirror/view";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { SymbolMatch } from "../api";
+import { type SymbolMatch, toApiError } from "../api";
 import { fileIcon } from "../changes/fileIcons";
 import { CodePane, type Decorate } from "../diff/CodePane";
 import { DiffSearchBar } from "../diff/DiffSearchBar";
@@ -255,8 +255,8 @@ export function FileViewer({ extraExtensions }: { extraExtensions?: Extension[] 
         .catch((err) => {
           if (req !== searchSeq.current) return;
           setUsages(null);
-          const message = err instanceof Error ? err.message : "Could not search symbol usages.";
-          setNavNotice(message);
+          const apiError = toApiError(err);
+          setNavNotice(apiError.message || "Could not search symbol usages.");
         });
     },
     [backend, repoPath, selected, mode, jumpToMatch],

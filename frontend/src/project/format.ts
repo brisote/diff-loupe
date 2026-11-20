@@ -1,4 +1,4 @@
-import { parseAllDocuments, stringify } from "yaml";
+import { parseAllDocuments } from "yaml";
 import { fileExtension } from "../lib/fileTypes";
 
 export type FormatResult = { ok: true; text: string } | { ok: false; error: string };
@@ -38,13 +38,14 @@ export function formatStructuredFile(path: string, text: string): FormatResult {
       }
       if (docs.length === 0) return { ok: true, text: "" };
       const formatted = docs
-        .map((doc) => {
-          const value: unknown = doc.toJS();
-          if (value === null || value === undefined) return "";
-          return stringify(value, { indent: 2 }).trimEnd();
+        .map((doc, index) => {
+          const part = doc.toString({ indent: 2, collectionStyle: "block" }).trimEnd();
+          if (index > 0 && !part.startsWith("---")) {
+            return `---\n${part}`;
+          }
+          return part;
         })
-        .filter((part, index) => part.length > 0 || docs.length === 1 || index === 0)
-        .join("\n---\n");
+        .join("\n");
       return { ok: true, text: formatted ? `${formatted}\n` : "" };
     } catch (error) {
       return {

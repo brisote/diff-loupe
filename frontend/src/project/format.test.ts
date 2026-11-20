@@ -37,6 +37,19 @@ describe("structured file formatting", () => {
     });
   });
 
+  it("preserves YAML comments and explicit null documents", () => {
+    const result = formatStructuredFile(
+      "config.yaml",
+      "# top comment\nserver: {port: 8080}\n---\nnull\n",
+    );
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.text).toContain("# top comment");
+      expect(result.text).toContain("port: 8080");
+      expect(result.text).toContain("null");
+    }
+  });
+
   it("returns an error for invalid YAML", () => {
     const result = formatStructuredFile("broken.yml", "a: [1, 2\n  b: :");
     expect(result.ok).toBe(false);

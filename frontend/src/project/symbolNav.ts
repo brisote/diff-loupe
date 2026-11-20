@@ -72,32 +72,40 @@ export function symbolNavigationExtension(
     };
   };
 
+  let lastRange: { from: number; to: number } | null = null;
+
+  const setRange = (view: EditorView, next: { from: number; to: number } | null) => {
+    if (
+      lastRange === next ||
+      (lastRange !== null &&
+        next !== null &&
+        lastRange.from === next.from &&
+        lastRange.to === next.to)
+    ) {
+      return;
+    }
+    lastRange = next;
+    view.dispatch({ effects: setHoverRange.of(next) });
+  };
+
   return [
     hoverField,
     EditorView.domEventHandlers({
       mousemove(event, view) {
         if (!hasModifier(platform, event)) {
-          if (view.state.field(hoverField).size > 0) {
-            view.dispatch({ effects: setHoverRange.of(null) });
-          }
+          setRange(view, null);
           return false;
         }
         const hit = resolveAtPoint(view, event.clientX, event.clientY);
-        view.dispatch({
-          effects: setHoverRange.of(hit ? { from: hit.from, to: hit.to } : null),
-        });
+        setRange(view, hit ? { from: hit.from, to: hit.to } : null);
         return false;
       },
       mouseleave(_event, view) {
-        if (view.state.field(hoverField).size > 0) {
-          view.dispatch({ effects: setHoverRange.of(null) });
-        }
+        setRange(view, null);
         return false;
       },
       keyup(_event, view) {
-        if (view.state.field(hoverField).size > 0) {
-          view.dispatch({ effects: setHoverRange.of(null) });
-        }
+        setRange(view, null);
         return false;
       },
       mousedown(event, view) {

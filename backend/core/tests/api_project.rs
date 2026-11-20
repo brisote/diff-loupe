@@ -173,6 +173,82 @@ fn read_project_file_rejects_symlink_escaping_repo() {
         )
         .unwrap_err();
     assert_eq!(json!(git_link_err)["code"], "gitRefused");
+
+    std::os::unix::fs::symlink(repo.path().join(".git"), repo.path().join("git-dir-link")).unwrap();
+    let entries = call(
+        &core,
+        "list_project_dir",
+        json!({ "path": path, "dir": "" }),
+    );
+    let git_dir_entry = entries
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|entry| entry["name"] == "git-dir-link")
+        .unwrap();
+    assert_eq!(git_dir_entry["isDir"], false);
+}
+
+#[test]
+fn type_swap_queries_return_not_found() {
+    let repo = TempRepo::with_commit();
+    repo.write("src/main.rs", "fn main() {}\n");
+
+    let (_data, core) = core();
+    let info = call(&core, "open_repo", json!({ "path": repo.path() }));
+    let path = info["path"].as_str().unwrap();
+
+    let dir_err = core
+        .dispatch(
+            "list_project_dir",
+            json!({ "path": path, "dir": "src/main.rs" }),
+        )
+        .unwrap_err();
+    assert_eq!(json!(dir_err)["code"], "notFound");
+
+    let file_err = core
+        .dispatch("read_project_file", json!({ "path": path, "file": "src" }))
+        .unwrap_err();
+    assert_eq!(json!(file_err)["code"], "notFound");
+}
+
+#[test]
+fn search_symbol_deduplicates_unmerged_conflict_paths() {
+    let repo = TempRepo::with_commit();
+    repo.write("conflict.txt", "fn uniqueConflictSym() {}\n");
+    repo.git(&["add", "conflict.txt"]);
+    repo.git(&["commit", "-m", "base"]);
+    repo.git(&["checkout", "-b", "side"]);
+    repo.write("conflict.txt", "fn uniqueConflictSym() { 1 }\n");
+    repo.git(&["commit", "-am", "side"]);
+    repo.git(&["checkout", "main"]);
+    repo.write("conflict.txt", "fn uniqueConflictSym() { 2 }\n");
+    repo.git(&["commit", "-am", "main"]);
+    let _ = std::process::Command::new("git")
+        .current_dir(repo.path())
+        .args(["merge", "side"])
+        .output()
+        .unwrap();
+
+    let (_data, core) = core();
+    let info = call(&core, "open_repo", json!({ "path": repo.path() }));
+    let path = info["path"].as_str().unwrap();
+
+    let res = call(
+        &core,
+        "search_symbol",
+        json!({ "path": path, "symbol": "uniqueConflictSym" }),
+    );
+    let matches = res["matches"].as_array().unwrap();
+    let mut keys = std::collections::HashSet::new();
+    for m in matches {
+        let key = format!("{}:{}", m["file"], m["line"]);
+        assert!(
+            keys.insert(key),
+            "duplicate match returned for unmerged file"
+        );
+    }
+    assert!(!matches.is_empty());
 }
 
 #[test]

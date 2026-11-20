@@ -597,4 +597,73 @@ describe("actions", () => {
     expect(store.getState().activeTab).toBeNull();
     expect(store.getState().repo?.lastSelection).toBeNull();
   });
+
+  it("refreshes project tree without stale collapsed dirs, preserves target line on repoChanged, and collapses failed subdirs", async () => {
+    let listCalls = 0;
+    let srcExists = true;
+    const core = fakeCore({
+      current_repo: () => repoInfo("acme-billing"),
+      list_project_dir: (args) => {
+        listCalls += 1;
+        const { dir } = args as { dir: string };
+        if (dir === "") {
+          return [
+            { name: "src", path: "src", isDir: true, ignored: false },
+            { name: "docs", path: "docs", isDir: true, ignored: false },
+          ];
+        }
+        if (dir === "src") {
+          if (!srcExists)
+            throw { code: "notFound", message: "'src' is not a directory", path: null };
+          return [{ name: "app.ts", path: "src/app.ts", isDir: false, ignored: false }];
+        }
+        if (dir === "docs") {
+          return [{ name: "guide.md", path: "docs/guide.md", isDir: false, ignored: false }];
+        }
+        throw { code: "notFound", message: "missing dir", path: null };
+      },
+      read_project_file: (args) => ({
+        path: (args as { file: string }).file,
+        content: "text",
+        text: "const x = 1;\n",
+        crlf: false,
+        encoding: "UTF-8",
+        size: 13,
+      }),
+    });
+
+    const store = createAppStore(new Backend(core));
+    await store.getState().start();
+
+    store.getState().setWorkspaceMode("files");
+    await vi.waitFor(() => expect(store.getState().projectDirs[""]).toHaveLength(2));
+
+    await store.getState().toggleProjectDir("src");
+    await store.getState().toggleProjectDir("docs");
+    expect(store.getState().projectDirs.docs).toHaveLength(1);
+    await store.getState().toggleProjectDir("docs");
+    expect(store.getState().projectExpanded.docs).toBeUndefined();
+
+    await store.getState().selectProjectFile("src/app.ts", 1);
+    const initialTarget = store.getState().projectTargetLine;
+    expect(initialTarget?.line).toBe(1);
+
+    core.emit({ type: "repoChanged", path: "/Users/ada/Workspace/acme-billing" });
+    await vi.waitFor(() => expect(store.getState().projectDirs.docs).toBeUndefined());
+    expect(store.getState().projectTargetLine).toBe(initialTarget);
+
+    srcExists = false;
+    await store.getState().refreshProjectTree();
+    expect(store.getState().projectDirs.src).toBeUndefined();
+    expect(store.getState().projectExpanded.src).toBeUndefined();
+
+    await store.getState().toggleProjectDir("broken");
+    expect(store.getState().projectExpanded.broken).toBeUndefined();
+    expect(store.getState().projectTreeError?.code).toBe("notFound");
+
+    store.getState().setWorkspaceMode("manual");
+    const callsBeforeReturn = listCalls;
+    store.getState().setWorkspaceMode("files");
+    await vi.waitFor(() => expect(listCalls).toBeGreaterThan(callsBeforeReturn));
+  });
 });

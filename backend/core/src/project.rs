@@ -20,7 +20,7 @@ pub fn list_dir(env: &ShellEnv, root: &Path, dir: &str) -> Result<Vec<ProjectEnt
     let rel = validate_relative(dir, true)?;
     let target = resolve_inside(root, &rel)?;
     if !target.is_dir() {
-        return Err(Error::InvalidArgs(format!("{dir} is not a directory")));
+        return Err(Error::NotFound(format!("'{dir}' is not a directory")));
     }
     let prefix = rel_to_slash(&rel);
     let mut entries = Vec::new();
@@ -35,7 +35,9 @@ pub fn list_dir(env: &ShellEnv, root: &Path, dir: &str) -> Result<Vec<ProjectEnt
         let is_dir = if file_type.is_symlink() {
             platform::canonicalize(&item_path)
                 .ok()
-                .filter(|real| real.starts_with(root))
+                .filter(|real| {
+                    real.starts_with(root) && !real.strip_prefix(root).is_ok_and(has_git_component)
+                })
                 .is_some_and(|real| real.is_dir())
         } else {
             file_type.is_dir()
@@ -74,7 +76,7 @@ pub fn read_file(root: &Path, file: &str) -> Result<ProjectFile> {
     let target = resolve_inside(root, &rel)?;
     let meta = std::fs::metadata(&target)?;
     if !meta.is_file() {
-        return Err(Error::InvalidArgs(format!("{file} is not a file")));
+        return Err(Error::NotFound(format!("'{file}' is not a file")));
     }
     let size = meta.len();
     let path = rel_to_slash(&rel);
@@ -176,11 +178,23 @@ pub fn search_symbol(
         if !meta.is_file() || meta.len() > SEARCH_FILE_LIMIT || filediff::is_image(&rel) {
             continue;
         }
-        scanned_bytes = scanned_bytes.saturating_add(meta.len());
-        let Ok(bytes) = std::fs::read(&target) else {
+        let Ok(handle) = std::fs::File::open(&target) else {
             continue;
         };
+        let mut bytes = Vec::new();
+        let mut limited = handle.take(SEARCH_FILE_LIMIT + 1);
+        if limited.by_ref().take(8192).read_to_end(&mut bytes).is_err() {
+            continue;
+        }
         if filediff::is_binary(&bytes) {
+            scanned_bytes = scanned_bytes.saturating_add(bytes.len() as u64);
+            continue;
+        }
+        if limited.read_to_end(&mut bytes).is_err() {
+            continue;
+        }
+        scanned_bytes = scanned_bytes.saturating_add(bytes.len() as u64);
+        if bytes.len() as u64 > SEARCH_FILE_LIMIT {
             continue;
         }
         let Ok(text) = std::str::from_utf8(&bytes) else {
@@ -248,12 +262,18 @@ fn list_searchable_files(env: &ShellEnv, root: &Path) -> Result<Vec<String>> {
             stderr
         }));
     }
-    Ok(output
-        .stdout
-        .split(|&b| b == 0)
-        .filter(|slice| !slice.is_empty())
-        .map(|slice| String::from_utf8_lossy(slice).replace('\\', "/"))
-        .collect())
+    let mut seen = HashSet::new();
+    let mut files = Vec::new();
+    for slice in output.stdout.split(|&b| b == 0) {
+        if slice.is_empty() {
+            continue;
+        }
+        let path = String::from_utf8_lossy(slice).replace('\\', "/");
+        if seen.insert(path.clone()) {
+            files.push(path);
+        }
+    }
+    Ok(files)
 }
 
 fn is_ident_byte(b: u8) -> bool {
@@ -308,10 +328,15 @@ fn is_declaration_line(line: &str, symbol: &str) -> bool {
         }
     }
     let modifiers = ["public ", "private ", "protected "];
-    if modifiers.iter().any(|m| trimmed.starts_with(m)) {
+    if modifiers.iter().any(|m| trimmed.starts_with(m)) && !trimmed.ends_with(';') {
         let call = format!("{symbol}(");
-        if trimmed.contains(&call) && !trimmed.ends_with(';') {
-            return true;
+        let mut start = 0;
+        while let Some(offset) = trimmed[start..].find(&call) {
+            let pos = start + offset;
+            if pos == 0 || !is_ident_byte(trimmed.as_bytes()[pos - 1]) {
+                return true;
+            }
+            start = pos + 1;
         }
     }
     false
@@ -507,5 +532,7 @@ mod tests {
             "let x = svc.getLatestObservation(id);",
             "getLatestObservation"
         ));
+        assert!(!is_declaration_line("public void fooBar() {", "Bar"));
+        assert!(is_declaration_line("public void Bar() {", "Bar"));
     }
 }

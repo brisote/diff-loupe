@@ -378,7 +378,11 @@ export type AppState = {
   toggleProjectDir: (dir: string) => Promise<void>;
   expandProjectParents: (file: string) => Promise<void>;
   collapseAllProjectDirs: () => void;
-  selectProjectFile: (file: string | null, line?: number) => Promise<void>;
+  selectProjectFile: (
+    file: string | null,
+    line?: number,
+    preserveTarget?: boolean,
+  ) => Promise<void>;
   refreshProjectTree: () => Promise<void>;
   consentAccepted: boolean;
   account: CloudAccount | null;
@@ -695,9 +699,7 @@ export function createAppStore(backend: Backend) {
               void get().refreshProjectTree();
               const openFile = get().projectSelectedFile;
               if (openFile) {
-                const target = get().projectTargetLine;
-                const keepLine = target?.file === openFile ? target.line : undefined;
-                void get().selectProjectFile(openFile, keepLine);
+                void get().selectProjectFile(openFile, undefined, true);
               }
             }
             void get().loadAiState();
@@ -1794,8 +1796,16 @@ export function createAppStore(backend: Backend) {
             .catch(() => undefined);
           if (mode === "ai") {
             void get().loadAiState();
-          } else if (mode === "files" && !get().projectDirs[""]) {
-            void get().loadProjectDir("");
+          } else if (mode === "files") {
+            if (get().projectDirs[""]) {
+              void get().refreshProjectTree();
+              const openFile = get().projectSelectedFile;
+              if (openFile) {
+                void get().selectProjectFile(openFile, undefined, true);
+              }
+            } else {
+              void get().loadProjectDir("");
+            }
           }
         }
       },
@@ -1817,7 +1827,7 @@ export function createAppStore(backend: Backend) {
           }
           set((state) => ({
             projectDirs: { ...state.projectDirs, [dir]: entries },
-            projectTreeError: dir === "" ? null : state.projectTreeError,
+            projectTreeError: null,
           }));
         } catch (error) {
           if (
@@ -1827,7 +1837,16 @@ export function createAppStore(backend: Backend) {
           ) {
             return;
           }
-          if (dir === "") set({ projectTreeError: toApiError(error) });
+          const apiError = toApiError(error);
+          if (dir === "") {
+            set({ projectTreeError: apiError });
+          } else {
+            set((state) => {
+              const nextExpanded = { ...state.projectExpanded };
+              delete nextExpanded[dir];
+              return { projectExpanded: nextExpanded, projectTreeError: apiError };
+            });
+          }
         }
       },
 
@@ -1872,7 +1891,7 @@ export function createAppStore(backend: Backend) {
 
       collapseAllProjectDirs: () => set({ projectExpanded: {} }),
 
-      selectProjectFile: async (file, line) => {
+      selectProjectFile: async (file, line, preserveTarget) => {
         const path = get().repo?.path;
         if (!path || !file) {
           projectFileRequest += 1;
@@ -1885,11 +1904,15 @@ export function createAppStore(backend: Backend) {
           return;
         }
         const targetLine = line !== undefined ? { file, line, seq: ++projectTargetSeq } : null;
-        set({
+        set((state) => ({
           projectSelectedFile: file,
           projectFileError: null,
-          ...(targetLine ? { projectTargetLine: targetLine } : { projectTargetLine: null }),
-        });
+          projectTargetLine: preserveTarget
+            ? state.projectTargetLine?.file === file
+              ? state.projectTargetLine
+              : null
+            : targetLine,
+        }));
         const request = ++projectFileRequest;
         try {
           const loaded = await backend.call("read_project_file", { path, file });
@@ -1909,6 +1932,14 @@ export function createAppStore(backend: Backend) {
           "",
           ...Object.keys(get().projectExpanded).filter((dir) => get().projectExpanded[dir]),
         ];
+        const activeDirSet = new Set(dirs);
+        set((state) => {
+          const nextDirs: Record<string, ProjectEntry[]> = {};
+          for (const [key, value] of Object.entries(state.projectDirs)) {
+            if (activeDirSet.has(key)) nextDirs[key] = value;
+          }
+          return { projectDirs: nextDirs };
+        });
         await Promise.all(
           dirs.map(async (dir) => {
             const request = (projectDirRequests.get(dir) ?? 0) + 1;
@@ -1937,7 +1968,11 @@ export function createAppStore(backend: Backend) {
               const apiError = toApiError(error);
               if (dir === "") {
                 set({ projectTreeError: apiError });
-              } else if (apiError.code === "notFound") {
+              } else if (
+                apiError.code === "notFound" ||
+                apiError.code === "invalidArgs" ||
+                apiError.code === "gitRefused"
+              ) {
                 set((state) => {
                   const nextDirs = { ...state.projectDirs };
                   const nextExpanded = { ...state.projectExpanded };
