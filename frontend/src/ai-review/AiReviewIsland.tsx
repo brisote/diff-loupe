@@ -1,28 +1,48 @@
 import type { RefObject } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { StoredAiReview } from "../api/generated/StoredAiReview";
 import { Dialog } from "../lib/dialog";
 import { Icon } from "../lib/icon";
 import { Popup, useBelow } from "../lib/popup";
 import { TargetPicker } from "../main-window/TargetPicker";
 import { useApp } from "../state/context";
-import { isFollowupRunId } from "../state/store";
+import { isFollowupRunId, PENDING_REVIEW_ID } from "../state/store";
 import { AiChatComposer } from "./AiChatComposer";
 import { AiChatThread } from "./AiChatThread";
 import { EffortPicker, ModelPicker } from "./ModelPicker";
 import { formatBalanceUsd, formatReviewCostUsd } from "./money";
 import { ReportViewer } from "./ReportViewer";
 
+type DisplayReviewItem = {
+  id: number;
+  reviewNumber: number;
+  branch: string;
+  targetBranch: string;
+  costUsd: string | null;
+  createdAt: number;
+  isPending?: boolean;
+};
+
 type ReviewPickerProps = {
   anchor: RefObject<HTMLElement | null>;
-  reviews: StoredAiReview[];
+  reviews: DisplayReviewItem[];
   activeId: number | null;
+  runningReviewId: number | null;
+  canStartNew: boolean;
   onSelect: (id: number) => void;
   onNew: () => void;
   onClose: () => void;
 };
 
-function ReviewPicker({ anchor, reviews, activeId, onSelect, onNew, onClose }: ReviewPickerProps) {
+function ReviewPicker({
+  anchor,
+  reviews,
+  activeId,
+  runningReviewId,
+  canStartNew,
+  onSelect,
+  onNew,
+  onClose,
+}: ReviewPickerProps) {
   const style = useBelow(anchor, 320);
 
   return (
@@ -49,6 +69,7 @@ function ReviewPicker({ anchor, reviews, activeId, onSelect, onNew, onClose }: R
         <button
           className="dl-btn dl-btn-sm"
           type="button"
+          disabled={!canStartNew}
           onClick={() => {
             onClose();
             onNew();
@@ -59,14 +80,17 @@ function ReviewPicker({ anchor, reviews, activeId, onSelect, onNew, onClose }: R
         </button>
       </div>
       <div className="dl-ai-history-list">
-        {reviews.map((rev, index) => {
+        {reviews.map((rev) => {
           const isSelected = rev.id === activeId;
-          const reviewNumber = reviews.length - index;
+          const isRunning =
+            rev.isPending || (runningReviewId !== null && rev.id === runningReviewId);
           const cost = rev.costUsd ? formatReviewCostUsd(rev.costUsd) : "$0.00";
-          const dateStr = new Date(rev.createdAt * 1000).toLocaleTimeString([], {
-            hour: "2-digit",
-            minute: "2-digit",
-          });
+          const dateStr = rev.isPending
+            ? "In progress"
+            : new Date(rev.createdAt * 1000).toLocaleTimeString([], {
+                hour: "2-digit",
+                minute: "2-digit",
+              });
 
           return (
             <button
@@ -86,7 +110,14 @@ function ReviewPicker({ anchor, reviews, activeId, onSelect, onNew, onClose }: R
                   width: "100%",
                 }}
               >
-                <span style={{ fontWeight: 600 }}>Review #{reviewNumber}</span>
+                <span
+                  style={{ display: "inline-flex", alignItems: "center", gap: 6, fontWeight: 600 }}
+                >
+                  <span>Review #{rev.reviewNumber}</span>
+                  {isRunning && (
+                    <span className="dl-ai-pulse-dot" aria-hidden="true" title="In progress" />
+                  )}
+                </span>
                 <span style={{ fontSize: 11, color: "var(--text-muted)" }}>{dateStr}</span>
               </div>
               <div
@@ -102,7 +133,7 @@ function ReviewPicker({ anchor, reviews, activeId, onSelect, onNew, onClose }: R
                 <span>
                   {rev.branch} vs {rev.targetBranch}
                 </span>
-                <span>Cost {cost}</span>
+                <span>{rev.isPending ? "Generating…" : `Cost ${cost}`}</span>
               </div>
             </button>
           );
@@ -155,6 +186,7 @@ export function AiReviewIsland() {
   const effortAnchor = useRef<HTMLButtonElement>(null);
   const composerInputRef = useRef<HTMLTextAreaElement>(null);
   const streamRef = useRef<HTMLDivElement>(null);
+  const thinkingRef = useRef<HTMLDivElement>(null);
   const prevReviewIdRef = useRef<number | null | undefined>(undefined);
   const prevMessageCountRef = useRef<number | null>(null);
   const [pickingReview, setPickingReview] = useState(false);
@@ -165,8 +197,29 @@ export function AiReviewIsland() {
 
   const isInitialStreaming = activeRun !== null && !isFollowupRunId(activeRun.runId);
   const isFollowupStreaming = isFollowupRunId(activeRun?.runId) || streamingChat !== null;
+  const runningReviewId = activeRun
+    ? (activeRun.reviewId ?? (isInitialStreaming ? PENDING_REVIEW_ID : activeReviewId))
+    : null;
+  const isViewingPendingReview =
+    isInitialStreaming && (activeReviewId === PENDING_REVIEW_ID || activeReviewId === null);
+  const isViewingFollowupRun =
+    isFollowupStreaming && (runningReviewId === null || activeReviewId === runningReviewId);
+  const isCurrentReviewBusy =
+    isViewingPendingReview || (runningReviewId !== null && activeReviewId === runningReviewId);
+  const activeStreamingChat = isViewingFollowupRun ? streamingChat : null;
   const composerDisabled =
-    isInitialStreaming || (!activeReviewId && chatMessages.length === 0) || isFollowupStreaming;
+    isInitialStreaming ||
+    (!activeReviewId && chatMessages.length === 0) ||
+    activeReviewId === PENDING_REVIEW_ID ||
+    isFollowupStreaming;
+  const thoughtsCount = activeRun?.thoughts?.length ?? 0;
+
+  useEffect(() => {
+    const el = thinkingRef.current;
+    if (el && thoughtsCount > 0) {
+      el.scrollTop = el.scrollHeight;
+    }
+  }, [thoughtsCount]);
   const activeReviewIdRef = useRef(activeReviewId);
   activeReviewIdRef.current = activeReviewId;
   const quotedSelectionRef = useRef(quotedSelection);
@@ -182,7 +235,7 @@ export function AiReviewIsland() {
         setQuotedSelection(null);
       }
       if (stream) {
-        stream.scrollTop = streamingChat !== null ? stream.scrollHeight : 0;
+        stream.scrollTop = activeStreamingChat !== null ? stream.scrollHeight : 0;
       }
       return;
     }
@@ -194,13 +247,13 @@ export function AiReviewIsland() {
     const messageAdded = prevCount !== null && chatMessages.length > prevCount;
     if (messageAdded) {
       stream.scrollTop = stream.scrollHeight;
-    } else if (streamingChat !== null) {
+    } else if (activeStreamingChat !== null) {
       const distanceFromBottom = stream.scrollHeight - stream.scrollTop - stream.clientHeight;
       if (distanceFromBottom < 80) {
         stream.scrollTop = stream.scrollHeight;
       }
     }
-  }, [activeReviewId, chatMessages.length, streamingChat, setQuotedSelection]);
+  }, [activeReviewId, chatMessages.length, activeStreamingChat, setQuotedSelection]);
 
   const handleAskSelection = useCallback(
     (selection: { text: string; heading?: string }) => {
@@ -307,13 +360,35 @@ export function AiReviewIsland() {
       ? versions[currentVersionIndex + 1]
       : undefined;
 
-  const activeIndex = reviews.findIndex((r) => r.id === activeReviewId);
-  const currentReviewLabel =
-    activeIndex >= 0
-      ? `Review #${reviews.length - activeIndex}`
-      : reviews.length > 0
-        ? `Review #${reviews.length}`
-        : "No reviews";
+  const displayReviews: DisplayReviewItem[] = [
+    ...(isInitialStreaming
+      ? [
+          {
+            id: PENDING_REVIEW_ID,
+            reviewNumber: reviews.length + 1,
+            branch: repo.branch ?? "",
+            targetBranch: repo.target ?? "",
+            costUsd: null,
+            createdAt: Math.floor(Date.now() / 1000),
+            isPending: true,
+          },
+        ]
+      : []),
+    ...reviews.map((rev, index) => ({
+      id: rev.id,
+      reviewNumber: reviews.length - index,
+      branch: rev.branch,
+      targetBranch: rev.targetBranch,
+      costUsd: rev.costUsd ?? null,
+      createdAt: rev.createdAt,
+    })),
+  ];
+
+  const activeDisplayReview =
+    displayReviews.find((r) => r.id === activeReviewId) ?? displayReviews[0];
+  const currentReviewLabel = activeDisplayReview
+    ? `Review #${activeDisplayReview.reviewNumber}`
+    : "No reviews";
 
   const renderVersionBar = () => {
     if (versions.length <= 1) return null;
@@ -400,7 +475,7 @@ export function AiReviewIsland() {
               </button>
             )}
 
-            {isInitialStreaming ? (
+            {isViewingPendingReview ? (
               <>
                 <button className="dl-btn dl-btn-sm" type="button" disabled>
                   <Icon name="general-refresh" />
@@ -416,7 +491,13 @@ export function AiReviewIsland() {
                 <button
                   className="dl-btn dl-btn-sm"
                   type="button"
-                  disabled={!hasBalance || !hasTarget || !hasModels || isFollowupStreaming}
+                  disabled={
+                    !hasBalance ||
+                    !hasTarget ||
+                    !hasModels ||
+                    isInitialStreaming ||
+                    isFollowupStreaming
+                  }
                   onClick={() => setConfirmRerun(true)}
                 >
                   <Icon name="general-refresh" />
@@ -425,7 +506,13 @@ export function AiReviewIsland() {
                 <button
                   className="dl-btn dl-btn-sm"
                   type="button"
-                  disabled={!hasBalance || !hasTarget || !hasModels || isFollowupStreaming}
+                  disabled={
+                    !hasBalance ||
+                    !hasTarget ||
+                    !hasModels ||
+                    isInitialStreaming ||
+                    isFollowupStreaming
+                  }
                   onClick={() => void startAiReview()}
                 >
                   <Icon name="general-add" />
@@ -459,14 +546,13 @@ export function AiReviewIsland() {
           </header>
 
           <div className="dl-ai-subheader">
-            {reviews.length > 0 && (
+            {displayReviews.length > 0 && (
               <>
                 <button
                   ref={reviewAnchor}
                   className={`dl-combo ${pickingReview ? "is-focused" : ""}`}
                   type="button"
                   title="Review history"
-                  disabled={isFollowupStreaming}
                   onClick={() => {
                     setPickingReview(!pickingReview);
                     setPickingModel(false);
@@ -477,13 +563,22 @@ export function AiReviewIsland() {
                   <Icon name="general-history" />
                   <span className="dl-combo-label">review:</span>
                   <span className="dl-combo-text">{currentReviewLabel}</span>
+                  {isCurrentReviewBusy && (
+                    <span className="dl-ai-pulse-dot" aria-hidden="true" title="In progress" />
+                  )}
                   <Icon name="general-chevronDown" />
                 </button>
                 {pickingReview && (
                   <ReviewPicker
                     anchor={reviewAnchor}
-                    reviews={reviews}
-                    activeId={activeReviewId}
+                    reviews={displayReviews}
+                    activeId={activeDisplayReview?.id ?? activeReviewId}
+                    runningReviewId={runningReviewId}
+                    canStartNew={
+                      Boolean(consentAccepted && account && hasBalance && hasTarget && hasModels) &&
+                      !isInitialStreaming &&
+                      !isFollowupStreaming
+                    }
                     onSelect={(id) => void switchReview(id)}
                     onNew={() => void startAiReview()}
                     onClose={() => setPickingReview(false)}
@@ -753,7 +848,7 @@ export function AiReviewIsland() {
               style={{ padding: 0 }}
             >
               <div className="dl-ai-session-stream" ref={streamRef}>
-                {isInitialStreaming && activeRun && (
+                {isViewingPendingReview && activeRun && (
                   <div
                     style={{
                       maxWidth: 920,
@@ -778,13 +873,9 @@ export function AiReviewIsland() {
                     >
                       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                         <span
-                          className="dl-caret"
-                          style={{
-                            width: 10,
-                            height: 10,
-                            borderRadius: "50%",
-                            background: "var(--accent)",
-                          }}
+                          className="dl-ai-pulse-dot"
+                          style={{ width: 10, height: 10 }}
+                          aria-hidden="true"
                         />
                         <span style={{ fontWeight: 600, fontSize: 14 }}>Review in progress</span>
                       </div>
@@ -805,6 +896,7 @@ export function AiReviewIsland() {
                         const thoughts = activeRun.thoughts;
                         return (
                           <div
+                            ref={thinkingRef}
                             style={{
                               marginTop: 4,
                               padding: "10px 12px",
@@ -845,15 +937,19 @@ export function AiReviewIsland() {
                                     lineHeight: 1.4,
                                   }}
                                 >
-                                  <span
-                                    style={{
-                                      color: isLatest ? "var(--accent)" : "var(--success, #59a869)",
-                                      fontWeight: 700,
-                                      flexShrink: 0,
-                                    }}
-                                  >
-                                    {isLatest ? "●" : "✓"}
-                                  </span>
+                                  {isLatest ? (
+                                    <span className="dl-ai-pulse-dot" aria-hidden="true" />
+                                  ) : (
+                                    <span
+                                      style={{
+                                        color: "var(--success, #59a869)",
+                                        fontWeight: 700,
+                                        flexShrink: 0,
+                                      }}
+                                    >
+                                      ✓
+                                    </span>
+                                  )}
                                   <span>{thought}</span>
                                 </div>
                               );
@@ -864,26 +960,28 @@ export function AiReviewIsland() {
                   </div>
                 )}
 
-                {(displayedMarkdown || isInitialStreaming) && (
+                {(displayedMarkdown || isViewingPendingReview) && (
                   <>
                     {renderVersionBar()}
                     <ReportViewer
                       markdown={displayedMarkdown ?? ""}
                       onAskSelection={handleAskSelection}
-                      isStreamingInitial={isInitialStreaming}
+                      isStreamingInitial={isViewingPendingReview}
                       reviewIdentity={activeReviewId}
                     />
                   </>
                 )}
 
-                <AiChatThread
-                  chatMessages={chatMessages}
-                  streamingChat={streamingChat}
-                  isFollowupStreaming={isFollowupStreaming}
-                />
+                {!isViewingPendingReview && (
+                  <AiChatThread
+                    chatMessages={chatMessages}
+                    streamingChat={activeStreamingChat}
+                    isFollowupStreaming={isViewingFollowupRun}
+                  />
+                )}
               </div>
 
-              {(displayedMarkdown || isInitialStreaming) && (
+              {(displayedMarkdown || isViewingPendingReview) && (
                 <AiChatComposer
                   reviewIdentity={activeReviewId}
                   quotedSelection={quotedSelection}
@@ -892,7 +990,7 @@ export function AiReviewIsland() {
                   onClearThread={handleClearThread}
                   onCancelFollowup={handleCancelFollowup}
                   hasMessages={chatMessages.length > 0}
-                  isFollowupStreaming={isFollowupStreaming}
+                  isFollowupStreaming={isViewingFollowupRun}
                   disabled={composerDisabled}
                   inputRef={composerInputRef}
                 />

@@ -238,6 +238,8 @@ export const diffMeasure = "select-to-diff";
 export const tabsKey = (path: string) => `repo.tabs:${path}`;
 export const modeKey = (path: string) => `repo.mode:${path}`;
 
+export const PENDING_REVIEW_ID = -1;
+
 export function isFollowupRunId(runId: string | undefined): boolean {
   return runId === "ai_followup" || runId?.startsWith("ai_followup:") === true;
 }
@@ -383,9 +385,11 @@ export type AppState = {
   authPending: { userCode: string; verificationUrl: string } | null;
   activeRun: {
     runId: string;
+    reviewId?: number | null;
     stage: string;
     message: string;
     thoughts?: string[];
+    streamingReport?: string;
     cancellable: boolean;
   } | null;
   reportMarkdown: string | null;
@@ -709,22 +713,63 @@ export function createAppStore(backend: Backend) {
                   thought && !currentThoughts.includes(thought)
                     ? [...currentThoughts, thought]
                     : currentThoughts;
+                const runReviewId =
+                  s.activeRun?.reviewId ??
+                  (isFollowupRunId(event.runId) ? s.activeReviewId : PENDING_REVIEW_ID);
                 return {
                   activeRun: {
                     runId: event.runId,
+                    reviewId: runReviewId,
                     stage: payload.stage,
                     message: payload.message,
                     thoughts: newThoughts,
+                    streamingReport: s.activeRun?.streamingReport ?? "",
                     cancellable: true,
                   },
                 };
               });
             } else if (payload.kind === "reportDelta") {
-              set((s) => ({
-                reportMarkdown: (s.reportMarkdown ?? "") + payload.delta,
-              }));
+              set((s) => {
+                const isInitial = !isFollowupRunId(event.runId);
+                const runReviewId =
+                  s.activeRun?.reviewId ?? (isInitial ? PENDING_REVIEW_ID : s.activeReviewId);
+                const nextStreamingReport = (s.activeRun?.streamingReport ?? "") + payload.delta;
+                const writingStep = "Generating structured review report…";
+                const prevThoughts = s.activeRun?.thoughts ?? [];
+                const nextThoughts =
+                  isInitial && !prevThoughts.includes(writingStep)
+                    ? [...prevThoughts, writingStep]
+                    : prevThoughts;
+                const viewingThisRun =
+                  s.activeReviewId === runReviewId || s.activeReviewId === null;
+                return {
+                  activeRun: s.activeRun
+                    ? {
+                        ...s.activeRun,
+                        reviewId: runReviewId,
+                        stage: isInitial ? "writing" : s.activeRun.stage,
+                        message: isInitial ? writingStep : s.activeRun.message,
+                        thoughts: nextThoughts,
+                        streamingReport: nextStreamingReport,
+                      }
+                    : s.activeRun,
+                  ...(viewingThisRun
+                    ? { reportMarkdown: (s.reportMarkdown ?? "") + payload.delta }
+                    : {}),
+                };
+              });
             } else if (payload.kind === "reportUpdate") {
-              set({ reportMarkdown: payload.reportMarkdown });
+              set((s) => {
+                const runReviewId = s.activeRun?.reviewId ?? s.activeReviewId;
+                const viewingThisRun =
+                  s.activeReviewId === runReviewId || s.activeReviewId === null;
+                return {
+                  activeRun: s.activeRun
+                    ? { ...s.activeRun, streamingReport: payload.reportMarkdown }
+                    : s.activeRun,
+                  ...(viewingThisRun ? { reportMarkdown: payload.reportMarkdown } : {}),
+                };
+              });
             } else if (payload.kind === "chatDelta") {
               set((s) => ({
                 streamingChat: (s.streamingChat ?? "") + payload.delta,
@@ -735,20 +780,29 @@ export function createAppStore(backend: Backend) {
                 reviewCostUsd: payload.costUsd,
               }));
             } else if (payload.kind === "done") {
+              const prevActiveId = get().activeReviewId;
+              const wasViewingPending = prevActiveId === PENDING_REVIEW_ID || prevActiveId === null;
               set((s) => ({
                 activeRun: null,
                 streamingChat: null,
-                reportMarkdown: payload.reportMarkdown || s.reportMarkdown,
-                reviewCostUsd: payload.costUsd || s.reviewCostUsd,
+                ...(wasViewingPending || s.activeRun?.reviewId === prevActiveId
+                  ? {
+                      reportMarkdown: payload.reportMarkdown || s.reportMarkdown,
+                      reviewCostUsd: payload.costUsd || s.reviewCostUsd,
+                    }
+                  : {}),
                 account: s.account ? { ...s.account, balanceUsd: payload.balanceUsd } : s.account,
               }));
-              void get().loadAiState();
+              void get().loadAiState(wasViewingPending ? undefined : (prevActiveId ?? undefined));
             } else if (payload.kind === "error") {
-              set({
+              set((s) => ({
                 activeRun: null,
                 streamingChat: null,
                 inlineError: payload.message,
-              });
+                ...(s.activeReviewId === PENDING_REVIEW_ID
+                  ? { activeReviewId: s.reviews[0]?.id ?? null }
+                  : {}),
+              }));
             }
           }
         });
@@ -1917,7 +1971,14 @@ export function createAppStore(backend: Backend) {
         const path = repo.path;
         const branch = repo.branch ?? undefined;
         const targetBranch = repo.target ?? undefined;
-        const reviewId = targetReviewId ?? get().activeReviewId ?? undefined;
+        const currentActive = get().activeReviewId;
+        const keepingPending =
+          targetReviewId === undefined &&
+          currentActive === PENDING_REVIEW_ID &&
+          get().activeRun?.reviewId === PENDING_REVIEW_ID;
+        const reviewId =
+          targetReviewId ??
+          (currentActive !== null && currentActive > 0 ? currentActive : undefined);
         const request = ++aiStateRequest;
         try {
           const result = await backend.call("ai_get_state", {
@@ -1927,17 +1988,26 @@ export function createAppStore(backend: Backend) {
             reviewId,
           });
           if (request !== aiStateRequest || get().repo?.path !== path) return;
-          set({
-            consentAccepted: result.consentAccepted,
-            account: result.account,
-            reviews: result.reviews ?? [],
-            activeReviewId: result.activeReviewId ?? null,
-            reportMarkdown: result.review?.reportMarkdown ?? null,
-            reviewCostUsd: result.review?.costUsd ?? null,
-            chatMessages: result.chatMessages ?? [],
-            selectedVersionNumber: null,
-            inlineError: null,
-          });
+          if (keepingPending && get().activeReviewId === PENDING_REVIEW_ID) {
+            set({
+              consentAccepted: result.consentAccepted,
+              account: result.account,
+              reviews: result.reviews ?? [],
+              inlineError: null,
+            });
+          } else {
+            set({
+              consentAccepted: result.consentAccepted,
+              account: result.account,
+              reviews: result.reviews ?? [],
+              activeReviewId: result.activeReviewId ?? null,
+              reportMarkdown: result.review?.reportMarkdown ?? null,
+              reviewCostUsd: result.review?.costUsd ?? null,
+              chatMessages: result.chatMessages ?? [],
+              selectedVersionNumber: null,
+              inlineError: null,
+            });
+          }
           if (result.consentAccepted && !get().modelsCatalog) {
             void get().loadAiModels();
           }
@@ -1949,6 +2019,17 @@ export function createAppStore(backend: Backend) {
       },
 
       switchReview: async (reviewId: number) => {
+        if (reviewId === PENDING_REVIEW_ID) {
+          set((s) => ({
+            activeReviewId: PENDING_REVIEW_ID,
+            reportMarkdown: s.activeRun?.streamingReport || null,
+            reviewCostUsd: null,
+            chatMessages: [],
+            selectedVersionNumber: null,
+            quotedSelection: null,
+          }));
+          return;
+        }
         set({ activeReviewId: reviewId, selectedVersionNumber: null, quotedSelection: null });
         await get().loadAiState(reviewId);
       },
@@ -2121,13 +2202,15 @@ export function createAppStore(backend: Backend) {
           reportMarkdown: null,
           reviewCostUsd: null,
           chatMessages: [],
-          activeReviewId: null,
+          activeReviewId: PENDING_REVIEW_ID,
           selectedVersionNumber: null,
           activeRun: {
             runId: "starting",
+            reviewId: PENDING_REVIEW_ID,
             stage: "upload",
             message: "Starting review…",
             thoughts: ["Preparing repository snapshot and diff…"],
+            streamingReport: "",
             cancellable: true,
           },
         });
@@ -2141,7 +2224,13 @@ export function createAppStore(backend: Backend) {
           });
         } catch (err) {
           const apiError = toApiError(err);
-          set({ inlineError: apiError.message, activeRun: null });
+          set((s) => ({
+            inlineError: apiError.message,
+            activeRun: null,
+            ...(s.activeReviewId === PENDING_REVIEW_ID
+              ? { activeReviewId: s.reviews[0]?.id ?? null }
+              : {}),
+          }));
         }
       },
 
@@ -2149,7 +2238,15 @@ export function createAppStore(backend: Backend) {
         const run = get().activeRun;
         if (run) {
           get().cancelTask(run.runId);
-          set({ activeRun: null });
+          set((s) => ({
+            activeRun: null,
+            ...(s.activeReviewId === PENDING_REVIEW_ID
+              ? { activeReviewId: s.reviews[0]?.id ?? null }
+              : {}),
+          }));
+          if (get().activeReviewId) {
+            void get().loadAiState(get().activeReviewId ?? undefined);
+          }
         }
       },
 
@@ -2171,6 +2268,7 @@ export function createAppStore(backend: Backend) {
           streamingChat: "",
           activeRun: {
             runId: "ai_followup",
+            reviewId: expectedReviewId,
             stage: "followup",
             message: "Analyzing follow-up question…",
             thoughts: [],
