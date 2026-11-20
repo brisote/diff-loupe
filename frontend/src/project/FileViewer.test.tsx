@@ -88,4 +88,27 @@ describe("FileViewer", () => {
       expect(screen.getByText(/binary file/)).toBeInTheDocument();
     });
   });
+
+  it("opens oversized Markdown and JSON files in raw view with a notice", async () => {
+    const big = "a".repeat(600 * 1024);
+    const core = fakeCore({
+      current_repo: () => repoInfo("acme-billing", "gs/invoice-export"),
+      read_project_file: () => ({
+        path: "huge.md",
+        content: "text",
+        text: `# Big\n\n${big}`,
+        crlf: false,
+        encoding: "UTF-8",
+        size: big.length + 7,
+      }),
+    });
+    const { store } = await renderWithStore(<FileViewer />, core);
+    await store.getState().selectProjectFile("huge.md");
+
+    await waitFor(() => {
+      expect(screen.getByRole("status")).toHaveTextContent(/larger than 512 KB/);
+      expect(screen.getByRole("button", { name: "Rendered" })).toBeDisabled();
+      expect(screen.getByRole("button", { name: "Raw" })).toHaveAttribute("aria-pressed", "true");
+    });
+  });
 });

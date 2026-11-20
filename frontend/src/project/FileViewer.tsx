@@ -28,6 +28,7 @@ type UsagesState = {
 };
 
 const targetLineDeco = Decoration.line({ class: "is-target-line" });
+const formatAndRenderLimit = 512 * 1024;
 
 export function FileViewer({ extraExtensions }: { extraExtensions?: Extension[] } = {}) {
   const platform = usePlatform();
@@ -61,8 +62,18 @@ export function FileViewer({ extraExtensions }: { extraExtensions?: Extension[] 
   const markdown = loaded !== null && loaded.content === "text" && isMarkdown(loaded.path);
   const formattable =
     loaded !== null && loaded.content === "text" && isFormattableFile(loaded.path);
-  const defaultMode: ViewMode = markdown ? "rendered" : formattable ? "pretty" : "raw";
-  const mode = (selected ? modes[selected] : undefined) ?? defaultMode;
+  const tooLargeToEnhance =
+    loaded !== null && loaded.content === "text" && loaded.text.length > formatAndRenderLimit;
+  const defaultMode: ViewMode = tooLargeToEnhance
+    ? "raw"
+    : markdown
+      ? "rendered"
+      : formattable
+        ? "pretty"
+        : "raw";
+  const mode = tooLargeToEnhance
+    ? "raw"
+    : ((selected ? modes[selected] : undefined) ?? defaultMode);
 
   useEffect(() => {
     if (targetLine && selected === targetLine.file && (markdown || formattable)) {
@@ -262,6 +273,8 @@ export function FileViewer({ extraExtensions }: { extraExtensions?: Extension[] 
               className={`dl-tbtn ${mode === "rendered" ? "is-selected" : ""}`}
               type="button"
               style={{ width: "auto", padding: "0 8px" }}
+              disabled={tooLargeToEnhance}
+              title={tooLargeToEnhance ? "Files larger than 512 KB open in raw view" : undefined}
               aria-pressed={mode === "rendered"}
               onClick={() => setModes((all) => ({ ...all, [selected]: "rendered" }))}
             >
@@ -284,6 +297,8 @@ export function FileViewer({ extraExtensions }: { extraExtensions?: Extension[] 
               className={`dl-tbtn ${mode === "pretty" ? "is-selected" : ""}`}
               type="button"
               style={{ width: "auto", padding: "0 8px" }}
+              disabled={tooLargeToEnhance}
+              title={tooLargeToEnhance ? "Files larger than 512 KB open in raw view" : undefined}
               aria-pressed={mode === "pretty"}
               onClick={() => setModes((all) => ({ ...all, [selected]: "pretty" }))}
             >
@@ -301,6 +316,16 @@ export function FileViewer({ extraExtensions }: { extraExtensions?: Extension[] 
           </fieldset>
         )}
       </header>
+      {tooLargeToEnhance && (markdown || formattable) && (
+        <div className="app-editor-notice">
+          <div className="dl-banner is-info" role="status">
+            <Icon name="status-info" />
+            <span className="dl-banner-text">
+              Showing raw text because this file is larger than 512 KB.
+            </span>
+          </div>
+        </div>
+      )}
       {formatWarning && (
         <div className="app-editor-notice">
           <div className="dl-banner is-info" role="status">

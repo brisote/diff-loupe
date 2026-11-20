@@ -7,9 +7,13 @@ use std::collections::HashSet;
 use std::io::Write;
 use std::path::{Component, Path, PathBuf};
 use std::process::Stdio;
+use std::time::{Duration, Instant};
 
 const SEARCH_FILE_LIMIT: u64 = 2 * 1024 * 1024;
+const SEARCH_TOTAL_BYTES_LIMIT: u64 = 32 * 1024 * 1024;
+const SEARCH_RAW_MATCH_LIMIT: usize = 1000;
 const SEARCH_MATCH_LIMIT: usize = 200;
+const SEARCH_TIME_LIMIT: Duration = Duration::from_millis(1500);
 const PREVIEW_LIMIT: usize = 160;
 
 pub fn list_dir(env: &ShellEnv, root: &Path, dir: &str) -> Result<Vec<ProjectEntry>> {
@@ -23,7 +27,7 @@ pub fn list_dir(env: &ShellEnv, root: &Path, dir: &str) -> Result<Vec<ProjectEnt
     for item in std::fs::read_dir(&target)? {
         let item = item?;
         let name = item.file_name().to_string_lossy().into_owned();
-        if name == ".git" {
+        if name.eq_ignore_ascii_case(".git") {
             continue;
         }
         let item_path = item.path();
@@ -134,8 +138,18 @@ pub fn search_symbol(
     }
     let files = list_searchable_files(env, root);
     let current_normalized = current_file.map(|f| f.replace('\\', "/"));
+    let started = Instant::now();
+    let mut scanned_bytes: u64 = 0;
+    let mut truncated = false;
     let mut matches = Vec::new();
     for rel in files {
+        if started.elapsed() >= SEARCH_TIME_LIMIT
+            || scanned_bytes >= SEARCH_TOTAL_BYTES_LIMIT
+            || matches.len() >= SEARCH_RAW_MATCH_LIMIT
+        {
+            truncated = true;
+            break;
+        }
         let Ok(rel_path) = validate_relative(&rel, false) else {
             continue;
         };
@@ -148,6 +162,7 @@ pub fn search_symbol(
         if !meta.is_file() || meta.len() > SEARCH_FILE_LIMIT || filediff::is_image(&rel) {
             continue;
         }
+        scanned_bytes = scanned_bytes.saturating_add(meta.len());
         let Ok(bytes) = std::fs::read(&target) else {
             continue;
         };
@@ -172,6 +187,10 @@ pub fn search_symbol(
                     preview,
                     is_declaration: is_declaration_line(raw_line, symbol),
                 });
+                if matches.len() >= SEARCH_RAW_MATCH_LIMIT {
+                    truncated = true;
+                    break;
+                }
             }
         }
     }
@@ -181,8 +200,8 @@ pub fn search_symbol(
             .then_with(|| a.file.cmp(&b.file))
             .then_with(|| a.line.cmp(&b.line))
     });
-    let truncated = matches.len() > SEARCH_MATCH_LIMIT;
-    if truncated {
+    if matches.len() > SEARCH_MATCH_LIMIT {
+        truncated = true;
         matches.truncate(SEARCH_MATCH_LIMIT);
     }
     Ok(SymbolSearchResult {
@@ -290,13 +309,22 @@ fn check_ignored(env: &ShellEnv, root: &Path, entries: &[ProjectEntry]) -> HashS
     let Ok(mut child) = cmd.spawn() else {
         return HashSet::new();
     };
-    if let Some(mut stdin) = child.stdin.take() {
-        for entry in entries {
-            let _ = stdin.write_all(entry.path.as_bytes());
-            let _ = stdin.write_all(b"\0");
+    let stdin = child.stdin.take();
+    let output = std::thread::scope(|scope| {
+        if let Some(mut stdin) = stdin {
+            scope.spawn(move || {
+                for entry in entries {
+                    if stdin.write_all(entry.path.as_bytes()).is_err()
+                        || stdin.write_all(b"\0").is_err()
+                    {
+                        break;
+                    }
+                }
+            });
         }
-    }
-    let Ok(output) = child.wait_with_output() else {
+        child.wait_with_output()
+    });
+    let Ok(output) = output else {
         return HashSet::new();
     };
     output
@@ -333,7 +361,19 @@ pub(crate) fn validate_relative(raw: &str, allow_empty: bool) -> Result<PathBuf>
             "{raw} is outside the repository"
         )));
     }
+    if has_git_component(path) {
+        return Err(Error::InvalidArgs(format!("{raw} is inside .git")));
+    }
     Ok(path.to_path_buf())
+}
+
+fn has_git_component(path: &Path) -> bool {
+    path.components().any(|component| match component {
+        Component::Normal(part) => part
+            .to_str()
+            .is_some_and(|name| name.eq_ignore_ascii_case(".git")),
+        _ => false,
+    })
 }
 
 fn resolve_inside(root: &Path, relative: &Path) -> Result<PathBuf> {
@@ -347,8 +387,14 @@ fn resolve_inside(root: &Path, relative: &Path) -> Result<PathBuf> {
     }
     let canonical = platform::canonicalize(&target)?;
     if !canonical.starts_with(root) {
-        return Err(Error::InvalidArgs(format!(
-            "{} is outside the repository",
+        return Err(Error::GitRefused(format!(
+            "{} points outside the repository",
+            relative.display()
+        )));
+    }
+    if canonical.strip_prefix(root).is_ok_and(has_git_component) {
+        return Err(Error::GitRefused(format!(
+            "{} points inside .git",
             relative.display()
         )));
     }
@@ -375,6 +421,12 @@ mod tests {
         assert!(validate_relative("../secret", false).is_err());
         assert!(validate_relative("a/../../b", true).is_err());
         assert!(validate_relative("/etc/passwd", false).is_err());
+        assert!(validate_relative(".git", true).is_err());
+        assert!(validate_relative(".git/config", false).is_err());
+        assert!(validate_relative(".GIT/HEAD", false).is_err());
+        assert!(validate_relative("sub/.git/config", false).is_err());
+        assert!(validate_relative(".gitignore", false).is_ok());
+        assert!(validate_relative(".github/workflows/ci.yml", false).is_ok());
         assert!(validate_relative("", false).is_err());
         assert!(validate_relative("", true).is_ok());
     }

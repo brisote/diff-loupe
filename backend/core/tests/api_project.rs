@@ -76,6 +76,19 @@ fn list_project_dir_rejects_traversal_and_missing_dirs() {
         .unwrap_err();
     assert_eq!(json!(err)["code"], "invalidArgs");
 
+    let git_dir = core
+        .dispatch("list_project_dir", json!({ "path": path, "dir": ".git" }))
+        .unwrap_err();
+    assert_eq!(json!(git_dir)["code"], "invalidArgs");
+
+    let git_config = core
+        .dispatch(
+            "read_project_file",
+            json!({ "path": path, "file": ".git/config" }),
+        )
+        .unwrap_err();
+    assert_eq!(json!(git_config)["code"], "invalidArgs");
+
     let missing = core
         .dispatch("list_project_dir", json!({ "path": path, "dir": "nope" }))
         .unwrap_err();
@@ -146,7 +159,66 @@ fn read_project_file_rejects_symlink_escaping_repo() {
             json!({ "path": path, "file": "escape.txt" }),
         )
         .unwrap_err();
-    assert_eq!(json!(err)["code"], "invalidArgs");
+    assert_eq!(json!(err)["code"], "gitRefused");
+
+    std::os::unix::fs::symlink(
+        repo.path().join(".git/config"),
+        repo.path().join("git-config-link"),
+    )
+    .unwrap();
+    let git_link_err = core
+        .dispatch(
+            "read_project_file",
+            json!({ "path": path, "file": "git-config-link" }),
+        )
+        .unwrap_err();
+    assert_eq!(json!(git_link_err)["code"], "gitRefused");
+}
+
+#[test]
+fn list_project_dir_handles_large_ignored_directory_without_pipe_deadlock() {
+    let repo = TempRepo::with_commit();
+    repo.write(".gitignore", "bulk/\n");
+    let bulk = repo.path().join("bulk");
+    fs::create_dir_all(&bulk).unwrap();
+    for i in 0..1500 {
+        fs::write(bulk.join(format!("ignored-entry-name-{i:04}.txt")), "").unwrap();
+    }
+
+    let (_data, core) = core();
+    let info = call(&core, "open_repo", json!({ "path": repo.path() }));
+    let path = info["path"].as_str().unwrap();
+
+    let entries = call(
+        &core,
+        "list_project_dir",
+        json!({ "path": path, "dir": "bulk" }),
+    );
+    let list = entries.as_array().unwrap();
+    assert_eq!(list.len(), 1500);
+    assert!(list.iter().all(|item| item["ignored"] == true));
+}
+
+#[test]
+fn search_symbol_truncates_when_matches_exceed_cap() {
+    let repo = TempRepo::with_commit();
+    let repeated = (0..300)
+        .map(|i| format!("let v{i} = commonSymbol();"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    repo.write("src/many.ts", &repeated);
+
+    let (_data, core) = core();
+    let info = call(&core, "open_repo", json!({ "path": repo.path() }));
+    let path = info["path"].as_str().unwrap();
+
+    let res = call(
+        &core,
+        "search_symbol",
+        json!({ "path": path, "symbol": "commonSymbol" }),
+    );
+    assert_eq!(res["truncated"], true);
+    assert_eq!(res["matches"].as_array().unwrap().len(), 200);
 }
 
 #[test]
