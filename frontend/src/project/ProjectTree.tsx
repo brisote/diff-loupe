@@ -28,6 +28,14 @@ export function ProjectTree({ width }: { width: number }) {
   const [filter, setFilter] = useState("");
   const [focused, setFocused] = useState<string | null>(null);
   const parent = useRef<HTMLDivElement>(null);
+  const repoPath = repo?.path ?? null;
+
+  useEffect(() => {
+    if (repoPath !== null) {
+      setFilter("");
+      setFocused(null);
+    }
+  }, [repoPath]);
 
   useEffect(() => {
     if (repo && !dirs[""]) {
@@ -193,6 +201,7 @@ export function ProjectTree({ width }: { width: number }) {
                     onKeyDown={(event) => {
                       if (event.key === "Enter" || event.key === " ") {
                         event.preventDefault();
+                        event.stopPropagation();
                         activate(row);
                       }
                     }}

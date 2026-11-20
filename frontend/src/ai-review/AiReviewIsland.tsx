@@ -873,7 +873,6 @@ export function AiReviewIsland() {
                       isStreamingInitial={isInitialStreaming}
                       reviewIdentity={activeReviewId}
                     />
-                    {isInitialStreaming && <span className="dl-caret" />}
                   </>
                 )}
 

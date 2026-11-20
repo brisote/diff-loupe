@@ -46,4 +46,34 @@ describe("SymbolPopup", () => {
     fireEvent.keyDown(document, { key: "Escape" });
     expect(onClose).toHaveBeenCalled();
   });
+
+  it("clamps selection index when matches shrink", () => {
+    const onSelect = vi.fn();
+    const onClose = vi.fn();
+    const { rerender } = render(
+      <SymbolPopup
+        symbol="getLatestObservation"
+        matches={matches}
+        truncated={false}
+        point={{ x: 200, y: 120 }}
+        onSelect={onSelect}
+        onClose={onClose}
+      />,
+    );
+
+    fireEvent.keyDown(document, { key: "ArrowDown" });
+    rerender(
+      <SymbolPopup
+        symbol="getLatestObservation"
+        matches={matches.slice(0, 1)}
+        truncated={false}
+        point={{ x: 200, y: 120 }}
+        onSelect={onSelect}
+        onClose={onClose}
+      />,
+    );
+
+    fireEvent.keyDown(document, { key: "Enter" });
+    expect(onSelect).toHaveBeenCalledWith(matches[0]);
+  });
 });

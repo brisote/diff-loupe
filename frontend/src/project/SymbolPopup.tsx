@@ -1,4 +1,4 @@
-import { type CSSProperties, useEffect, useState } from "react";
+import { type CSSProperties, useEffect, useRef, useState } from "react";
 import type { SymbolMatch } from "../api";
 import { fileIcon } from "../changes/fileIcons";
 import { splitPath } from "../lib/paths";
@@ -16,24 +16,38 @@ type Props = {
 
 export function SymbolPopup({ symbol, matches, truncated, point, onSelect, onClose }: Props) {
   const [index, setIndex] = useState(0);
+  const listRef = useRef<HTMLDivElement>(null);
+  const activeIndex = matches.length > 0 ? Math.min(index, matches.length - 1) : 0;
+
+  const resetKey = `${symbol}:${matches.length}`;
+  useEffect(() => {
+    if (resetKey !== undefined) setIndex(0);
+  }, [resetKey]);
+
+  useEffect(() => {
+    const activeEl = listRef.current?.children.item(activeIndex);
+    if (activeEl && "scrollIntoView" in activeEl) {
+      activeEl.scrollIntoView({ block: "nearest" });
+    }
+  }, [activeIndex]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (event.key === "ArrowDown") {
         event.preventDefault();
-        setIndex((current) => Math.min(matches.length - 1, current + 1));
+        setIndex((current) => Math.min(Math.max(0, matches.length - 1), current + 1));
       } else if (event.key === "ArrowUp") {
         event.preventDefault();
         setIndex((current) => Math.max(0, current - 1));
       } else if (event.key === "Enter") {
         event.preventDefault();
-        const chosen = matches[index];
+        const chosen = matches[activeIndex];
         if (chosen) onSelect(chosen);
       }
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [matches, index, onSelect]);
+  }, [matches, activeIndex, onSelect]);
 
   const width = 560;
   const maxLeft =
@@ -47,7 +61,7 @@ export function SymbolPopup({ symbol, matches, truncated, point, onSelect, onClo
     zIndex: 30,
   };
 
-  const selected = matches[index] ?? matches[0];
+  const selected = matches[activeIndex] ?? matches[0];
   const countLabel = `${matches.length}${truncated ? "+" : ""} ${matches.length === 1 ? "usage" : "usages"}`;
 
   return (
@@ -64,9 +78,9 @@ export function SymbolPopup({ symbol, matches, truncated, point, onSelect, onClo
         </span>
         <span className="dl-usages-count">{countLabel}</span>
       </div>
-      <div className="dl-usages-list" role="listbox" aria-label="Symbol usages">
+      <div ref={listRef} className="dl-usages-list" role="listbox" aria-label="Symbol usages">
         {matches.map((match, idx) => {
-          const isSelected = idx === index;
+          const isSelected = idx === activeIndex;
           const { name } = splitPath(match.file);
           return (
             <div

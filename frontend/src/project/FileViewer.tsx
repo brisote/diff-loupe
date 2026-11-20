@@ -190,9 +190,24 @@ export function FileViewer({ extraExtensions }: { extraExtensions?: Extension[] 
 
   const emptyHidden = useMemo<[]>(() => [], []);
 
+  useEffect(() => {
+    return () => cancelAnimationFrame(frame.current);
+  }, []);
+
+  useEffect(() => {
+    if (repoPath !== null) setModes({});
+  }, [repoPath]);
+
+  useEffect(() => {
+    if (searchOpen && selected && isRenderedMarkdown) {
+      setModes((all) => (all[selected] === "raw" ? all : { ...all, [selected]: "raw" }));
+    }
+  }, [searchOpen, selected, isRenderedMarkdown]);
+
   const navResetKey = `${repoPath ?? ""}:${selected ?? ""}`;
   useEffect(() => {
     if (navResetKey !== undefined) {
+      searchSeq.current += 1;
       setUsages(null);
       setNavNotice(null);
     }
@@ -237,7 +252,12 @@ export function FileViewer({ extraExtensions }: { extraExtensions?: Extension[] 
             });
           }
         })
-        .catch(() => undefined);
+        .catch((err) => {
+          if (req !== searchSeq.current) return;
+          setUsages(null);
+          const message = err instanceof Error ? err.message : "Could not search symbol usages.";
+          setNavNotice(message);
+        });
     },
     [backend, repoPath, selected, mode, jumpToMatch],
   );

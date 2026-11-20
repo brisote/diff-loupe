@@ -471,7 +471,8 @@ export function createAppStore(backend: Backend) {
   let commitRequest = 0;
   let commitDiffRequest = 0;
   let aiStateRequest = 0;
-  let projectDirRequest = 0;
+  let projectEpoch = 0;
+  const projectDirRequests = new Map<string, number>();
   let projectFileRequest = 0;
   let projectTargetSeq = 0;
   let saving: Promise<void> = Promise.resolve();
@@ -689,7 +690,11 @@ export function createAppStore(backend: Backend) {
             if (get().workspaceMode === "files") {
               void get().refreshProjectTree();
               const openFile = get().projectSelectedFile;
-              if (openFile) void get().selectProjectFile(openFile);
+              if (openFile) {
+                const target = get().projectTargetLine;
+                const keepLine = target?.file === openFile ? target.line : undefined;
+                void get().selectProjectFile(openFile, keepLine);
+              }
             }
             void get().loadAiState();
           } else if (event.type === "aiReviewStream") {
@@ -936,6 +941,9 @@ export function createAppStore(backend: Backend) {
             commitRequest += 1;
             commitDiffRequest += 1;
             recentRequest += 1;
+            projectEpoch += 1;
+            projectFileRequest += 1;
+            projectDirRequests.clear();
             void get().loadStatus();
             void get().loadLog();
             void get().loadAiState();
@@ -1741,16 +1749,30 @@ export function createAppStore(backend: Backend) {
       loadProjectDir: async (dir) => {
         const path = get().repo?.path;
         if (!path) return;
-        const request = ++projectDirRequest;
+        const epoch = projectEpoch;
+        const request = (projectDirRequests.get(dir) ?? 0) + 1;
+        projectDirRequests.set(dir, request);
         try {
           const entries = await backend.call("list_project_dir", { path, dir });
-          if (get().repo?.path !== path) return;
+          if (
+            get().repo?.path !== path ||
+            projectEpoch !== epoch ||
+            projectDirRequests.get(dir) !== request
+          ) {
+            return;
+          }
           set((state) => ({
             projectDirs: { ...state.projectDirs, [dir]: entries },
             projectTreeError: dir === "" ? null : state.projectTreeError,
           }));
         } catch (error) {
-          if (get().repo?.path !== path || request !== projectDirRequest) return;
+          if (
+            get().repo?.path !== path ||
+            projectEpoch !== epoch ||
+            projectDirRequests.get(dir) !== request
+          ) {
+            return;
+          }
           if (dir === "") set({ projectTreeError: toApiError(error) });
         }
       },
@@ -1828,22 +1850,48 @@ export function createAppStore(backend: Backend) {
       refreshProjectTree: async () => {
         const path = get().repo?.path;
         if (!path) return;
+        const epoch = projectEpoch;
         const dirs = [
           "",
           ...Object.keys(get().projectExpanded).filter((dir) => get().projectExpanded[dir]),
         ];
         await Promise.all(
           dirs.map(async (dir) => {
+            const request = (projectDirRequests.get(dir) ?? 0) + 1;
+            projectDirRequests.set(dir, request);
             try {
               const entries = await backend.call("list_project_dir", { path, dir });
-              if (get().repo?.path !== path) return;
+              if (
+                get().repo?.path !== path ||
+                projectEpoch !== epoch ||
+                projectDirRequests.get(dir) !== request
+              ) {
+                return;
+              }
               set((state) => ({
                 projectDirs: { ...state.projectDirs, [dir]: entries },
                 projectTreeError: dir === "" ? null : state.projectTreeError,
               }));
             } catch (error) {
-              if (get().repo?.path !== path) return;
-              if (dir === "") set({ projectTreeError: toApiError(error) });
+              if (
+                get().repo?.path !== path ||
+                projectEpoch !== epoch ||
+                projectDirRequests.get(dir) !== request
+              ) {
+                return;
+              }
+              const apiError = toApiError(error);
+              if (dir === "") {
+                set({ projectTreeError: apiError });
+              } else if (apiError.code === "notFound") {
+                set((state) => {
+                  const nextDirs = { ...state.projectDirs };
+                  const nextExpanded = { ...state.projectExpanded };
+                  delete nextDirs[dir];
+                  delete nextExpanded[dir];
+                  return { projectDirs: nextDirs, projectExpanded: nextExpanded };
+                });
+              }
             }
           }),
         );

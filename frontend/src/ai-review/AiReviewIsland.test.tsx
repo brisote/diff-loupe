@@ -119,6 +119,7 @@ describe("AiReviewIsland", () => {
     expect(screen.getByText("Model Thinking")).toBeInTheDocument();
     expect(screen.getByText("Comparing against repository conventions")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Cancel review" })).toBeInTheDocument();
+    expect(document.querySelectorAll(".dl-ai-session-stream > .dl-caret")).toHaveLength(0);
   });
 
   it("renders report markdown with exact costs and balance", async () => {

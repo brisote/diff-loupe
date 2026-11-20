@@ -4,7 +4,7 @@ use crate::filediff::{self, Content};
 use crate::platform;
 use crate::shellenv::ShellEnv;
 use std::collections::HashSet;
-use std::io::Write;
+use std::io::{Read, Write};
 use std::path::{Component, Path, PathBuf};
 use std::process::Stdio;
 use std::time::{Duration, Instant};
@@ -88,7 +88,7 @@ pub fn read_file(root: &Path, file: &str) -> Result<ProjectFile> {
             size,
         });
     }
-    if size as usize > filediff::SIZE_LIMIT {
+    if size > filediff::SIZE_LIMIT as u64 {
         return Ok(ProjectFile {
             path,
             content: Content::TooLarge,
@@ -98,7 +98,21 @@ pub fn read_file(root: &Path, file: &str) -> Result<ProjectFile> {
             size,
         });
     }
-    let bytes = std::fs::read(&target)?;
+    let handle = std::fs::File::open(&target)?;
+    let mut bytes = Vec::with_capacity(size.min(filediff::SIZE_LIMIT as u64) as usize);
+    handle
+        .take((filediff::SIZE_LIMIT as u64) + 1)
+        .read_to_end(&mut bytes)?;
+    if bytes.len() > filediff::SIZE_LIMIT {
+        return Ok(ProjectFile {
+            path,
+            content: Content::TooLarge,
+            text: String::new(),
+            crlf: false,
+            encoding: "UTF-8".to_string(),
+            size: bytes.len() as u64,
+        });
+    }
     if filediff::is_binary(&bytes) {
         return Ok(ProjectFile {
             path,
@@ -136,7 +150,7 @@ pub fn search_symbol(
     if symbol.is_empty() || !symbol.bytes().all(is_ident_byte) {
         return Err(Error::InvalidArgs("invalid symbol name".into()));
     }
-    let files = list_searchable_files(env, root);
+    let files = list_searchable_files(env, root)?;
     let current_normalized = current_file.map(|f| f.replace('\\', "/"));
     let started = Instant::now();
     let mut scanned_bytes: u64 = 0;
@@ -180,10 +194,11 @@ pub fn search_symbol(
             }
             if let Some(col) = find_whole_word(raw_line, symbol) {
                 let preview: String = raw_line.trim().chars().take(PREVIEW_LIMIT).collect();
+                let char_col = raw_line[..col].chars().count() as u32 + 1;
                 matches.push(SymbolMatch {
                     file: rel.clone(),
                     line: line_num,
-                    column: (col + 1) as u32,
+                    column: char_col,
                     preview,
                     is_declaration: is_declaration_line(raw_line, symbol),
                 });
@@ -211,7 +226,7 @@ pub fn search_symbol(
     })
 }
 
-fn list_searchable_files(env: &ShellEnv, root: &Path) -> Vec<String> {
+fn list_searchable_files(env: &ShellEnv, root: &Path) -> Result<Vec<String>> {
     let mut cmd = env.git(root);
     cmd.args([
         "ls-files",
@@ -221,19 +236,24 @@ fn list_searchable_files(env: &ShellEnv, root: &Path) -> Vec<String> {
         "-z",
     ])
     .stdout(Stdio::piped())
-    .stderr(Stdio::null());
-    let Ok(output) = cmd.output() else {
-        return Vec::new();
-    };
+    .stderr(Stdio::piped());
+    let output = cmd
+        .output()
+        .map_err(|err| Error::Git(format!("failed to run git ls-files: {err}")))?;
     if !output.status.success() {
-        return Vec::new();
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        return Err(Error::Git(if stderr.is_empty() {
+            "git ls-files failed".to_string()
+        } else {
+            stderr
+        }));
     }
-    output
+    Ok(output
         .stdout
         .split(|&b| b == 0)
         .filter(|slice| !slice.is_empty())
         .map(|slice| String::from_utf8_lossy(slice).replace('\\', "/"))
-        .collect()
+        .collect())
 }
 
 fn is_ident_byte(b: u8) -> bool {
@@ -339,7 +359,7 @@ fn check_ignored(env: &ShellEnv, root: &Path, entries: &[ProjectEntry]) -> HashS
         .collect()
 }
 
-pub(crate) fn validate_relative(raw: &str, allow_empty: bool) -> Result<PathBuf> {
+fn validate_relative(raw: &str, allow_empty: bool) -> Result<PathBuf> {
     let normalized = raw.replace('\\', "/");
     let trimmed = normalized.trim_end_matches('/');
     if trimmed.is_empty() {

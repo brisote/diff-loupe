@@ -60,5 +60,14 @@ describe("ProjectTree", () => {
     await waitFor(() => {
       expect(screen.queryByText("application.yml")).not.toBeInTheDocument();
     });
+
+    const srcRow = screen.getByText("src").closest(".dl-row");
+    expect(srcRow).not.toBeNull();
+    if (srcRow) {
+      fireEvent.keyDown(srcRow, { key: "Enter" });
+      await waitFor(() => {
+        expect(screen.getByText("application.yml")).toBeInTheDocument();
+      });
+    }
   });
 });
