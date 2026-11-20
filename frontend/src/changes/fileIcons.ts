@@ -13,8 +13,11 @@ const byExtension: Record<string, string> = {
   mts: "typeScript",
   cts: "typeScript",
   json: "json",
+  jsonc: "json",
+  json5: "json",
   md: "markdown",
   markdown: "markdown",
+  mdx: "markdown",
   py: "python",
   rb: "ruby",
   rake: "ruby",
@@ -23,9 +26,17 @@ const byExtension: Record<string, string> = {
   sh: "shell",
   bash: "shell",
   zsh: "shell",
+  fish: "shell",
+  bat: "shell",
+  cmd: "shell",
+  ps1: "shell",
   sql: "sql",
   toml: "toml",
   xml: "xml",
+  pom: "xml",
+  xsd: "xml",
+  xsl: "xml",
+  plist: "xml",
   yml: "yaml",
   yaml: "yaml",
   html: "html",
@@ -35,6 +46,14 @@ const byExtension: Record<string, string> = {
   less: "css",
   txt: "text",
   log: "text",
+  properties: "text",
+  ini: "text",
+  cfg: "text",
+  conf: "text",
+  env: "text",
+  csv: "text",
+  tsv: "text",
+  lock: "text",
   png: "image",
   jpg: "image",
   jpeg: "image",
@@ -58,12 +77,26 @@ const byName: Record<string, string> = {
   Rakefile: "ruby",
   Dockerfile: "shell",
   Makefile: "shell",
+  mvnw: "shell",
+  gradlew: "shell",
+  ".gitignore": "text",
+  ".gitattributes": "text",
+  ".gitmodules": "text",
+  ".editorconfig": "text",
+  ".dockerignore": "text",
+  ".env": "text",
+  ".gitlab-ci.yml": "yaml",
+  LICENSE: "text",
+  NOTICE: "text",
 };
 
 export function fileIcon(path: string): string {
   if (path.endsWith("/")) return "dl-i-nodes-folder";
-  const named = byName[fileName(path)];
+  const name = fileName(path);
+  const named = byName[name];
   if (named) return `dl-ft-${named}`;
+  if (name.startsWith("Dockerfile.")) return "dl-ft-shell";
+  if (name.startsWith(".env.")) return "dl-ft-text";
   const extension = fileExtension(path);
   const type = extension ? byExtension[extension] : undefined;
   return `dl-ft-${type ?? "unknown"}`;

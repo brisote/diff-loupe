@@ -5,11 +5,18 @@ import { describe, expect, it } from "vitest";
 import { languageKey, loadLanguage, syntaxClasses, syntaxHighlightStyle } from "./syntax";
 
 describe("syntax highlighting", () => {
-  it("resolves language keys for common extensions", () => {
+  it("resolves language keys for common extensions and filenames", async () => {
     expect(languageKey("main.kt")).toBe("kt");
     expect(languageKey("script.kts")).toBe("kt");
     expect(languageKey("index.ts")).toBe("ts");
+    expect(languageKey("pom.xml")).toBe("xml");
+    expect(languageKey("Dockerfile")).toBe("dockerfile");
+    expect(languageKey("Dockerfile.dev")).toBe("dockerfile");
+    expect(languageKey("mvnw")).toBe("sh");
+    expect(languageKey(".gitlab-ci.yml")).toBe("yaml");
     expect(languageKey("unknown.xyz")).toBeNull();
+    expect(await loadLanguage("pom.xml")).not.toBeNull();
+    expect(await loadLanguage("Dockerfile")).not.toBeNull();
   });
 
   it("highlights Kotlin backtick test names without breaking subsequent syntax", async () => {

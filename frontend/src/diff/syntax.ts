@@ -8,7 +8,7 @@ import {
 } from "@codemirror/language";
 import type { Extension } from "@codemirror/state";
 import { tags } from "@lezer/highlight";
-import { fileExtension } from "../lib/fileTypes";
+import { fileExtension, fileName } from "../lib/fileTypes";
 
 export const syntaxHighlightStyle = HighlightStyle.define([
   {
@@ -91,6 +91,10 @@ const loaders: Record<string, Loader> = {
   rb: legacy(async () => (await import("@codemirror/legacy-modes/mode/ruby")).ruby),
   sh: legacy(async () => (await import("@codemirror/legacy-modes/mode/shell")).shell),
   toml: legacy(async () => (await import("@codemirror/legacy-modes/mode/toml")).toml),
+  xml: legacy(async () => (await import("@codemirror/legacy-modes/mode/xml")).xml),
+  dockerfile: legacy(
+    async () => (await import("@codemirror/legacy-modes/mode/dockerfile")).dockerFile,
+  ),
 };
 
 const aliases: Record<string, string> = {
@@ -100,15 +104,35 @@ const aliases: Record<string, string> = {
   cjs: "js",
   htm: "html",
   markdown: "md",
+  mdx: "md",
   yml: "yaml",
   kts: "kt",
   bash: "sh",
   zsh: "sh",
   scss: "css",
   less: "css",
+  pom: "xml",
+  xsd: "xml",
+  xsl: "xml",
+  plist: "xml",
+  svg: "xml",
+};
+
+const byFileName: Record<string, string> = {
+  Dockerfile: "dockerfile",
+  Makefile: "sh",
+  mvnw: "sh",
+  gradlew: "sh",
+  Gemfile: "rb",
+  Rakefile: "rb",
+  ".gitlab-ci.yml": "yaml",
 };
 
 export function languageKey(path: string): string | null {
+  const name = fileName(path);
+  const named = byFileName[name];
+  if (named) return named;
+  if (name.startsWith("Dockerfile.")) return "dockerfile";
   const extension = fileExtension(path);
   if (!extension) return null;
   const key = aliases[extension] ?? extension;
