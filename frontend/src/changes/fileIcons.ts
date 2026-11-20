@@ -84,10 +84,7 @@ const byName: Record<string, string> = {
   ".gitmodules": "text",
   ".editorconfig": "text",
   ".dockerignore": "text",
-  ".env": "text",
   ".gitlab-ci.yml": "yaml",
-  LICENSE: "text",
-  NOTICE: "text",
 };
 
 export function fileIcon(path: string): string {
@@ -96,7 +93,6 @@ export function fileIcon(path: string): string {
   const named = byName[name];
   if (named) return `dl-ft-${named}`;
   if (name.startsWith("Dockerfile.")) return "dl-ft-shell";
-  if (name.startsWith(".env.")) return "dl-ft-text";
   const extension = fileExtension(path);
   const type = extension ? byExtension[extension] : undefined;
   return `dl-ft-${type ?? "unknown"}`;

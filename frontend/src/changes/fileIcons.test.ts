@@ -5,7 +5,6 @@ describe("fileIcon", () => {
   it("maps folders, dotfiles, extensionless files, and common extensions", () => {
     expect(fileIcon("src/")).toBe("dl-i-nodes-folder");
     expect(fileIcon(".gitignore")).toBe("dl-ft-text");
-    expect(fileIcon(".env.local")).toBe("dl-ft-text");
     expect(fileIcon(".gitlab-ci.yml")).toBe("dl-ft-yaml");
     expect(fileIcon("Dockerfile")).toBe("dl-ft-shell");
     expect(fileIcon("Dockerfile.prod")).toBe("dl-ft-shell");

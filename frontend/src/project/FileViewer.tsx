@@ -1,6 +1,7 @@
 import type { Extension, Text } from "@codemirror/state";
 import { Decoration, EditorView } from "@codemirror/view";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { SymbolMatch } from "../api";
 import { fileIcon } from "../changes/fileIcons";
 import { CodePane, type Decorate } from "../diff/CodePane";
 import { DiffSearchBar } from "../diff/DiffSearchBar";
@@ -9,20 +10,35 @@ import { LineNumbers } from "../diff/LineNumbers";
 import { findMatches, searchDecorations } from "../diff/search";
 import { Icon } from "../lib/icon";
 import { splitPath } from "../lib/paths";
+import { usePlatform } from "../lib/platform";
 import { isMarkdown } from "../markdown-diff/MarkdownDiff";
 import { MarkdownDocument } from "../markdown-diff/MarkdownDocument";
 import { useApp } from "../state/context";
 import { formatStructuredFile, isFormattableFile } from "./format";
+import { SymbolPopup } from "./SymbolPopup";
+import { type NavigatePoint, symbolNavigationExtension } from "./symbolNav";
 
 type ViewMode = "rendered" | "pretty" | "raw";
+
+type UsagesState = {
+  symbol: string;
+  matches: SymbolMatch[];
+  truncated: boolean;
+  point: NavigatePoint;
+};
 
 const targetLineDeco = Decoration.line({ class: "is-target-line" });
 
 export function FileViewer({ extraExtensions }: { extraExtensions?: Extension[] } = {}) {
+  const platform = usePlatform();
+  const backend = useApp((state) => state.backend);
+  const repoPath = useApp((state) => state.repo?.path ?? null);
   const selected = useApp((state) => state.projectSelectedFile);
   const file = useApp((state) => state.projectFile);
   const error = useApp((state) => state.projectFileError);
   const targetLine = useApp((state) => state.projectTargetLine);
+  const expandProjectParents = useApp((state) => state.expandProjectParents);
+  const selectProjectFile = useApp((state) => state.selectProjectFile);
   const searchOpen = useApp((state) => state.searchOpen);
   const searchQuery = useApp((state) => state.searchQuery);
   const searchCase = useApp((state) => state.searchCase);
@@ -35,8 +51,11 @@ export function FileViewer({ extraExtensions }: { extraExtensions?: Extension[] 
   const [modes, setModes] = useState<Record<string, ViewMode>>({});
   const [searchIndex, setSearchIndex] = useState(0);
   const [scroll, setScroll] = useState({ top: 0, height: 0 });
+  const [usages, setUsages] = useState<UsagesState | null>(null);
+  const [navNotice, setNavNotice] = useState<string | null>(null);
   const view = useRef<EditorView | null>(null);
   const frame = useRef(0);
+  const searchSeq = useRef(0);
 
   const loaded = file && file.path === selected ? file : null;
   const markdown = loaded !== null && loaded.content === "text" && isMarkdown(loaded.path);
@@ -160,6 +179,63 @@ export function FileViewer({ extraExtensions }: { extraExtensions?: Extension[] 
 
   const emptyHidden = useMemo<[]>(() => [], []);
 
+  const navResetKey = `${repoPath ?? ""}:${selected ?? ""}`;
+  useEffect(() => {
+    if (navResetKey !== undefined) {
+      setUsages(null);
+      setNavNotice(null);
+    }
+  }, [navResetKey]);
+
+  const jumpToMatch = useCallback(
+    (match: SymbolMatch) => {
+      setUsages(null);
+      setNavNotice(null);
+      void expandProjectParents(match.file);
+      void selectProjectFile(match.file, match.line);
+    },
+    [expandProjectParents, selectProjectFile],
+  );
+
+  const handleSymbolNavigate = useCallback(
+    (symbol: string, line: number, point: NavigatePoint) => {
+      if (!repoPath || !selected) return;
+      const req = ++searchSeq.current;
+      const activeRepo = repoPath;
+      setNavNotice(null);
+      void backend
+        .call("search_symbol", {
+          path: activeRepo,
+          symbol,
+          currentFile: selected,
+          currentLine: mode === "pretty" ? undefined : line,
+        })
+        .then((result) => {
+          if (req !== searchSeq.current) return;
+          if (result.matches.length === 0) {
+            setUsages(null);
+            setNavNotice(`No other usages found for "${symbol}".`);
+          } else if (result.matches.length === 1 && result.matches[0]) {
+            jumpToMatch(result.matches[0]);
+          } else {
+            setUsages({
+              symbol: result.symbol,
+              matches: result.matches,
+              truncated: result.truncated,
+              point,
+            });
+          }
+        })
+        .catch(() => undefined);
+    },
+    [backend, repoPath, selected, mode, jumpToMatch],
+  );
+
+  const paneExtensions = useMemo<Extension[]>(
+    () => [symbolNavigationExtension(platform, handleSymbolNavigate), ...(extraExtensions ?? [])],
+    [platform, handleSymbolNavigate, extraExtensions],
+  );
+
   if (!selected) {
     return (
       <section className="dl-island app-editor" aria-label="File viewer">
@@ -235,6 +311,14 @@ export function FileViewer({ extraExtensions }: { extraExtensions?: Extension[] 
           </div>
         </div>
       )}
+      {navNotice && (
+        <div className="app-editor-notice">
+          <div className="dl-banner is-info" role="status">
+            <Icon name="status-info" />
+            <span className="dl-banner-text">{navNotice}</span>
+          </div>
+        </div>
+      )}
       {error ? (
         <div className="dl-empty app-fill" role="alert">
           <span className="dl-empty-title">The file could not be read</span>
@@ -295,13 +379,23 @@ export function FileViewer({ extraExtensions }: { extraExtensions?: Extension[] 
                 decorate={decorate}
                 searchDecorations={searchDecos}
                 hidden={emptyHidden}
-                extraExtensions={extraExtensions}
+                extraExtensions={paneExtensions}
                 onView={onView}
                 onScroll={onScroll}
                 onExpand={noopExpand}
               />
             </div>
           </div>
+          {usages && (
+            <SymbolPopup
+              symbol={usages.symbol}
+              matches={usages.matches}
+              truncated={usages.truncated}
+              point={usages.point}
+              onSelect={jumpToMatch}
+              onClose={() => setUsages(null)}
+            />
+          )}
         </div>
       )}
     </section>
