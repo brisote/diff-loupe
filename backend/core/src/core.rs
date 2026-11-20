@@ -4,9 +4,10 @@ use crate::api::{
     AiGetStateArgs, AiRevertVersionArgs, AiSendFollowupArgs, AiSetConsentArgs, AiSignInArgs,
     AiSignInResult, AiStartReviewArgs, AiState, AppInfo, ApplyMergeArgs, BranchArgs, CloudAccount,
     CommitArgs, CommitIdArgs, DiffArgs, ImageArgs, ModelsCatalog, PathArgs, PrepareArgs,
-    RecentRepo, RepoInfo, RepoViewArgs, ReportEnv, RollbackArgs, SaveFileArgs, SettingsArgs,
-    StatusArgs, TargetArgs, TaskArgs, TerminalAckArgs, TerminalOpenArgs, TerminalResizeArgs,
-    TerminalWriteArgs, ToolTab, UiKeyArgs, UiValueArgs, VersionArgs,
+    ProjectDirArgs, ProjectFileArgs, RecentRepo, RepoInfo, RepoViewArgs, ReportEnv, RollbackArgs,
+    SaveFileArgs, SettingsArgs, StatusArgs, TargetArgs, TaskArgs, TerminalAckArgs,
+    TerminalOpenArgs, TerminalResizeArgs, TerminalWriteArgs, ToolTab, UiKeyArgs, UiValueArgs,
+    VersionArgs,
 };
 use crate::diffcache::{DiffCache, Prepare};
 use crate::error::{ApiError, Error, Result};
@@ -407,6 +408,16 @@ impl Core {
                 let _exclusive = self.exclusive()?;
                 self.save_file(a)?;
                 reply(())
+            }
+            "list_project_dir" => {
+                let a: ProjectDirArgs = parse(args)?;
+                let (_, root, _) = self.open_root(&a.path)?;
+                reply(crate::project::list_dir(&self.env, &root, &a.dir)?)
+            }
+            "read_project_file" => {
+                let a: ProjectFileArgs = parse(args)?;
+                let (_, root, _) = self.open_root(&a.path)?;
+                reply(crate::project::read_file(&root, &a.file)?)
             }
             "read_image" => {
                 let a: ImageArgs = parse(args)?;

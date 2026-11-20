@@ -454,3 +454,42 @@ pub struct AiRevertVersionArgs {
     #[ts(type = "number")]
     pub version_number: i64,
 }
+
+#[derive(Debug, Clone, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct ProjectDirArgs {
+    pub path: String,
+    pub dir: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct ProjectEntry {
+    pub name: String,
+    pub path: String,
+    pub is_dir: bool,
+    pub ignored: bool,
+}
+
+#[derive(Debug, Clone, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct ProjectFileArgs {
+    pub path: String,
+    pub file: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct ProjectFile {
+    pub path: String,
+    pub content: crate::filediff::Content,
+    pub text: String,
+    pub crlf: bool,
+    pub encoding: String,
+    #[ts(type = "number")]
+    pub size: u64,
+}

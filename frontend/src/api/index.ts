@@ -24,6 +24,8 @@ export type { MergeFile } from "./generated/MergeFile";
 export type { MergeOutcome } from "./generated/MergeOutcome";
 export type { MergeState } from "./generated/MergeState";
 export type { Platform } from "./generated/Platform";
+export type { ProjectEntry } from "./generated/ProjectEntry";
+export type { ProjectFile } from "./generated/ProjectFile";
 export type { PushResult } from "./generated/PushResult";
 export type { RecentRepo } from "./generated/RecentRepo";
 export type { RepoInfo } from "./generated/RepoInfo";
