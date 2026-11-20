@@ -60,8 +60,11 @@ export function App() {
   const hasDiff = useApp(
     (state) =>
       state.repo !== null &&
-      state.workspaceMode === "manual" &&
-      (state.repo.lastTab === "log" ? Boolean(state.logFile) : Boolean(state.repo.lastSelection)),
+      ((state.workspaceMode === "manual" &&
+        (state.repo.lastTab === "log"
+          ? Boolean(state.logFile)
+          : Boolean(state.repo.lastSelection))) ||
+        (state.workspaceMode === "files" && state.projectFile?.content === "text")),
   );
 
   useEffect(

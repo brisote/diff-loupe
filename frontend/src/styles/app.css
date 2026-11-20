@@ -1274,3 +1274,19 @@ button {
   font-size: 12px;
   line-height: 18px;
 }
+
+.app-file-grid {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr);
+  flex: 1;
+  min-height: 0;
+  background: var(--editor-bg);
+}
+
+.app-file-grid .app-numbers.is-project {
+  width: 44px;
+}
+
+.app-file-grid .cm-line.is-target-line {
+  background: var(--selection-bg-muted);
+}

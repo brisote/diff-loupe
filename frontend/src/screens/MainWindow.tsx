@@ -6,6 +6,7 @@ import { clampWidth, Splitter } from "../main-window/Splitter";
 import { StatusBar } from "../main-window/StatusBar";
 import { Stripe } from "../main-window/Stripe";
 import { ToolWindow } from "../main-window/ToolWindow";
+import { FileViewer } from "../project/FileViewer";
 import { ProjectTree } from "../project/ProjectTree";
 import { useApp } from "../state/context";
 import { TerminalPanel } from "../terminal/TerminalPanel";
@@ -29,7 +30,6 @@ export function MainWindow() {
   const terminalOpen = useApp((state) => state.terminalOpen);
   const aiReviewEnabled = useApp((state) => Boolean(state.info?.aiReviewEnabled));
   const workspaceMode = useApp((state) => state.workspaceMode);
-  const projectSelectedFile = useApp((state) => state.projectSelectedFile);
   const [terminalHeight, setTerminalHeight] = useState(defaultTerminal);
   const [maxHeight, setMaxHeight] = useState(600);
 
@@ -101,14 +101,7 @@ export function MainWindow() {
                 onResize={resize}
                 onResizeEnd={save}
               />
-              <section className="dl-island app-editor" aria-label="File viewer">
-                <div className="dl-empty app-fill">
-                  <span className="dl-empty-title">
-                    {projectSelectedFile ?? "Select a file to view"}
-                  </span>
-                  <span>Pick a file in the project tree on the left.</span>
-                </div>
-              </section>
+              <FileViewer />
             </div>
           ) : (
             <div className="app-panes" ref={body}>
