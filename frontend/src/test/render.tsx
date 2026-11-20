@@ -50,6 +50,7 @@ export function fakeCore(handlers: Record<string, Handler> = {}, platform: Platf
     set_repo_view: () => null,
     get_ui_value: () => null,
     status: () => [],
+    list_project_dir: () => [],
     prepare_diffs: () => null,
     branch_log: () => ({ entries: [], truncated: false }),
     set_ui_value: () => null,

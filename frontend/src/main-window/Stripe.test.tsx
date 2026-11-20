@@ -12,19 +12,28 @@ describe("Stripe", () => {
 
     const manual = screen.getByRole("button", { name: "Manual review" });
     const ai = screen.getByRole("button", { name: "AI review" });
+    const project = screen.getByRole("button", { name: "Project" });
     const terminal = screen.getByRole("button", { name: /Terminal/ });
 
     expect(manual).toHaveAttribute("aria-pressed", "true");
     expect(ai).toHaveAttribute("aria-pressed", "false");
+    expect(project).toHaveAttribute("aria-pressed", "false");
     expect(terminal).toHaveAttribute("aria-pressed", "false");
 
     fireEvent.click(ai);
     expect(manual).toHaveAttribute("aria-pressed", "false");
     expect(ai).toHaveAttribute("aria-pressed", "true");
+    expect(project).toHaveAttribute("aria-pressed", "false");
+
+    fireEvent.click(project);
+    expect(manual).toHaveAttribute("aria-pressed", "false");
+    expect(ai).toHaveAttribute("aria-pressed", "false");
+    expect(project).toHaveAttribute("aria-pressed", "true");
 
     fireEvent.click(manual);
     expect(manual).toHaveAttribute("aria-pressed", "true");
     expect(ai).toHaveAttribute("aria-pressed", "false");
+    expect(project).toHaveAttribute("aria-pressed", "false");
 
     fireEvent.click(terminal);
     expect(terminal).toHaveAttribute("aria-pressed", "true");

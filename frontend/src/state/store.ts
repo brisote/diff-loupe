@@ -11,6 +11,8 @@ import type {
   FileDiff,
   MergeOutcome,
   MergeState,
+  ProjectEntry,
+  ProjectFile,
   PushResult,
   RecentRepo,
   RepoInfo,
@@ -361,8 +363,21 @@ export type AppState = {
   setSearchQuery: (query: string) => void;
   toggleSearchCase: () => void;
   setSearchMatch: (match: { current: number; total: number }) => void;
-  workspaceMode: "manual" | "ai";
-  setWorkspaceMode: (mode: "manual" | "ai") => void;
+  workspaceMode: "manual" | "ai" | "files";
+  setWorkspaceMode: (mode: "manual" | "ai" | "files") => void;
+  projectDirs: Record<string, ProjectEntry[]>;
+  projectExpanded: Record<string, boolean>;
+  projectSelectedFile: string | null;
+  projectTreeError: ApiError | null;
+  projectFile: ProjectFile | null;
+  projectFileError: ApiError | null;
+  projectTargetLine: { file: string; line: number; seq: number } | null;
+  loadProjectDir: (dir: string) => Promise<void>;
+  toggleProjectDir: (dir: string) => Promise<void>;
+  expandProjectParents: (file: string) => Promise<void>;
+  collapseAllProjectDirs: () => void;
+  selectProjectFile: (file: string | null, line?: number) => Promise<void>;
+  refreshProjectTree: () => Promise<void>;
   consentAccepted: boolean;
   account: CloudAccount | null;
   authPending: { userCode: string; verificationUrl: string } | null;
@@ -456,6 +471,9 @@ export function createAppStore(backend: Backend) {
   let commitRequest = 0;
   let commitDiffRequest = 0;
   let aiStateRequest = 0;
+  let projectDirRequest = 0;
+  let projectFileRequest = 0;
+  let projectTargetSeq = 0;
   let saving: Promise<void> = Promise.resolve();
   let updateTimer: ReturnType<typeof setInterval> | undefined;
   let lastCheck = 0;
@@ -611,6 +629,13 @@ export function createAppStore(backend: Backend) {
       activeTab: null,
       ...emptyLog,
       workspaceMode: "manual",
+      projectDirs: {},
+      projectExpanded: {},
+      projectSelectedFile: null,
+      projectTreeError: null,
+      projectFile: null,
+      projectFileError: null,
+      projectTargetLine: null,
       consentAccepted: false,
       account: null,
       authPending: null,
@@ -661,6 +686,11 @@ export function createAppStore(backend: Backend) {
             void get().loadStatus();
             void refreshRepo(event.path);
             if (get().repo?.lastTab === "log") void get().loadLog();
+            if (get().workspaceMode === "files") {
+              void get().refreshProjectTree();
+              const openFile = get().projectSelectedFile;
+              if (openFile) void get().selectProjectFile(openFile);
+            }
             void get().loadAiState();
           } else if (event.type === "aiReviewStream") {
             const repo = get().repo;
@@ -770,6 +800,9 @@ export function createAppStore(backend: Backend) {
               if (get().repo?.path !== repoPath) return;
               if (val === "ai" && get().info?.aiReviewEnabled) {
                 set({ workspaceMode: "ai" });
+              } else if (val === "files") {
+                set({ workspaceMode: "files" });
+                void get().loadProjectDir("");
               } else if (val === "manual") {
                 set({ workspaceMode: "manual" });
               }
@@ -841,6 +874,13 @@ export function createAppStore(backend: Backend) {
             set({
               repo,
               workspaceMode: "manual",
+              projectDirs: {},
+              projectExpanded: {},
+              projectSelectedFile: null,
+              projectTreeError: null,
+              projectFile: null,
+              projectFileError: null,
+              projectTargetLine: null,
               openTabs: initialTabs,
               activeTab: repo.lastSelection,
               openError: null,
@@ -869,6 +909,9 @@ export function createAppStore(backend: Backend) {
                 if (get().repo?.path !== repoPath) return;
                 if (val === "ai" && get().info?.aiReviewEnabled) {
                   set({ workspaceMode: "ai" });
+                } else if (val === "files") {
+                  set({ workspaceMode: "files" });
+                  void get().loadProjectDir("");
                 } else if (val === "manual") {
                   set({ workspaceMode: "manual" });
                 }
@@ -1689,8 +1732,121 @@ export function createAppStore(backend: Backend) {
             .catch(() => undefined);
           if (mode === "ai") {
             void get().loadAiState();
+          } else if (mode === "files" && !get().projectDirs[""]) {
+            void get().loadProjectDir("");
           }
         }
+      },
+
+      loadProjectDir: async (dir) => {
+        const path = get().repo?.path;
+        if (!path) return;
+        const request = ++projectDirRequest;
+        try {
+          const entries = await backend.call("list_project_dir", { path, dir });
+          if (get().repo?.path !== path) return;
+          set((state) => ({
+            projectDirs: { ...state.projectDirs, [dir]: entries },
+            projectTreeError: dir === "" ? null : state.projectTreeError,
+          }));
+        } catch (error) {
+          if (get().repo?.path !== path || request !== projectDirRequest) return;
+          if (dir === "") set({ projectTreeError: toApiError(error) });
+        }
+      },
+
+      toggleProjectDir: async (dir) => {
+        const currentlyExpanded = Boolean(get().projectExpanded[dir]);
+        if (currentlyExpanded) {
+          set((state) => {
+            const next = { ...state.projectExpanded };
+            delete next[dir];
+            return { projectExpanded: next };
+          });
+          return;
+        }
+        set((state) => ({
+          projectExpanded: { ...state.projectExpanded, [dir]: true },
+        }));
+        if (!get().projectDirs[dir]) {
+          await get().loadProjectDir(dir);
+        }
+      },
+
+      expandProjectParents: async (file) => {
+        const parts = file.split("/").slice(0, -1);
+        if (parts.length === 0) return;
+        const dirs: string[] = [];
+        let acc = "";
+        for (const part of parts) {
+          acc = acc ? `${acc}/${part}` : part;
+          dirs.push(acc);
+        }
+        set((state) => {
+          const next = { ...state.projectExpanded };
+          for (const dir of dirs) next[dir] = true;
+          return { projectExpanded: next };
+        });
+        await Promise.all(
+          dirs.map((dir) =>
+            get().projectDirs[dir] ? Promise.resolve() : get().loadProjectDir(dir),
+          ),
+        );
+      },
+
+      collapseAllProjectDirs: () => set({ projectExpanded: {} }),
+
+      selectProjectFile: async (file, line) => {
+        const path = get().repo?.path;
+        if (!path || !file) {
+          projectFileRequest += 1;
+          set({
+            projectSelectedFile: null,
+            projectFile: null,
+            projectFileError: null,
+            projectTargetLine: null,
+          });
+          return;
+        }
+        const targetLine = line !== undefined ? { file, line, seq: ++projectTargetSeq } : null;
+        set({
+          projectSelectedFile: file,
+          projectFileError: null,
+          ...(targetLine ? { projectTargetLine: targetLine } : { projectTargetLine: null }),
+        });
+        const request = ++projectFileRequest;
+        try {
+          const loaded = await backend.call("read_project_file", { path, file });
+          if (get().repo?.path !== path || request !== projectFileRequest) return;
+          set({ projectFile: loaded, projectFileError: null });
+        } catch (error) {
+          if (get().repo?.path !== path || request !== projectFileRequest) return;
+          set({ projectFile: null, projectFileError: toApiError(error) });
+        }
+      },
+
+      refreshProjectTree: async () => {
+        const path = get().repo?.path;
+        if (!path) return;
+        const dirs = [
+          "",
+          ...Object.keys(get().projectExpanded).filter((dir) => get().projectExpanded[dir]),
+        ];
+        await Promise.all(
+          dirs.map(async (dir) => {
+            try {
+              const entries = await backend.call("list_project_dir", { path, dir });
+              if (get().repo?.path !== path) return;
+              set((state) => ({
+                projectDirs: { ...state.projectDirs, [dir]: entries },
+                projectTreeError: dir === "" ? null : state.projectTreeError,
+              }));
+            } catch (error) {
+              if (get().repo?.path !== path) return;
+              if (dir === "") set({ projectTreeError: toApiError(error) });
+            }
+          }),
+        );
       },
 
       loadAiState: async (targetReviewId?: number) => {

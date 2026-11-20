@@ -60,7 +60,7 @@ export function App() {
   const hasDiff = useApp(
     (state) =>
       state.repo !== null &&
-      state.workspaceMode !== "ai" &&
+      state.workspaceMode === "manual" &&
       (state.repo.lastTab === "log" ? Boolean(state.logFile) : Boolean(state.repo.lastSelection)),
   );
 
