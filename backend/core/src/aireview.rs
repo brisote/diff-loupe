@@ -283,6 +283,8 @@ pub fn stream_sse(
         line.clear();
     }
 
+    watch.check()?;
+
     if let (Some(ev), Some(data)) = (current_event.take(), current_data.take()) {
         dispatch_sse_event(&ev, &data, ctx, events, task, store, &mut acc)?;
     }
