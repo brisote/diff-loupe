@@ -507,3 +507,48 @@ fn dispatch_sse_event(
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::tempdir;
+
+    #[test]
+    fn write_auth_creates_missing_data_dir_and_round_trips() {
+        let root = tempdir().unwrap();
+        let nested_data_dir = root.path().join("missing").join("data");
+        assert!(!nested_data_dir.exists());
+
+        let auth = StoredCloudAuth {
+            access_token: "dl_live_test_token".to_string(),
+            account: CloudAccount {
+                id: "acc_1".to_string(),
+                email: "dev@diffloupe.com".to_string(),
+                balance_usd: "10.00".to_string(),
+            },
+        };
+
+        write_auth(&nested_data_dir, &auth).unwrap();
+        assert!(nested_data_dir.join(CLOUD_AUTH_FILE).is_file());
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = std::fs::metadata(nested_data_dir.join(CLOUD_AUTH_FILE))
+                .unwrap()
+                .permissions()
+                .mode()
+                & 0o777;
+            assert_eq!(mode, 0o600);
+        }
+
+        let loaded = read_auth(&nested_data_dir).unwrap();
+        assert_eq!(loaded.access_token, auth.access_token);
+        assert_eq!(loaded.account.id, auth.account.id);
+        assert_eq!(loaded.account.email, auth.account.email);
+        assert_eq!(loaded.account.balance_usd, auth.account.balance_usd);
+
+        clear_auth(&nested_data_dir);
+        assert!(read_auth(&nested_data_dir).is_none());
+    }
+}
