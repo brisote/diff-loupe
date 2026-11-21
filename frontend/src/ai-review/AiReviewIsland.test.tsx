@@ -115,9 +115,9 @@ describe("AiReviewIsland", () => {
     });
 
     expect(await screen.findByText("Review in progress")).toBeInTheDocument();
-    expect(screen.getByText("Auditing 4 changed files and unit tests")).toBeInTheDocument();
-    expect(screen.getByText("Model Thinking")).toBeInTheDocument();
-    expect(screen.getByText("Comparing against repository conventions")).toBeInTheDocument();
+    expect(screen.getByText("Review progress")).toBeInTheDocument();
+    expect(screen.getAllByText("Preparing repository snapshot and diff").length).toBeGreaterThan(0);
+    expect(screen.queryByText("Comparing against repository conventions")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Cancel review" })).toBeInTheDocument();
     expect(document.querySelectorAll(".dl-ai-session-stream > .dl-caret")).toHaveLength(0);
   });
@@ -1730,7 +1730,7 @@ describe("AiReviewIsland", () => {
     expect(screen.getByTitle("Review history")).toHaveTextContent("Review #2");
   });
 
-  it("shows Generating structured review report as active pulsing step when reportDelta streams", async () => {
+  it("shows simulated progress steps without raw model thinking and appends Building the view when report streams", async () => {
     const core = fakeCore({
       current_repo: () => repoInfo("acme-billing", "gs/invoice-export"),
       ai_get_state: () => ({
@@ -1758,9 +1758,11 @@ describe("AiReviewIsland", () => {
         kind: "stage",
         stage: "analyzing",
         message: "Reasoning about code changes…",
-        thought: "Analyzing repository structure and conventions",
+        thought: '{"id":"readability","assessment":"Needs Improvement"}',
       },
     });
+
+    expect(screen.queryByText(/Needs Improvement/)).not.toBeInTheDocument();
 
     core.emit({
       type: "aiReviewStream",
@@ -1776,15 +1778,15 @@ describe("AiReviewIsland", () => {
     });
 
     await waitFor(() => {
-      expect(screen.getAllByText("Generating structured review report…").length).toBeGreaterThan(0);
+      expect(screen.getAllByText("Building the view").length).toBeGreaterThan(0);
     });
 
-    const thinkingHeading = screen.getByText("Model Thinking");
-    const thinkingBox = thinkingHeading.parentElement;
-    expect(thinkingBox).not.toBeNull();
-    if (thinkingBox) {
-      expect(within(thinkingBox).getAllByText("✓")).toHaveLength(2);
-      expect(thinkingBox.querySelectorAll(".dl-ai-pulse-dot")).toHaveLength(1);
+    const progressHeading = screen.getByText("Review progress");
+    const progressBox = progressHeading.parentElement;
+    expect(progressBox).not.toBeNull();
+    if (progressBox) {
+      expect(within(progressBox).getAllByText("✓")).toHaveLength(1);
+      expect(progressBox.querySelectorAll(".dl-ai-pulse-dot")).toHaveLength(1);
     }
   });
 });

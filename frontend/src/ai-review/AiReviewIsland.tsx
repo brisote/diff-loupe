@@ -1,5 +1,5 @@
 import type { RefObject } from "react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Dialog } from "../lib/dialog";
 import { Icon } from "../lib/icon";
 import { Popup, useBelow } from "../lib/popup";
@@ -8,6 +8,7 @@ import { useApp } from "../state/context";
 import { isFollowupRunId, PENDING_REVIEW_ID } from "../state/store";
 import { AiChatComposer } from "./AiChatComposer";
 import { AiChatThread } from "./AiChatThread";
+import { FINAL_LOADING_STEP, pickLoadingSequence } from "./loadingSteps";
 import { EffortPicker, ModelPicker } from "./ModelPicker";
 import { formatBalanceUsd, formatReviewCostUsd } from "./money";
 import { ReportViewer } from "./ReportViewer";
@@ -212,14 +213,46 @@ export function AiReviewIsland() {
     (!activeReviewId && chatMessages.length === 0) ||
     activeReviewId === PENDING_REVIEW_ID ||
     isFollowupStreaming;
-  const thoughtsCount = activeRun?.thoughts?.length ?? 0;
+  const initialRunId = isInitialStreaming ? (activeRun?.runId ?? null) : null;
+  const isBuildingView =
+    isInitialStreaming &&
+    (activeRun?.stage === "writing" ||
+      activeRun?.stage === "formatting" ||
+      Boolean(activeRun?.streamingReport));
+  const loadingPool = useMemo(
+    () => (initialRunId ? pickLoadingSequence(initialRunId) : []),
+    [initialRunId],
+  );
+  const [simulatedStepCount, setSimulatedStepCount] = useState(1);
+
+  useEffect(() => {
+    if (!initialRunId) {
+      setSimulatedStepCount(1);
+      return;
+    }
+    setSimulatedStepCount(1);
+  }, [initialRunId]);
+
+  useEffect(() => {
+    if (!initialRunId || isBuildingView || loadingPool.length <= 1) return;
+    const timer = window.setInterval(() => {
+      setSimulatedStepCount((count) => Math.min(count + 1, loadingPool.length));
+    }, 2200);
+    return () => window.clearInterval(timer);
+  }, [initialRunId, isBuildingView, loadingPool.length]);
+
+  const visibleSteps = isInitialStreaming
+    ? isBuildingView
+      ? [...loadingPool.slice(0, simulatedStepCount), FINAL_LOADING_STEP]
+      : loadingPool.slice(0, simulatedStepCount)
+    : [];
 
   useEffect(() => {
     const el = thinkingRef.current;
-    if (el && thoughtsCount > 0) {
+    if (el && visibleSteps.length > 0) {
       el.scrollTop = el.scrollHeight;
     }
-  }, [thoughtsCount]);
+  }, [visibleSteps.length]);
   const activeReviewIdRef = useRef(activeReviewId);
   activeReviewIdRef.current = activeReviewId;
   const quotedSelectionRef = useRef(quotedSelection);
@@ -886,77 +919,72 @@ export function AiReviewIsland() {
 
                     <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13 }}>
                       <span style={{ fontWeight: 500, color: "var(--text)" }}>
-                        {activeRun.message || activeRun.stage || "Analyzing branch changes…"}
+                        {visibleSteps[visibleSteps.length - 1] ?? "Analyzing branch changes…"}
                       </span>
                     </div>
 
-                    {activeRun.thoughts &&
-                      activeRun.thoughts.length > 0 &&
-                      (() => {
-                        const thoughts = activeRun.thoughts;
-                        return (
-                          <div
-                            ref={thinkingRef}
-                            style={{
-                              marginTop: 4,
-                              padding: "10px 12px",
-                              background: "var(--window-bg)",
-                              borderRadius: "var(--radius-4)",
-                              border: "1px solid var(--border)",
-                              display: "flex",
-                              flexDirection: "column",
-                              gap: 6,
-                              maxHeight: 180,
-                              overflowY: "auto",
-                              fontSize: 12,
-                              fontFamily: "var(--font-code, monospace)",
-                            }}
-                          >
+                    {visibleSteps.length > 0 && (
+                      <div
+                        ref={thinkingRef}
+                        style={{
+                          marginTop: 4,
+                          padding: "10px 12px",
+                          background: "var(--window-bg)",
+                          borderRadius: "var(--radius-4)",
+                          border: "1px solid var(--border)",
+                          display: "flex",
+                          flexDirection: "column",
+                          gap: 6,
+                          maxHeight: 180,
+                          overflowY: "auto",
+                          fontSize: 12,
+                          fontFamily: "var(--font-code, monospace)",
+                        }}
+                      >
+                        <div
+                          style={{
+                            fontSize: 11,
+                            fontWeight: 600,
+                            color: "var(--text-muted)",
+                            textTransform: "uppercase",
+                            letterSpacing: 0.5,
+                            marginBottom: 2,
+                          }}
+                        >
+                          Review progress
+                        </div>
+                        {visibleSteps.map((step, idx) => {
+                          const isLatest = idx === visibleSteps.length - 1;
+                          return (
                             <div
+                              key={step}
                               style={{
-                                fontSize: 11,
-                                fontWeight: 600,
-                                color: "var(--text-muted)",
-                                textTransform: "uppercase",
-                                letterSpacing: 0.5,
-                                marginBottom: 2,
+                                display: "flex",
+                                alignItems: "center",
+                                gap: 8,
+                                color: isLatest ? "var(--text)" : "var(--text-muted)",
+                                lineHeight: 1.4,
                               }}
                             >
-                              Model Thinking
-                            </div>
-                            {thoughts.map((thought, idx) => {
-                              const isLatest = idx === thoughts.length - 1;
-                              return (
-                                <div
-                                  key={thought}
+                              {isLatest ? (
+                                <span className="dl-ai-pulse-dot" aria-hidden="true" />
+                              ) : (
+                                <span
                                   style={{
-                                    display: "flex",
-                                    alignItems: "center",
-                                    gap: 8,
-                                    color: isLatest ? "var(--text)" : "var(--text-muted)",
-                                    lineHeight: 1.4,
+                                    color: "var(--success, #59a869)",
+                                    fontWeight: 700,
+                                    flexShrink: 0,
                                   }}
                                 >
-                                  {isLatest ? (
-                                    <span className="dl-ai-pulse-dot" aria-hidden="true" />
-                                  ) : (
-                                    <span
-                                      style={{
-                                        color: "var(--success, #59a869)",
-                                        fontWeight: 700,
-                                        flexShrink: 0,
-                                      }}
-                                    >
-                                      ✓
-                                    </span>
-                                  )}
-                                  <span>{thought}</span>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        );
-                      })()}
+                                  ✓
+                                </span>
+                              )}
+                              <span>{step}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
                 )}
 
