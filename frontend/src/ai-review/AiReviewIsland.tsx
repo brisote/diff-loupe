@@ -10,6 +10,7 @@ import { AiChatComposer } from "./AiChatComposer";
 import { AiChatThread } from "./AiChatThread";
 import {
   FINAL_LOADING_STEP,
+  LOADING_LABEL_INTERVAL_MS,
   MAJOR_REVIEW_STEPS,
   majorStepIndexForStage,
   pickRandomLoadingLabel,
@@ -246,7 +247,7 @@ export function AiReviewIsland() {
     if (!initialRunId || isBuildingView) return;
     const timer = window.setInterval(() => {
       setLoadingLabel((prev) => pickRandomLoadingLabel(prev));
-    }, 2500);
+    }, LOADING_LABEL_INTERVAL_MS);
     return () => window.clearInterval(timer);
   }, [initialRunId, isBuildingView]);
 
