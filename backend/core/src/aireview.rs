@@ -32,6 +32,7 @@ pub fn read_auth(data_dir: &Path) -> Option<StoredCloudAuth> {
 }
 
 pub fn write_auth(data_dir: &Path, auth: &StoredCloudAuth) -> Result<()> {
+    std::fs::create_dir_all(data_dir)?;
     let path = data_dir.join(CLOUD_AUTH_FILE);
     let json = serde_json::to_vec_pretty(auth)?;
     let mut opts = std::fs::OpenOptions::new();
