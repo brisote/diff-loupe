@@ -408,7 +408,7 @@ export type AppState = {
   modelsCatalog: ModelsCatalog | null;
   selectedModel: string | null;
   selectedEffort: string | null;
-  loadAiState: (targetReviewId?: number) => Promise<void>;
+  loadAiState: (targetReviewId?: number, preserveError?: boolean) => Promise<void>;
   switchReview: (reviewId: number) => Promise<void>;
   aiDeleteReview: (reviewId: number) => Promise<void>;
   aiRevertVersion: (reviewId: number, versionNumber: number) => Promise<void>;
@@ -686,7 +686,16 @@ export function createAppStore(backend: Backend) {
               void get().loadAiState();
             }
             if (get().activeRun?.runId === event.id && event.done) {
-              set({ activeRun: null });
+              const wasPending = get().activeReviewId === PENDING_REVIEW_ID;
+              const fallbackId = wasPending ? (get().reviews[0]?.id ?? null) : null;
+              set((s) => ({
+                activeRun: null,
+                streamingChat: null,
+                ...(s.activeReviewId === PENDING_REVIEW_ID ? { activeReviewId: fallbackId } : {}),
+              }));
+              if (wasPending && fallbackId !== null) {
+                void get().loadAiState(fallbackId, true);
+              }
             }
           } else if (event.type === "terminalExit") {
             ended.add(event.id);
@@ -797,14 +806,17 @@ export function createAppStore(backend: Backend) {
               }));
               void get().loadAiState(wasViewingPending ? undefined : (prevActiveId ?? undefined));
             } else if (payload.kind === "error") {
+              const wasPending = get().activeReviewId === PENDING_REVIEW_ID;
+              const fallbackId = wasPending ? (get().reviews[0]?.id ?? null) : null;
               set((s) => ({
                 activeRun: null,
                 streamingChat: null,
                 inlineError: payload.message,
-                ...(s.activeReviewId === PENDING_REVIEW_ID
-                  ? { activeReviewId: s.reviews[0]?.id ?? null }
-                  : {}),
+                ...(s.activeReviewId === PENDING_REVIEW_ID ? { activeReviewId: fallbackId } : {}),
               }));
+              if (wasPending && fallbackId !== null) {
+                void get().loadAiState(fallbackId, true);
+              }
             }
           }
         });
@@ -1986,7 +1998,7 @@ export function createAppStore(backend: Backend) {
         );
       },
 
-      loadAiState: async (targetReviewId?: number) => {
+      loadAiState: async (targetReviewId?: number, preserveError?: boolean) => {
         if (!get().info?.aiReviewEnabled) return;
         const repo = get().repo;
         if (!repo) {
@@ -2024,14 +2036,14 @@ export function createAppStore(backend: Backend) {
           });
           if (request !== aiStateRequest || get().repo?.path !== path) return;
           if (keepingPending && get().activeReviewId === PENDING_REVIEW_ID) {
-            set({
+            set((s) => ({
               consentAccepted: result.consentAccepted,
               account: result.account,
               reviews: result.reviews ?? [],
-              inlineError: null,
-            });
+              inlineError: preserveError ? s.inlineError : null,
+            }));
           } else {
-            set({
+            set((s) => ({
               consentAccepted: result.consentAccepted,
               account: result.account,
               reviews: result.reviews ?? [],
@@ -2040,8 +2052,8 @@ export function createAppStore(backend: Backend) {
               reviewCostUsd: result.review?.costUsd ?? null,
               chatMessages: result.chatMessages ?? [],
               selectedVersionNumber: null,
-              inlineError: null,
-            });
+              inlineError: preserveError ? s.inlineError : null,
+            }));
           }
           if (result.consentAccepted && !get().modelsCatalog) {
             void get().loadAiModels();
@@ -2259,13 +2271,17 @@ export function createAppStore(backend: Backend) {
           });
         } catch (err) {
           const apiError = toApiError(err);
+          const wasPending = get().activeReviewId === PENDING_REVIEW_ID;
+          const fallbackId = wasPending ? (get().reviews[0]?.id ?? null) : null;
           set((s) => ({
             inlineError: apiError.message,
             activeRun: null,
-            ...(s.activeReviewId === PENDING_REVIEW_ID
-              ? { activeReviewId: s.reviews[0]?.id ?? null }
-              : {}),
+            streamingChat: null,
+            ...(s.activeReviewId === PENDING_REVIEW_ID ? { activeReviewId: fallbackId } : {}),
           }));
+          if (wasPending && fallbackId !== null) {
+            void get().loadAiState(fallbackId, true);
+          }
         }
       },
 
@@ -2275,6 +2291,7 @@ export function createAppStore(backend: Backend) {
           get().cancelTask(run.runId);
           set((s) => ({
             activeRun: null,
+            streamingChat: null,
             ...(s.activeReviewId === PENDING_REVIEW_ID
               ? { activeReviewId: s.reviews[0]?.id ?? null }
               : {}),
@@ -2295,8 +2312,17 @@ export function createAppStore(backend: Backend) {
         const repoPath = repo.path;
         const activeReviewId = get().activeReviewId ?? undefined;
         const expectedReviewId = activeReviewId ?? null;
-        const isStillActive = () =>
-          get().repo?.path === repoPath && get().activeReviewId === expectedReviewId;
+        const isSameRepo = () => get().repo?.path === repoPath;
+        const isStillActive = () => isSameRepo() && get().activeReviewId === expectedReviewId;
+        const ownsFollowupRun = () => {
+          const run = get().activeRun;
+          return (
+            isSameRepo() &&
+            run !== null &&
+            isFollowupRunId(run.runId) &&
+            (run.reviewId === expectedReviewId || run.reviewId === undefined)
+          );
+        };
         const optimisticId = Date.now();
         set({
           inlineError: null,
@@ -2347,6 +2373,8 @@ export function createAppStore(backend: Backend) {
               streamingChat: null,
               chatMessages: get().chatMessages.filter((msg) => msg.id !== optimisticId),
             });
+          } else if (ownsFollowupRun()) {
+            set({ activeRun: null, streamingChat: null });
           }
           return false;
         } finally {
@@ -2356,6 +2384,8 @@ export function createAppStore(backend: Backend) {
             } else {
               set({ streamingChat: null });
             }
+          } else if (ownsFollowupRun()) {
+            set({ activeRun: null, streamingChat: null });
           }
         }
       },

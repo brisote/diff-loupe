@@ -1,5 +1,5 @@
 import { type Extension, StateEffect, StateField } from "@codemirror/state";
-import { Decoration, type DecorationSet, EditorView } from "@codemirror/view";
+import { Decoration, type DecorationSet, EditorView, ViewPlugin } from "@codemirror/view";
 import type { Platform } from "../api";
 import { hasModifier } from "../lib/platform";
 
@@ -88,8 +88,21 @@ export function symbolNavigationExtension(
     view.dispatch({ effects: setHoverRange.of(next) });
   };
 
+  const clearPlugin = ViewPlugin.define((view) => {
+    const clear = () => setRange(view, null);
+    window.addEventListener("keyup", clear);
+    window.addEventListener("blur", clear);
+    return {
+      destroy() {
+        window.removeEventListener("keyup", clear);
+        window.removeEventListener("blur", clear);
+      },
+    };
+  });
+
   return [
     hoverField,
+    clearPlugin,
     EditorView.domEventHandlers({
       mousemove(event, view) {
         if (!hasModifier(platform, event)) {
@@ -101,10 +114,6 @@ export function symbolNavigationExtension(
         return false;
       },
       mouseleave(_event, view) {
-        setRange(view, null);
-        return false;
-      },
-      keyup(_event, view) {
         setRange(view, null);
         return false;
       },

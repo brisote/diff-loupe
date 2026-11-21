@@ -161,7 +161,7 @@ export function FileViewer({ extraExtensions }: { extraExtensions?: Extension[] 
   }, [activeMatch]);
 
   useEffect(() => {
-    if (!targetLine || !loaded || targetLine.file !== loaded.path || isRenderedMarkdown) return;
+    if (!targetLine || !loaded || targetLine.file !== loaded.path || mode !== "raw") return;
     const frameId = requestAnimationFrame(() => {
       const editor = view.current;
       if (!editor) return;
@@ -173,10 +173,10 @@ export function FileViewer({ extraExtensions }: { extraExtensions?: Extension[] 
       measure();
     });
     return () => cancelAnimationFrame(frameId);
-  }, [targetLine, loaded, isRenderedMarkdown, measure]);
+  }, [targetLine, loaded, mode, measure]);
 
   const highlightLine =
-    targetLine && loaded && targetLine.file === loaded.path && !isRenderedMarkdown
+    targetLine && loaded && targetLine.file === loaded.path && mode === "raw"
       ? targetLine.line
       : null;
 
