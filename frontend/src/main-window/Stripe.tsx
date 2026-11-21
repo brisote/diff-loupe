@@ -33,6 +33,16 @@ export function Stripe() {
           <Icon name="diff-magicResolveToolbar" />
         </button>
       )}
+      <button
+        className={`dl-tbtn app-stripe-button ${workspaceMode === "files" ? "is-toggled" : ""}`}
+        type="button"
+        title="Project"
+        aria-label="Project"
+        aria-pressed={workspaceMode === "files"}
+        onClick={() => setWorkspaceMode("files")}
+      >
+        <Icon name="nodes-folder" />
+      </button>
       <span className="app-stripe-spacer" />
       <button
         className={`dl-tbtn app-stripe-button ${terminalOpen ? "is-toggled" : ""}`}

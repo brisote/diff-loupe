@@ -6,6 +6,8 @@ import { clampWidth, Splitter } from "../main-window/Splitter";
 import { StatusBar } from "../main-window/StatusBar";
 import { Stripe } from "../main-window/Stripe";
 import { ToolWindow } from "../main-window/ToolWindow";
+import { FileViewer } from "../project/FileViewer";
+import { ProjectTree } from "../project/ProjectTree";
 import { useApp } from "../state/context";
 import { TerminalPanel } from "../terminal/TerminalPanel";
 import { OpenErrorBanner } from "./OpenErrorBanner";
@@ -89,6 +91,18 @@ export function MainWindow() {
         <div className="app-work">
           {aiReviewEnabled && workspaceMode === "ai" ? (
             <AiReviewIsland />
+          ) : workspaceMode === "files" ? (
+            <div className="app-panes" ref={body}>
+              <ProjectTree width={shown} />
+              <Splitter
+                width={shown}
+                min={minWidth}
+                max={maxWidth}
+                onResize={resize}
+                onResizeEnd={save}
+              />
+              <FileViewer />
+            </div>
           ) : (
             <div className="app-panes" ref={body}>
               <ToolWindow width={shown} />

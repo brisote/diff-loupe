@@ -942,3 +942,80 @@ fn followup_failure_retry_does_not_duplicate_user_messages() {
     drop(core);
     drop(data);
 }
+
+#[test]
+fn status_and_diff_do_not_block_during_active_ai_review_stream() {
+    let repo = TempRepo::with_commit();
+    repo.write("tracked.rs", "fn a() {}\n");
+    repo.commit_all("Add tracked");
+    repo.write("tracked.rs", "fn a() { let _ = 1; }\n");
+
+    let (data, core, _, repo_path) = open_repo_core(&repo);
+    let core = Arc::new(core);
+
+    core.dispatch("ai_set_consent", json!({ "accepted": true }))
+        .unwrap();
+    let auth = StoredCloudAuth {
+        access_token: "test_tok".into(),
+        account: CloudAccount {
+            id: "usr_1".into(),
+            email: "ada@example.com".into(),
+            balance_usd: "10.00".into(),
+        },
+    };
+    aireview::write_auth(data.path(), &auth).unwrap();
+
+    let (started_tx, started_rx) = std::sync::mpsc::channel();
+    let (release_tx, release_rx) = std::sync::mpsc::channel();
+    let started_tx = Arc::new(Mutex::new(Some(started_tx)));
+    let release_rx = Arc::new(Mutex::new(Some(release_rx)));
+
+    let server = spawn_server(move |_, path, _, stream| {
+        if path == "/v1/reviews/stream" {
+            let head = "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\n\r\nevent: stage\ndata: {\"stage\":\"reviewing\",\"message\":\"Working\"}\n\n";
+            let _ = stream.write_all(head.as_bytes());
+            let _ = stream.flush();
+            if let Some(tx) = started_tx.lock().unwrap().take() {
+                let _ = tx.send(());
+            }
+            if let Some(rx) = release_rx.lock().unwrap().take() {
+                let _ = rx.recv_timeout(std::time::Duration::from_secs(5));
+            }
+            let tail = "event: done\ndata: {\"report_markdown\":\"ok\",\"chat_message\":\"\",\"balance_usd\":\"9.99\",\"cost_usd\":\"0.01\"}\n\n";
+            let _ = stream.write_all(tail.as_bytes());
+            let _ = stream.flush();
+        }
+    });
+    core.set_cloud_url(&server.url);
+
+    let core_bg = core.clone();
+    let repo_bg = repo_path.clone();
+    let handle = std::thread::spawn(move || {
+        core_bg
+            .dispatch("ai_start_review", json!({ "repo": repo_bg }))
+            .unwrap();
+    });
+
+    started_rx
+        .recv_timeout(std::time::Duration::from_secs(5))
+        .expect("SSE stream should start");
+
+    let status = core
+        .dispatch("status", json!({ "path": repo_path }))
+        .unwrap();
+    assert!(!status.as_array().unwrap().is_empty());
+
+    let diff = core
+        .dispatch("diff", json!({ "path": repo_path, "file": "tracked.rs" }))
+        .unwrap();
+    assert_eq!(diff["path"], "tracked.rs");
+
+    let state = core
+        .dispatch("ai_get_state", json!({ "repo": repo_path }))
+        .unwrap();
+    assert_eq!(state["consentAccepted"], true);
+
+    let _ = release_tx.send(());
+    handle.join().unwrap();
+    drop(data);
+}

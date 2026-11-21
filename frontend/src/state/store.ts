@@ -11,6 +11,8 @@ import type {
   FileDiff,
   MergeOutcome,
   MergeState,
+  ProjectEntry,
+  ProjectFile,
   PushResult,
   RecentRepo,
   RepoInfo,
@@ -236,6 +238,8 @@ export const diffMeasure = "select-to-diff";
 export const tabsKey = (path: string) => `repo.tabs:${path}`;
 export const modeKey = (path: string) => `repo.mode:${path}`;
 
+export const PENDING_REVIEW_ID = -1;
+
 export function isFollowupRunId(runId: string | undefined): boolean {
   return runId === "ai_followup" || runId?.startsWith("ai_followup:") === true;
 }
@@ -361,16 +365,35 @@ export type AppState = {
   setSearchQuery: (query: string) => void;
   toggleSearchCase: () => void;
   setSearchMatch: (match: { current: number; total: number }) => void;
-  workspaceMode: "manual" | "ai";
-  setWorkspaceMode: (mode: "manual" | "ai") => void;
+  workspaceMode: "manual" | "ai" | "files";
+  setWorkspaceMode: (mode: "manual" | "ai" | "files") => void;
+  projectDirs: Record<string, ProjectEntry[]>;
+  projectExpanded: Record<string, boolean>;
+  projectSelectedFile: string | null;
+  projectTreeError: ApiError | null;
+  projectFile: ProjectFile | null;
+  projectFileError: ApiError | null;
+  projectTargetLine: { file: string; line: number; seq: number } | null;
+  loadProjectDir: (dir: string) => Promise<void>;
+  toggleProjectDir: (dir: string) => Promise<void>;
+  expandProjectParents: (file: string) => Promise<void>;
+  collapseAllProjectDirs: () => void;
+  selectProjectFile: (
+    file: string | null,
+    line?: number,
+    preserveTarget?: boolean,
+  ) => Promise<void>;
+  refreshProjectTree: () => Promise<void>;
   consentAccepted: boolean;
   account: CloudAccount | null;
   authPending: { userCode: string; verificationUrl: string } | null;
   activeRun: {
     runId: string;
+    reviewId?: number | null;
     stage: string;
     message: string;
     thoughts?: string[];
+    streamingReport?: string;
     cancellable: boolean;
   } | null;
   reportMarkdown: string | null;
@@ -385,7 +408,7 @@ export type AppState = {
   modelsCatalog: ModelsCatalog | null;
   selectedModel: string | null;
   selectedEffort: string | null;
-  loadAiState: (targetReviewId?: number) => Promise<void>;
+  loadAiState: (targetReviewId?: number, preserveError?: boolean) => Promise<void>;
   switchReview: (reviewId: number) => Promise<void>;
   aiDeleteReview: (reviewId: number) => Promise<void>;
   aiRevertVersion: (reviewId: number, versionNumber: number) => Promise<void>;
@@ -456,6 +479,10 @@ export function createAppStore(backend: Backend) {
   let commitRequest = 0;
   let commitDiffRequest = 0;
   let aiStateRequest = 0;
+  let projectEpoch = 0;
+  const projectDirRequests = new Map<string, number>();
+  let projectFileRequest = 0;
+  let projectTargetSeq = 0;
   let saving: Promise<void> = Promise.resolve();
   let updateTimer: ReturnType<typeof setInterval> | undefined;
   let lastCheck = 0;
@@ -611,6 +638,13 @@ export function createAppStore(backend: Backend) {
       activeTab: null,
       ...emptyLog,
       workspaceMode: "manual",
+      projectDirs: {},
+      projectExpanded: {},
+      projectSelectedFile: null,
+      projectTreeError: null,
+      projectFile: null,
+      projectFileError: null,
+      projectTargetLine: null,
       consentAccepted: false,
       account: null,
       authPending: null,
@@ -652,7 +686,16 @@ export function createAppStore(backend: Backend) {
               void get().loadAiState();
             }
             if (get().activeRun?.runId === event.id && event.done) {
-              set({ activeRun: null });
+              const wasPending = get().activeReviewId === PENDING_REVIEW_ID;
+              const fallbackId = wasPending ? (get().reviews[0]?.id ?? null) : null;
+              set((s) => ({
+                activeRun: null,
+                streamingChat: null,
+                ...(s.activeReviewId === PENDING_REVIEW_ID ? { activeReviewId: fallbackId } : {}),
+              }));
+              if (wasPending && fallbackId !== null) {
+                void get().loadAiState(fallbackId, true);
+              }
             }
           } else if (event.type === "terminalExit") {
             ended.add(event.id);
@@ -661,6 +704,13 @@ export function createAppStore(backend: Backend) {
             void get().loadStatus();
             void refreshRepo(event.path);
             if (get().repo?.lastTab === "log") void get().loadLog();
+            if (get().workspaceMode === "files") {
+              void get().refreshProjectTree();
+              const openFile = get().projectSelectedFile;
+              if (openFile) {
+                void get().selectProjectFile(openFile, undefined, true);
+              }
+            }
             void get().loadAiState();
           } else if (event.type === "aiReviewStream") {
             const repo = get().repo;
@@ -674,22 +724,63 @@ export function createAppStore(backend: Backend) {
                   thought && !currentThoughts.includes(thought)
                     ? [...currentThoughts, thought]
                     : currentThoughts;
+                const runReviewId =
+                  s.activeRun?.reviewId ??
+                  (isFollowupRunId(event.runId) ? s.activeReviewId : PENDING_REVIEW_ID);
                 return {
                   activeRun: {
                     runId: event.runId,
+                    reviewId: runReviewId,
                     stage: payload.stage,
                     message: payload.message,
                     thoughts: newThoughts,
+                    streamingReport: s.activeRun?.streamingReport ?? "",
                     cancellable: true,
                   },
                 };
               });
             } else if (payload.kind === "reportDelta") {
-              set((s) => ({
-                reportMarkdown: (s.reportMarkdown ?? "") + payload.delta,
-              }));
+              set((s) => {
+                const isInitial = !isFollowupRunId(event.runId);
+                const runReviewId =
+                  s.activeRun?.reviewId ?? (isInitial ? PENDING_REVIEW_ID : s.activeReviewId);
+                const nextStreamingReport = (s.activeRun?.streamingReport ?? "") + payload.delta;
+                const writingStep = "Generating structured review report…";
+                const prevThoughts = s.activeRun?.thoughts ?? [];
+                const nextThoughts =
+                  isInitial && !prevThoughts.includes(writingStep)
+                    ? [...prevThoughts, writingStep]
+                    : prevThoughts;
+                const viewingThisRun =
+                  s.activeReviewId === runReviewId || s.activeReviewId === null;
+                return {
+                  activeRun: s.activeRun
+                    ? {
+                        ...s.activeRun,
+                        reviewId: runReviewId,
+                        stage: isInitial ? "writing" : s.activeRun.stage,
+                        message: isInitial ? writingStep : s.activeRun.message,
+                        thoughts: nextThoughts,
+                        streamingReport: nextStreamingReport,
+                      }
+                    : s.activeRun,
+                  ...(viewingThisRun
+                    ? { reportMarkdown: (s.reportMarkdown ?? "") + payload.delta }
+                    : {}),
+                };
+              });
             } else if (payload.kind === "reportUpdate") {
-              set({ reportMarkdown: payload.reportMarkdown });
+              set((s) => {
+                const runReviewId = s.activeRun?.reviewId ?? s.activeReviewId;
+                const viewingThisRun =
+                  s.activeReviewId === runReviewId || s.activeReviewId === null;
+                return {
+                  activeRun: s.activeRun
+                    ? { ...s.activeRun, streamingReport: payload.reportMarkdown }
+                    : s.activeRun,
+                  ...(viewingThisRun ? { reportMarkdown: payload.reportMarkdown } : {}),
+                };
+              });
             } else if (payload.kind === "chatDelta") {
               set((s) => ({
                 streamingChat: (s.streamingChat ?? "") + payload.delta,
@@ -700,20 +791,32 @@ export function createAppStore(backend: Backend) {
                 reviewCostUsd: payload.costUsd,
               }));
             } else if (payload.kind === "done") {
+              const prevActiveId = get().activeReviewId;
+              const wasViewingPending = prevActiveId === PENDING_REVIEW_ID || prevActiveId === null;
               set((s) => ({
                 activeRun: null,
                 streamingChat: null,
-                reportMarkdown: payload.reportMarkdown || s.reportMarkdown,
-                reviewCostUsd: payload.costUsd || s.reviewCostUsd,
+                ...(wasViewingPending || s.activeRun?.reviewId === prevActiveId
+                  ? {
+                      reportMarkdown: payload.reportMarkdown || s.reportMarkdown,
+                      reviewCostUsd: payload.costUsd || s.reviewCostUsd,
+                    }
+                  : {}),
                 account: s.account ? { ...s.account, balanceUsd: payload.balanceUsd } : s.account,
               }));
-              void get().loadAiState();
+              void get().loadAiState(wasViewingPending ? undefined : (prevActiveId ?? undefined));
             } else if (payload.kind === "error") {
-              set({
+              const wasPending = get().activeReviewId === PENDING_REVIEW_ID;
+              const fallbackId = wasPending ? (get().reviews[0]?.id ?? null) : null;
+              set((s) => ({
                 activeRun: null,
                 streamingChat: null,
                 inlineError: payload.message,
-              });
+                ...(s.activeReviewId === PENDING_REVIEW_ID ? { activeReviewId: fallbackId } : {}),
+              }));
+              if (wasPending && fallbackId !== null) {
+                void get().loadAiState(fallbackId, true);
+              }
             }
           }
         });
@@ -770,6 +873,9 @@ export function createAppStore(backend: Backend) {
               if (get().repo?.path !== repoPath) return;
               if (val === "ai" && get().info?.aiReviewEnabled) {
                 set({ workspaceMode: "ai" });
+              } else if (val === "files") {
+                set({ workspaceMode: "files" });
+                void get().loadProjectDir("");
               } else if (val === "manual") {
                 set({ workspaceMode: "manual" });
               }
@@ -841,6 +947,13 @@ export function createAppStore(backend: Backend) {
             set({
               repo,
               workspaceMode: "manual",
+              projectDirs: {},
+              projectExpanded: {},
+              projectSelectedFile: null,
+              projectTreeError: null,
+              projectFile: null,
+              projectFileError: null,
+              projectTargetLine: null,
               openTabs: initialTabs,
               activeTab: repo.lastSelection,
               openError: null,
@@ -869,6 +982,9 @@ export function createAppStore(backend: Backend) {
                 if (get().repo?.path !== repoPath) return;
                 if (val === "ai" && get().info?.aiReviewEnabled) {
                   set({ workspaceMode: "ai" });
+                } else if (val === "files") {
+                  set({ workspaceMode: "files" });
+                  void get().loadProjectDir("");
                 } else if (val === "manual") {
                   set({ workspaceMode: "manual" });
                 }
@@ -893,6 +1009,9 @@ export function createAppStore(backend: Backend) {
             commitRequest += 1;
             commitDiffRequest += 1;
             recentRequest += 1;
+            projectEpoch += 1;
+            projectFileRequest += 1;
+            projectDirRequests.clear();
             void get().loadStatus();
             void get().loadLog();
             void get().loadAiState();
@@ -1689,11 +1808,197 @@ export function createAppStore(backend: Backend) {
             .catch(() => undefined);
           if (mode === "ai") {
             void get().loadAiState();
+          } else if (mode === "files") {
+            if (get().projectDirs[""]) {
+              void get().refreshProjectTree();
+              const openFile = get().projectSelectedFile;
+              if (openFile) {
+                void get().selectProjectFile(openFile, undefined, true);
+              }
+            } else {
+              void get().loadProjectDir("");
+            }
           }
         }
       },
 
-      loadAiState: async (targetReviewId?: number) => {
+      loadProjectDir: async (dir) => {
+        const path = get().repo?.path;
+        if (!path) return;
+        const epoch = projectEpoch;
+        const request = (projectDirRequests.get(dir) ?? 0) + 1;
+        projectDirRequests.set(dir, request);
+        try {
+          const entries = await backend.call("list_project_dir", { path, dir });
+          if (
+            get().repo?.path !== path ||
+            projectEpoch !== epoch ||
+            projectDirRequests.get(dir) !== request
+          ) {
+            return;
+          }
+          set((state) => ({
+            projectDirs: { ...state.projectDirs, [dir]: entries },
+            projectTreeError: null,
+          }));
+        } catch (error) {
+          if (
+            get().repo?.path !== path ||
+            projectEpoch !== epoch ||
+            projectDirRequests.get(dir) !== request
+          ) {
+            return;
+          }
+          const apiError = toApiError(error);
+          if (dir === "") {
+            set({ projectTreeError: apiError });
+          } else {
+            set((state) => {
+              const nextExpanded = { ...state.projectExpanded };
+              delete nextExpanded[dir];
+              return { projectExpanded: nextExpanded, projectTreeError: apiError };
+            });
+          }
+        }
+      },
+
+      toggleProjectDir: async (dir) => {
+        const currentlyExpanded = Boolean(get().projectExpanded[dir]);
+        if (currentlyExpanded) {
+          set((state) => {
+            const next = { ...state.projectExpanded };
+            delete next[dir];
+            return { projectExpanded: next };
+          });
+          return;
+        }
+        set((state) => ({
+          projectExpanded: { ...state.projectExpanded, [dir]: true },
+        }));
+        if (!get().projectDirs[dir]) {
+          await get().loadProjectDir(dir);
+        }
+      },
+
+      expandProjectParents: async (file) => {
+        const parts = file.split("/").slice(0, -1);
+        if (parts.length === 0) return;
+        const dirs: string[] = [];
+        let acc = "";
+        for (const part of parts) {
+          acc = acc ? `${acc}/${part}` : part;
+          dirs.push(acc);
+        }
+        set((state) => {
+          const next = { ...state.projectExpanded };
+          for (const dir of dirs) next[dir] = true;
+          return { projectExpanded: next };
+        });
+        await Promise.all(
+          dirs.map((dir) =>
+            get().projectDirs[dir] ? Promise.resolve() : get().loadProjectDir(dir),
+          ),
+        );
+      },
+
+      collapseAllProjectDirs: () => set({ projectExpanded: {} }),
+
+      selectProjectFile: async (file, line, preserveTarget) => {
+        const path = get().repo?.path;
+        if (!path || !file) {
+          projectFileRequest += 1;
+          set({
+            projectSelectedFile: null,
+            projectFile: null,
+            projectFileError: null,
+            projectTargetLine: null,
+          });
+          return;
+        }
+        const targetLine = line !== undefined ? { file, line, seq: ++projectTargetSeq } : null;
+        set((state) => ({
+          projectSelectedFile: file,
+          projectFileError: null,
+          projectTargetLine: preserveTarget
+            ? state.projectTargetLine?.file === file
+              ? state.projectTargetLine
+              : null
+            : targetLine,
+        }));
+        const request = ++projectFileRequest;
+        try {
+          const loaded = await backend.call("read_project_file", { path, file });
+          if (get().repo?.path !== path || request !== projectFileRequest) return;
+          set({ projectFile: loaded, projectFileError: null });
+        } catch (error) {
+          if (get().repo?.path !== path || request !== projectFileRequest) return;
+          set({ projectFile: null, projectFileError: toApiError(error) });
+        }
+      },
+
+      refreshProjectTree: async () => {
+        const path = get().repo?.path;
+        if (!path) return;
+        const epoch = projectEpoch;
+        const dirs = [
+          "",
+          ...Object.keys(get().projectExpanded).filter((dir) => get().projectExpanded[dir]),
+        ];
+        const activeDirSet = new Set(dirs);
+        set((state) => {
+          const nextDirs: Record<string, ProjectEntry[]> = {};
+          for (const [key, value] of Object.entries(state.projectDirs)) {
+            if (activeDirSet.has(key)) nextDirs[key] = value;
+          }
+          return { projectDirs: nextDirs };
+        });
+        await Promise.all(
+          dirs.map(async (dir) => {
+            const request = (projectDirRequests.get(dir) ?? 0) + 1;
+            projectDirRequests.set(dir, request);
+            try {
+              const entries = await backend.call("list_project_dir", { path, dir });
+              if (
+                get().repo?.path !== path ||
+                projectEpoch !== epoch ||
+                projectDirRequests.get(dir) !== request
+              ) {
+                return;
+              }
+              set((state) => ({
+                projectDirs: { ...state.projectDirs, [dir]: entries },
+                projectTreeError: dir === "" ? null : state.projectTreeError,
+              }));
+            } catch (error) {
+              if (
+                get().repo?.path !== path ||
+                projectEpoch !== epoch ||
+                projectDirRequests.get(dir) !== request
+              ) {
+                return;
+              }
+              const apiError = toApiError(error);
+              if (dir === "") {
+                set({ projectTreeError: apiError });
+              } else if (
+                apiError.code === "notFound" ||
+                apiError.code === "invalidArgs" ||
+                apiError.code === "gitRefused"
+              ) {
+                set((state) => {
+                  const nextDirs = { ...state.projectDirs };
+                  const nextExpanded = { ...state.projectExpanded };
+                  delete nextDirs[dir];
+                  delete nextExpanded[dir];
+                  return { projectDirs: nextDirs, projectExpanded: nextExpanded };
+                });
+              }
+            }
+          }),
+        );
+      },
+
+      loadAiState: async (targetReviewId?: number, preserveError?: boolean) => {
         if (!get().info?.aiReviewEnabled) return;
         const repo = get().repo;
         if (!repo) {
@@ -1713,7 +2018,14 @@ export function createAppStore(backend: Backend) {
         const path = repo.path;
         const branch = repo.branch ?? undefined;
         const targetBranch = repo.target ?? undefined;
-        const reviewId = targetReviewId ?? get().activeReviewId ?? undefined;
+        const currentActive = get().activeReviewId;
+        const keepingPending =
+          targetReviewId === undefined &&
+          currentActive === PENDING_REVIEW_ID &&
+          get().activeRun?.reviewId === PENDING_REVIEW_ID;
+        const reviewId =
+          targetReviewId ??
+          (currentActive !== null && currentActive > 0 ? currentActive : undefined);
         const request = ++aiStateRequest;
         try {
           const result = await backend.call("ai_get_state", {
@@ -1723,17 +2035,26 @@ export function createAppStore(backend: Backend) {
             reviewId,
           });
           if (request !== aiStateRequest || get().repo?.path !== path) return;
-          set({
-            consentAccepted: result.consentAccepted,
-            account: result.account,
-            reviews: result.reviews ?? [],
-            activeReviewId: result.activeReviewId ?? null,
-            reportMarkdown: result.review?.reportMarkdown ?? null,
-            reviewCostUsd: result.review?.costUsd ?? null,
-            chatMessages: result.chatMessages ?? [],
-            selectedVersionNumber: null,
-            inlineError: null,
-          });
+          if (keepingPending && get().activeReviewId === PENDING_REVIEW_ID) {
+            set((s) => ({
+              consentAccepted: result.consentAccepted,
+              account: result.account,
+              reviews: result.reviews ?? [],
+              inlineError: preserveError ? s.inlineError : null,
+            }));
+          } else {
+            set((s) => ({
+              consentAccepted: result.consentAccepted,
+              account: result.account,
+              reviews: result.reviews ?? [],
+              activeReviewId: result.activeReviewId ?? null,
+              reportMarkdown: result.review?.reportMarkdown ?? null,
+              reviewCostUsd: result.review?.costUsd ?? null,
+              chatMessages: result.chatMessages ?? [],
+              selectedVersionNumber: null,
+              inlineError: preserveError ? s.inlineError : null,
+            }));
+          }
           if (result.consentAccepted && !get().modelsCatalog) {
             void get().loadAiModels();
           }
@@ -1745,6 +2066,17 @@ export function createAppStore(backend: Backend) {
       },
 
       switchReview: async (reviewId: number) => {
+        if (reviewId === PENDING_REVIEW_ID) {
+          set((s) => ({
+            activeReviewId: PENDING_REVIEW_ID,
+            reportMarkdown: s.activeRun?.streamingReport || null,
+            reviewCostUsd: null,
+            chatMessages: [],
+            selectedVersionNumber: null,
+            quotedSelection: null,
+          }));
+          return;
+        }
         set({ activeReviewId: reviewId, selectedVersionNumber: null, quotedSelection: null });
         await get().loadAiState(reviewId);
       },
@@ -1917,13 +2249,15 @@ export function createAppStore(backend: Backend) {
           reportMarkdown: null,
           reviewCostUsd: null,
           chatMessages: [],
-          activeReviewId: null,
+          activeReviewId: PENDING_REVIEW_ID,
           selectedVersionNumber: null,
           activeRun: {
             runId: "starting",
+            reviewId: PENDING_REVIEW_ID,
             stage: "upload",
             message: "Starting review…",
             thoughts: ["Preparing repository snapshot and diff…"],
+            streamingReport: "",
             cancellable: true,
           },
         });
@@ -1937,7 +2271,17 @@ export function createAppStore(backend: Backend) {
           });
         } catch (err) {
           const apiError = toApiError(err);
-          set({ inlineError: apiError.message, activeRun: null });
+          const wasPending = get().activeReviewId === PENDING_REVIEW_ID;
+          const fallbackId = wasPending ? (get().reviews[0]?.id ?? null) : null;
+          set((s) => ({
+            inlineError: apiError.message,
+            activeRun: null,
+            streamingChat: null,
+            ...(s.activeReviewId === PENDING_REVIEW_ID ? { activeReviewId: fallbackId } : {}),
+          }));
+          if (wasPending && fallbackId !== null) {
+            void get().loadAiState(fallbackId, true);
+          }
         }
       },
 
@@ -1945,7 +2289,16 @@ export function createAppStore(backend: Backend) {
         const run = get().activeRun;
         if (run) {
           get().cancelTask(run.runId);
-          set({ activeRun: null });
+          set((s) => ({
+            activeRun: null,
+            streamingChat: null,
+            ...(s.activeReviewId === PENDING_REVIEW_ID
+              ? { activeReviewId: s.reviews[0]?.id ?? null }
+              : {}),
+          }));
+          if (get().activeReviewId) {
+            void get().loadAiState(get().activeReviewId ?? undefined);
+          }
         }
       },
 
@@ -1959,14 +2312,24 @@ export function createAppStore(backend: Backend) {
         const repoPath = repo.path;
         const activeReviewId = get().activeReviewId ?? undefined;
         const expectedReviewId = activeReviewId ?? null;
-        const isStillActive = () =>
-          get().repo?.path === repoPath && get().activeReviewId === expectedReviewId;
+        const isSameRepo = () => get().repo?.path === repoPath;
+        const isStillActive = () => isSameRepo() && get().activeReviewId === expectedReviewId;
+        const ownsFollowupRun = () => {
+          const run = get().activeRun;
+          return (
+            isSameRepo() &&
+            run !== null &&
+            isFollowupRunId(run.runId) &&
+            (run.reviewId === expectedReviewId || run.reviewId === undefined)
+          );
+        };
         const optimisticId = Date.now();
         set({
           inlineError: null,
           streamingChat: "",
           activeRun: {
             runId: "ai_followup",
+            reviewId: expectedReviewId,
             stage: "followup",
             message: "Analyzing follow-up question…",
             thoughts: [],
@@ -2010,6 +2373,8 @@ export function createAppStore(backend: Backend) {
               streamingChat: null,
               chatMessages: get().chatMessages.filter((msg) => msg.id !== optimisticId),
             });
+          } else if (ownsFollowupRun()) {
+            set({ activeRun: null, streamingChat: null });
           }
           return false;
         } finally {
@@ -2019,6 +2384,8 @@ export function createAppStore(backend: Backend) {
             } else {
               set({ streamingChat: null });
             }
+          } else if (ownsFollowupRun()) {
+            set({ activeRun: null, streamingChat: null });
           }
         }
       },

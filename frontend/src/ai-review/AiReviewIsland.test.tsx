@@ -115,10 +115,11 @@ describe("AiReviewIsland", () => {
     });
 
     expect(await screen.findByText("Review in progress")).toBeInTheDocument();
-    expect(screen.getByText("Auditing 4 changed files and unit tests")).toBeInTheDocument();
-    expect(screen.getByText("Model Thinking")).toBeInTheDocument();
-    expect(screen.getByText("Comparing against repository conventions")).toBeInTheDocument();
+    expect(screen.getByText("Review progress")).toBeInTheDocument();
+    expect(screen.getAllByText("Preparing repository snapshot and diff").length).toBeGreaterThan(0);
+    expect(screen.queryByText("Comparing against repository conventions")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Cancel review" })).toBeInTheDocument();
+    expect(document.querySelectorAll(".dl-ai-session-stream > .dl-caret")).toHaveLength(0);
   });
 
   it("renders report markdown with exact costs and balance", async () => {
@@ -1040,7 +1041,9 @@ describe("AiReviewIsland", () => {
     });
     expect(screen.queryByText("Review in progress")).not.toBeInTheDocument();
     expect(document.querySelectorAll(".dl-ai-session-stream > .dl-caret")).toHaveLength(0);
-    expect(screen.getByTitle("Review history")).toBeDisabled();
+    const reviewPickerButton = screen.getByTitle("Review history");
+    expect(reviewPickerButton).not.toBeDisabled();
+    expect(reviewPickerButton.querySelector(".dl-ai-pulse-dot")).not.toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     await waitFor(() => {
@@ -1642,5 +1645,148 @@ describe("AiReviewIsland", () => {
       name: "Copied category",
     });
     expect(copiedButton).toHaveAttribute("title", "Copied category");
+  });
+
+  it("immediately creates predictable Review #2 with blinking indicator and allows switching while generating", async () => {
+    const existingReview = {
+      id: 10,
+      repo: "/Users/ada/Workspace/acme-billing",
+      branch: "gs/invoice-export",
+      targetBranch: "main",
+      reportMarkdown: "## Review 1 report\n\nExisting findings.",
+      costUsd: "1.00",
+      headOid: "abc",
+      baseOid: "def",
+      createdAt: 1000,
+      updatedAt: 1000,
+      versions: [
+        {
+          id: 1,
+          reviewId: 10,
+          versionNumber: 1,
+          reportMarkdown: "## Review 1 report\n\nExisting findings.",
+          createdAt: 1000,
+        },
+      ],
+    };
+
+    const core = fakeCore({
+      current_repo: () => repoInfo("acme-billing", "gs/invoice-export"),
+      ai_get_state: () => ({
+        consentAccepted: true,
+        account: { id: "u1", email: "user@example.com", balanceUsd: "9.00" },
+        review: existingReview,
+        reviews: [existingReview],
+        activeReviewId: 10,
+        chatMessages: [],
+      }),
+      ai_get_review: () => ({
+        review: existingReview,
+        chatMessages: [],
+      }),
+      ai_start_review: () => ({ runId: "ai_review:pending-2" }),
+    });
+
+    const { store } = await renderWithStore(<AiReviewIsland />, core);
+    await store.getState().loadAiState();
+
+    expect(await screen.findByText("Existing findings.")).toBeInTheDocument();
+
+    const reviewButton = screen.getByTitle("Review history");
+    expect(reviewButton).toHaveTextContent("Review #1");
+    expect(reviewButton.querySelector(".dl-ai-pulse-dot")).toBeNull();
+
+    fireEvent.click(reviewButton);
+    const initialMenu = await screen.findByRole("menu", { name: "Review history" });
+    const newReviewBtn = within(initialMenu).getByRole("button", { name: /New review/i });
+    fireEvent.click(newReviewBtn);
+
+    await waitFor(() => {
+      expect(screen.getByTitle("Review history")).toHaveTextContent("Review #2");
+    });
+    expect(screen.getByTitle("Review history").querySelector(".dl-ai-pulse-dot")).not.toBeNull();
+    expect(screen.getByText("Review in progress")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTitle("Review history"));
+    const menu = await screen.findByRole("menu", { name: "Review history" });
+    expect(within(menu).getByText("Review #2")).toBeInTheDocument();
+    expect(within(menu).getByText("Review #1")).toBeInTheDocument();
+    expect(menu.querySelectorAll(".dl-ai-pulse-dot")).toHaveLength(1);
+
+    fireEvent.click(within(menu).getByText("Review #1"));
+    await waitFor(() => {
+      expect(screen.getByTitle("Review history")).toHaveTextContent("Review #1");
+    });
+    expect(screen.queryByText("Review in progress")).not.toBeInTheDocument();
+    expect(screen.getByText("Existing findings.")).toBeInTheDocument();
+    expect(screen.getByTitle("Review history").querySelector(".dl-ai-pulse-dot")).toBeNull();
+
+    fireEvent.click(screen.getByTitle("Review history"));
+    const menuAgain = await screen.findByRole("menu", { name: "Review history" });
+    fireEvent.click(within(menuAgain).getByText("Review #2"));
+    await waitFor(() => {
+      expect(screen.getByText("Review in progress")).toBeInTheDocument();
+    });
+    expect(screen.getByTitle("Review history")).toHaveTextContent("Review #2");
+  });
+
+  it("shows simulated progress steps without raw model thinking and appends Building the view when report streams", async () => {
+    const core = fakeCore({
+      current_repo: () => repoInfo("acme-billing", "gs/invoice-export"),
+      ai_get_state: () => ({
+        consentAccepted: true,
+        account: { id: "u1", email: "user@example.com", balanceUsd: "9.00" },
+        review: null,
+        reviews: [],
+        activeReviewId: null,
+        chatMessages: [],
+      }),
+      ai_start_review: () => ({ runId: "ai_review:stream-1" }),
+    });
+
+    const { store } = await renderWithStore(<AiReviewIsland />, core);
+    await store.getState().loadAiState();
+    await store.getState().startAiReview();
+
+    core.emit({
+      type: "aiReviewStream",
+      repo: "/Users/ada/Workspace/acme-billing",
+      branch: "gs/invoice-export",
+      targetBranch: "main",
+      runId: "ai_review:stream-1",
+      event: {
+        kind: "stage",
+        stage: "analyzing",
+        message: "Reasoning about code changes…",
+        thought: '{"id":"readability","assessment":"Needs Improvement"}',
+      },
+    });
+
+    expect(screen.queryByText(/Needs Improvement/)).not.toBeInTheDocument();
+
+    core.emit({
+      type: "aiReviewStream",
+      repo: "/Users/ada/Workspace/acme-billing",
+      branch: "gs/invoice-export",
+      targetBranch: "main",
+      runId: "ai_review:stream-1",
+      event: {
+        kind: "reportDelta",
+        content: '{"schema_version": 1',
+        delta: '{"schema_version": 1',
+      },
+    });
+
+    await waitFor(() => {
+      expect(screen.getAllByText("Building the view").length).toBeGreaterThan(0);
+    });
+
+    const progressHeading = screen.getByText("Review progress");
+    const progressBox = progressHeading.parentElement;
+    expect(progressBox).not.toBeNull();
+    if (progressBox) {
+      expect(within(progressBox).getAllByText("✓")).toHaveLength(3);
+      expect(progressBox.querySelectorAll(".dl-ai-pulse-dot")).toHaveLength(1);
+    }
   });
 });

@@ -2,6 +2,7 @@ import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import {
   Compartment,
   EditorState,
+  type Extension,
   type Range as Ranged,
   StateEffect,
   StateField,
@@ -25,6 +26,7 @@ type Props = {
   onBlur?: () => void;
   decorate: Decorate;
   searchDecorations?: Ranged<Decoration>[];
+  extraExtensions?: Extension[];
   hidden: Range[];
   onView: (id: string, view: EditorView | null) => void;
   onScroll: (id: string) => void;
@@ -136,6 +138,7 @@ export function CodePane({
   onBlur,
   decorate,
   searchDecorations,
+  extraExtensions,
   hidden,
   onView,
   onScroll,
@@ -144,8 +147,25 @@ export function CodePane({
   const host = useRef<HTMLDivElement>(null);
   const view = useRef<EditorView | null>(null);
   const language = useRef(new Compartment());
-  const latest = useRef({ hidden, onExpand, searchDecorations, onChange, onSave, onBlur });
-  latest.current = { hidden, onExpand, searchDecorations, onChange, onSave, onBlur };
+  const extras = useRef(new Compartment());
+  const latest = useRef({
+    hidden,
+    onExpand,
+    searchDecorations,
+    extraExtensions,
+    onChange,
+    onSave,
+    onBlur,
+  });
+  latest.current = {
+    hidden,
+    onExpand,
+    searchDecorations,
+    extraExtensions,
+    onChange,
+    onSave,
+    onBlur,
+  };
   const applied = useRef<Range[] | null>(null);
   const initialized = useRef(false);
   const lastPath = useRef<string | null>(null);
@@ -188,6 +208,7 @@ export function CodePane({
         EditorView.contentAttributes.of({ "aria-label": label }),
         syntaxClasses,
         compartment.of([]),
+        extras.current.of(latest.current.extraExtensions ?? []),
         decorationField,
         searchField,
         foldField,
@@ -274,6 +295,12 @@ export function CodePane({
     if (!current) return;
     current.dispatch({ effects: setSearchDecorations.of(searchDecorations ?? []) });
   }, [searchDecorations]);
+
+  useEffect(() => {
+    const current = view.current;
+    if (!current) return;
+    current.dispatch({ effects: extras.current.reconfigure(extraExtensions ?? []) });
+  }, [extraExtensions]);
 
   return <div ref={host} className={`app-cm is-${id}`} />;
 }

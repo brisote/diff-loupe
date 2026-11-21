@@ -4,9 +4,10 @@ use crate::api::{
     AiGetStateArgs, AiRevertVersionArgs, AiSendFollowupArgs, AiSetConsentArgs, AiSignInArgs,
     AiSignInResult, AiStartReviewArgs, AiState, AppInfo, ApplyMergeArgs, BranchArgs, CloudAccount,
     CommitArgs, CommitIdArgs, DiffArgs, ImageArgs, ModelsCatalog, PathArgs, PrepareArgs,
-    RecentRepo, RepoInfo, RepoViewArgs, ReportEnv, RollbackArgs, SaveFileArgs, SettingsArgs,
-    StatusArgs, TargetArgs, TaskArgs, TerminalAckArgs, TerminalOpenArgs, TerminalResizeArgs,
-    TerminalWriteArgs, ToolTab, UiKeyArgs, UiValueArgs, VersionArgs,
+    ProjectDirArgs, ProjectFileArgs, RecentRepo, RepoInfo, RepoViewArgs, ReportEnv, RollbackArgs,
+    SaveFileArgs, SettingsArgs, StatusArgs, SymbolSearchArgs, TargetArgs, TaskArgs,
+    TerminalAckArgs, TerminalOpenArgs, TerminalResizeArgs, TerminalWriteArgs, ToolTab, UiKeyArgs,
+    UiValueArgs, VersionArgs,
 };
 use crate::diffcache::{DiffCache, Prepare};
 use crate::error::{ApiError, Error, Result};
@@ -407,6 +408,27 @@ impl Core {
                 let _exclusive = self.exclusive()?;
                 self.save_file(a)?;
                 reply(())
+            }
+            "list_project_dir" => {
+                let a: ProjectDirArgs = parse(args)?;
+                let (_, root, _) = self.open_root(&a.path)?;
+                reply(crate::project::list_dir(&self.env, &root, &a.dir)?)
+            }
+            "read_project_file" => {
+                let a: ProjectFileArgs = parse(args)?;
+                let (_, root, _) = self.open_root(&a.path)?;
+                reply(crate::project::read_file(&root, &a.file)?)
+            }
+            "search_symbol" => {
+                let a: SymbolSearchArgs = parse(args)?;
+                let (_, root, _) = self.open_root(&a.path)?;
+                reply(crate::project::search_symbol(
+                    &self.env,
+                    &root,
+                    &a.symbol,
+                    a.current_file.as_deref(),
+                    a.current_line,
+                )?)
             }
             "read_image" => {
                 let a: ImageArgs = parse(args)?;
@@ -1435,7 +1457,6 @@ impl Core {
             .send_bytes(&body)
             .map_err(aireview::map_ureq_error)?;
 
-        let store_guard = self.store()?;
         let repo_str = root.display().to_string();
         let ctx = aireview::StreamContext {
             repo: &repo_str,
@@ -1455,7 +1476,7 @@ impl Core {
             &watch,
             self.events.as_ref(),
             &mut task,
-            &store_guard,
+            &self.store,
         )?;
 
         Ok(())
@@ -1531,18 +1552,20 @@ impl Core {
             }))
             .map_err(aireview::map_ureq_error)?;
 
-        let store_guard = self.store()?;
-        store_guard.append_ai_chat_message(&NewAiChatMessage {
-            review_id,
-            repo: &repo_str,
-            branch: &branch,
-            target_branch: &target_branch,
-            role: "user",
-            content: &a.prompt,
-            quoted_text: a.quoted_text.as_deref(),
-            cost_usd: None,
-            created_at: now,
-        })?;
+        {
+            let store_guard = self.store()?;
+            store_guard.append_ai_chat_message(&NewAiChatMessage {
+                review_id,
+                repo: &repo_str,
+                branch: &branch,
+                target_branch: &target_branch,
+                role: "user",
+                content: &a.prompt,
+                quoted_text: a.quoted_text.as_deref(),
+                cost_usd: None,
+                created_at: now,
+            })?;
+        }
         let run_id = self.run_id("ai_followup", &root);
         let watch = self.cancels.watch(&run_id);
         let mut task = Task::cancellable(
@@ -1568,7 +1591,7 @@ impl Core {
             &watch,
             self.events.as_ref(),
             &mut task,
-            &store_guard,
+            &self.store,
         )?;
 
         Ok(())

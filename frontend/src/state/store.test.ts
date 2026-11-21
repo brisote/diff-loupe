@@ -597,4 +597,164 @@ describe("actions", () => {
     expect(store.getState().activeTab).toBeNull();
     expect(store.getState().repo?.lastSelection).toBeNull();
   });
+
+  it("refreshes project tree without stale collapsed dirs, preserves target line on repoChanged, and collapses failed subdirs", async () => {
+    let listCalls = 0;
+    let srcExists = true;
+    const core = fakeCore({
+      current_repo: () => repoInfo("acme-billing"),
+      list_project_dir: (args) => {
+        listCalls += 1;
+        const { dir } = args as { dir: string };
+        if (dir === "") {
+          return [
+            { name: "src", path: "src", isDir: true, ignored: false },
+            { name: "docs", path: "docs", isDir: true, ignored: false },
+          ];
+        }
+        if (dir === "src") {
+          if (!srcExists)
+            throw { code: "notFound", message: "'src' is not a directory", path: null };
+          return [{ name: "app.ts", path: "src/app.ts", isDir: false, ignored: false }];
+        }
+        if (dir === "docs") {
+          return [{ name: "guide.md", path: "docs/guide.md", isDir: false, ignored: false }];
+        }
+        throw { code: "notFound", message: "missing dir", path: null };
+      },
+      read_project_file: (args) => ({
+        path: (args as { file: string }).file,
+        content: "text",
+        text: "const x = 1;\n",
+        crlf: false,
+        encoding: "UTF-8",
+        size: 13,
+      }),
+    });
+
+    const store = createAppStore(new Backend(core));
+    await store.getState().start();
+
+    store.getState().setWorkspaceMode("files");
+    await vi.waitFor(() => expect(store.getState().projectDirs[""]).toHaveLength(2));
+
+    await store.getState().toggleProjectDir("src");
+    await store.getState().toggleProjectDir("docs");
+    expect(store.getState().projectDirs.docs).toHaveLength(1);
+    await store.getState().toggleProjectDir("docs");
+    expect(store.getState().projectExpanded.docs).toBeUndefined();
+
+    await store.getState().selectProjectFile("src/app.ts", 1);
+    const initialTarget = store.getState().projectTargetLine;
+    expect(initialTarget?.line).toBe(1);
+
+    core.emit({ type: "repoChanged", path: "/Users/ada/Workspace/acme-billing" });
+    await vi.waitFor(() => expect(store.getState().projectDirs.docs).toBeUndefined());
+    expect(store.getState().projectTargetLine).toBe(initialTarget);
+
+    srcExists = false;
+    await store.getState().refreshProjectTree();
+    expect(store.getState().projectDirs.src).toBeUndefined();
+    expect(store.getState().projectExpanded.src).toBeUndefined();
+
+    await store.getState().toggleProjectDir("broken");
+    expect(store.getState().projectExpanded.broken).toBeUndefined();
+    expect(store.getState().projectTreeError?.code).toBe("notFound");
+
+    store.getState().setWorkspaceMode("manual");
+    const callsBeforeReturn = listCalls;
+    store.getState().setWorkspaceMode("files");
+    await vi.waitFor(() => expect(listCalls).toBeGreaterThan(callsBeforeReturn));
+  });
+
+  it("clears follow-up streaming state on rejection even after switching reviews and restores prior review on pending failure", async () => {
+    const rejectFollowups: ((err: unknown) => void)[] = [];
+    const review1 = {
+      id: 1,
+      repo: "/Users/ada/Workspace/acme-billing",
+      branch: "gs/feature",
+      targetBranch: "main",
+      reportMarkdown: "## Review 1",
+      costUsd: "0.25",
+      headOid: "aaa",
+      baseOid: "bbb",
+      createdAt: 1000,
+      updatedAt: 1000,
+      versions: [],
+    };
+    const review2 = { ...review1, id: 2, reportMarkdown: "## Review 2" };
+    const chat1 = [
+      {
+        id: 11,
+        reviewId: 1,
+        repo: "/Users/ada/Workspace/acme-billing",
+        branch: "gs/feature",
+        targetBranch: "main",
+        role: "user",
+        content: "Existing question",
+        quotedText: null,
+        costUsd: null,
+        createdAt: 1001,
+      },
+    ];
+
+    const core = fakeCore({
+      current_repo: () => repoInfo("acme-billing", "gs/feature"),
+      ai_get_state: (args) => {
+        const rid = (args as { reviewId?: number }).reviewId;
+        if (rid === 2) {
+          return {
+            consentAccepted: true,
+            account: { id: "u1", email: "a@b.com", balanceUsd: "9.00" },
+            review: review2,
+            reviews: [review1, review2],
+            activeReviewId: 2,
+            chatMessages: [],
+          };
+        }
+        return {
+          consentAccepted: true,
+          account: { id: "u1", email: "a@b.com", balanceUsd: "9.00" },
+          review: review1,
+          reviews: [review1, review2],
+          activeReviewId: 1,
+          chatMessages: chat1,
+        };
+      },
+      ai_get_review: (args) => {
+        const rid = (args as { reviewId: number }).reviewId;
+        return {
+          review: rid === 2 ? review2 : review1,
+          chatMessages: rid === 2 ? [] : chat1,
+        };
+      },
+      ai_send_followup: () =>
+        new Promise((_resolve, reject) => {
+          rejectFollowups.push(reject);
+        }),
+      ai_start_review: () => {
+        throw { code: "aiService", message: "Provider unavailable", path: null };
+      },
+    });
+
+    const store = createAppStore(new Backend(core));
+    await store.getState().start();
+    await store.getState().loadAiState();
+
+    const followupPromise = store.getState().aiSendFollowup({ prompt: "Check this" });
+    await vi.waitFor(() => expect(rejectFollowups).toHaveLength(1));
+    await store.getState().switchReview(2);
+    expect(store.getState().activeReviewId).toBe(2);
+
+    rejectFollowups[0]?.({ code: "aiService", message: "Network failed", path: null });
+    await followupPromise;
+    expect(store.getState().activeRun).toBeNull();
+    expect(store.getState().streamingChat).toBeNull();
+
+    await store.getState().startAiReview();
+    await vi.waitFor(() => expect(store.getState().reportMarkdown).toBe("## Review 1"));
+    expect(store.getState().activeReviewId).toBe(1);
+    expect(store.getState().chatMessages).toHaveLength(1);
+    expect(store.getState().inlineError).toBe("Provider unavailable");
+  });
 });

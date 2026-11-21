@@ -391,11 +391,11 @@ fn side(read: &Read, source: &Source, repo: &gix::Repository, text: bool) -> Dif
     }
 }
 
-fn is_binary(bytes: &[u8]) -> bool {
+pub(crate) fn is_binary(bytes: &[u8]) -> bool {
     bytes[..bytes.len().min(BINARY_PROBE)].contains(&0)
 }
 
-fn is_image(path: &str) -> bool {
+pub(crate) fn is_image(path: &str) -> bool {
     Path::new(path)
         .extension()
         .and_then(|ext| ext.to_str())

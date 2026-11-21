@@ -4,12 +4,70 @@ import { MarkdownDocument } from "../markdown-diff/MarkdownDocument";
 import {
   CANONICAL_CATEGORIES,
   type CategoryId,
+  type CategoryProblem,
   formatCategoryAsMarkdown,
   formatStructuredReportAsMarkdown,
   parseStructuredReport,
   scoreTier,
   truncateWords,
 } from "./structuredReport";
+
+type SeverityBucket = "high" | "medium" | "low";
+type SeverityFilter = SeverityBucket | "all";
+
+type CategorizedProblem = {
+  categoryId: CategoryId;
+  categoryTitle: string;
+  bucket: SeverityBucket;
+  problem: CategoryProblem;
+};
+
+function severityBucket(severity?: string): SeverityBucket {
+  switch (severity?.toLowerCase()) {
+    case "critical":
+    case "high":
+      return "high";
+    case "warning":
+    case "medium":
+      return "medium";
+    default:
+      return "low";
+  }
+}
+
+const SEVERITY_ORDER: Record<SeverityBucket, number> = {
+  high: 0,
+  medium: 1,
+  low: 2,
+};
+
+const SEVERITY_LABELS: Record<SeverityFilter, string> = {
+  high: "High issues",
+  medium: "Medium issues",
+  low: "Low issues",
+  all: "All issues",
+};
+
+function formatFilteredProblemsAsMarkdown(
+  filter: SeverityFilter,
+  items: CategorizedProblem[],
+): string {
+  const lines = [`## ${SEVERITY_LABELS[filter]} (${items.length})`, ""];
+  if (items.length === 0) {
+    lines.push("No issues found.");
+    return lines.join("\n");
+  }
+  for (const { categoryTitle, problem } of items) {
+    const sev = problem.severity ? `[${problem.severity}] ` : "";
+    const loc = problem.location ? ` (${problem.location})` : "";
+    const desc =
+      problem.description && problem.description !== problem.title
+        ? `: ${problem.description}`
+        : "";
+    lines.push(`- ${sev}[${categoryTitle}] **${problem.title}**${loc}${desc}`);
+  }
+  return lines.join("\n");
+}
 
 type ReportViewerProps = {
   markdown: string;
@@ -64,6 +122,10 @@ export const ReportViewer = memo(function ReportViewer({
   reviewIdentity = null,
 }: ReportViewerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const gaugesRef = useRef<HTMLFieldSetElement>(null);
+  const severityBarRef = useRef<HTMLFieldSetElement>(null);
+  const detailRef = useRef<HTMLElement>(null);
+  const floatingRef = useRef<HTMLDivElement>(null);
   const copyTimerRef = useRef<number | null>(null);
   const catCopyTimerRef = useRef<number | null>(null);
   const mountedRef = useRef(true);
@@ -71,6 +133,7 @@ export const ReportViewer = memo(function ReportViewer({
   const catCopySeqRef = useRef(0);
   const [floating, setFloating] = useState<FloatingAction | null>(null);
   const [selectedId, setSelectedId] = useState<CategoryId | null>(null);
+  const [selectedSeverity, setSelectedSeverity] = useState<SeverityFilter | null>(null);
   const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
   const [catCopyState, setCatCopyState] = useState<"idle" | "copied" | "failed">("idle");
 
@@ -86,7 +149,7 @@ export const ReportViewer = memo(function ReportViewer({
 
   const prevReviewIdentityRef = useRef(reviewIdentity);
   const prevMarkdownRef = useRef(markdown);
-  const prevSelectedIdRef = useRef(selectedId);
+  const prevSelectionKeyRef = useRef<string>("");
 
   const clearCopyTimer = useCallback(() => {
     if (copyTimerRef.current !== null) {
@@ -121,6 +184,7 @@ export const ReportViewer = memo(function ReportViewer({
       clearCopyTimer();
       clearCatCopyTimer();
       setSelectedId(null);
+      setSelectedSeverity(null);
       setFloating(null);
       setCopyState("idle");
       setCatCopyState("idle");
@@ -140,24 +204,46 @@ export const ReportViewer = memo(function ReportViewer({
     }
   }, [markdown, clearCopyTimer, clearCatCopyTimer]);
 
+  const selectionKey = `${selectedId ?? ""}:${selectedSeverity ?? ""}`;
   useEffect(() => {
-    if (prevSelectedIdRef.current !== selectedId) {
-      prevSelectedIdRef.current = selectedId;
+    if (prevSelectionKeyRef.current !== selectionKey) {
+      prevSelectionKeyRef.current = selectionKey;
       catCopySeqRef.current += 1;
       clearCatCopyTimer();
       setCatCopyState("idle");
     }
-  }, [selectedId, clearCatCopyTimer]);
+  }, [selectionKey, clearCatCopyTimer]);
 
   useEffect(() => {
     if (parsed.kind === "legacy") {
       setSelectedId(null);
+      setSelectedSeverity(null);
       return;
     }
     setSelectedId((prev) =>
       prev && parsed.report.categories.some((cat) => cat.id === prev) ? prev : null,
     );
   }, [parsed]);
+
+  useEffect(() => {
+    if (selectedId === null && selectedSeverity === null) return;
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target as Node | null;
+      if (!target) return;
+      if (
+        gaugesRef.current?.contains(target) ||
+        severityBarRef.current?.contains(target) ||
+        detailRef.current?.contains(target) ||
+        floatingRef.current?.contains(target)
+      ) {
+        return;
+      }
+      setSelectedId(null);
+      setSelectedSeverity(null);
+    };
+    document.addEventListener("pointerdown", onPointerDown);
+    return () => document.removeEventListener("pointerdown", onPointerDown);
+  }, [selectedId, selectedSeverity]);
 
   const updateSelection = useCallback(() => {
     const selection = window.getSelection();
@@ -275,7 +361,11 @@ export const ReportViewer = memo(function ReportViewer({
   };
 
   const floatingPill = floating ? (
-    <div className="dl-ai-float-action" style={{ top: floating.top, left: floating.left }}>
+    <div
+      ref={floatingRef}
+      className="dl-ai-float-action"
+      style={{ top: floating.top, left: floating.left }}
+    >
       <button
         className="dl-ai-action-btn"
         type="button"
@@ -355,15 +445,44 @@ export const ReportViewer = memo(function ReportViewer({
     ? (report.categories.find((cat) => cat.id === selectedId) ?? null)
     : null;
 
+  const allProblems: CategorizedProblem[] = [];
+  const severityCounts: Record<SeverityFilter, number> = {
+    high: 0,
+    medium: 0,
+    low: 0,
+    all: 0,
+  };
+  for (const cat of report.categories) {
+    for (const problem of cat.problems) {
+      const bucket = severityBucket(problem.severity);
+      severityCounts[bucket] += 1;
+      severityCounts.all += 1;
+      allProblems.push({
+        categoryId: cat.id,
+        categoryTitle: cat.title,
+        bucket,
+        problem,
+      });
+    }
+  }
+  const filteredProblems = selectedSeverity
+    ? selectedSeverity === "all"
+      ? [...allProblems].sort((a, b) => SEVERITY_ORDER[a.bucket] - SEVERITY_ORDER[b.bucket])
+      : allProblems.filter((item) => item.bucket === selectedSeverity)
+    : [];
+
   const catCopyLabel =
     catCopyState === "copied"
-      ? "Copied category"
+      ? selectedSeverity
+        ? "Copied issues"
+        : "Copied category"
       : catCopyState === "failed"
         ? "Copy failed"
-        : "Copy category as Markdown";
+        : selectedSeverity
+          ? "Copy issues as Markdown"
+          : "Copy category as Markdown";
 
-  const handleCopyCategory = async () => {
-    if (!selectedCategory) return;
+  const handleCopyDetail = async (text: string) => {
     const seq = ++catCopySeqRef.current;
     const scheduleReset = () => {
       clearCatCopyTimer();
@@ -381,7 +500,7 @@ export const ReportViewer = memo(function ReportViewer({
         }
         return;
       }
-      await navigator.clipboard.writeText(formatCategoryAsMarkdown(selectedCategory));
+      await navigator.clipboard.writeText(text);
       if (!mountedRef.current || catCopySeqRef.current !== seq) return;
       setCatCopyState("copied");
       scheduleReset();
@@ -392,6 +511,13 @@ export const ReportViewer = memo(function ReportViewer({
       }
     }
   };
+
+  const severityButtons: Array<{ key: SeverityFilter; label: string; className: string }> = [
+    { key: "high", label: "High", className: " is-high" },
+    { key: "medium", label: "Medium", className: " is-medium" },
+    { key: "low", label: "Low", className: " is-low" },
+    { key: "all", label: "All", className: "" },
+  ];
 
   return (
     <div
@@ -426,6 +552,7 @@ export const ReportViewer = memo(function ReportViewer({
         </div>
 
         <fieldset
+          ref={gaugesRef}
           className="dl-ai-gauges"
           aria-label="Review categories"
           style={{ border: 0, margin: 0, padding: 0, minWidth: 0 }}
@@ -446,7 +573,10 @@ export const ReportViewer = memo(function ReportViewer({
                 type="button"
                 className={`dl-ai-gauge-btn ${isSelected ? "is-selected" : ""}`}
                 aria-expanded={isSelected}
-                onClick={() => setSelectedId(isSelected ? null : cat.id)}
+                onClick={() => {
+                  setSelectedSeverity(null);
+                  setSelectedId(isSelected ? null : cat.id);
+                }}
               >
                 <span className={`dl-ai-gauge-ring is-${tier}`}>
                   <svg viewBox="0 0 44 44" aria-hidden="true">
@@ -469,8 +599,39 @@ export const ReportViewer = memo(function ReportViewer({
           })}
         </fieldset>
 
+        <fieldset
+          ref={severityBarRef}
+          className="dl-ai-severity-bar"
+          aria-label="Issues by severity"
+          style={{ border: 0, margin: 0, minWidth: 0 }}
+        >
+          {severityButtons.map(({ key, label, className }) => {
+            const isSelected = selectedSeverity === key;
+            return (
+              <button
+                key={key}
+                type="button"
+                className={`dl-ai-sev-btn${className}${isSelected ? " is-selected" : ""}`}
+                aria-pressed={isSelected}
+                aria-expanded={isSelected}
+                onClick={() => {
+                  setSelectedId(null);
+                  setSelectedSeverity(isSelected ? null : key);
+                }}
+              >
+                <span>{label}</span>
+                <span className="dl-ai-sev-count">{severityCounts[key]}</span>
+              </button>
+            );
+          })}
+        </fieldset>
+
         {selectedCategory && (
-          <section className="dl-ai-cat-detail" aria-label="Selected category details">
+          <section
+            ref={detailRef}
+            className="dl-ai-cat-detail"
+            aria-label="Selected category details"
+          >
             <div className="dl-ai-cat-header">
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                 <span className="dl-ai-cat-title">{selectedCategory.title}</span>
@@ -486,7 +647,7 @@ export const ReportViewer = memo(function ReportViewer({
                   className="dl-btn dl-btn-sm dl-btn-icon"
                   aria-label={catCopyLabel}
                   title={catCopyLabel}
-                  onClick={() => void handleCopyCategory()}
+                  onClick={() => void handleCopyDetail(formatCategoryAsMarkdown(selectedCategory))}
                 >
                   <Icon name="general-copy" />
                 </button>
@@ -580,6 +741,85 @@ export const ReportViewer = memo(function ReportViewer({
                               onAskSelection({
                                 text: `${problem.title}${problem.location ? ` (${problem.location})` : ""}${hasDistinctDescription ? `: ${problem.description}` : ""}`,
                                 heading: selectedCategory.title,
+                              })
+                            }
+                          >
+                            {problem.title}
+                          </button>
+                        </div>
+                        {problem.location && <code>{problem.location}</code>}
+                      </div>
+                      {hasDistinctDescription && <div>{problem.description}</div>}
+                    </li>
+                  );
+                })
+              )}
+            </ul>
+          </section>
+        )}
+
+        {selectedSeverity && (
+          <section ref={detailRef} className="dl-ai-cat-detail" aria-label="Filtered issues">
+            <div className="dl-ai-cat-header">
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <span className="dl-ai-cat-title">{SEVERITY_LABELS[selectedSeverity]}</span>
+                <span className="dl-ai-pill dl-ai-pill-muted">
+                  {filteredProblems.length} {filteredProblems.length === 1 ? "issue" : "issues"}
+                </span>
+              </div>
+              <div className="dl-ai-cat-actions">
+                <button
+                  type="button"
+                  className="dl-btn dl-btn-sm dl-btn-icon"
+                  aria-label={catCopyLabel}
+                  title={catCopyLabel}
+                  onClick={() =>
+                    void handleCopyDetail(
+                      formatFilteredProblemsAsMarkdown(selectedSeverity, filteredProblems),
+                    )
+                  }
+                >
+                  <Icon name="general-copy" />
+                </button>
+              </div>
+            </div>
+            <ul className="dl-ai-problem-list">
+              {filteredProblems.length === 0 ? (
+                <li className="dl-ai-problem-item">
+                  No {selectedSeverity === "all" ? "" : `${selectedSeverity} `}issues found.
+                </li>
+              ) : (
+                withUniqueKeys(
+                  filteredProblems,
+                  (entry) =>
+                    `${entry.categoryId}-${entry.problem.title}-${entry.problem.location ?? ""}`,
+                ).map(({ key, item: { categoryTitle, problem } }) => {
+                  const severityClass = severityClassName(problem.severity);
+                  const hasDistinctDescription =
+                    Boolean(problem.description) && problem.description !== problem.title;
+                  return (
+                    <li key={key} className="dl-ai-problem-item">
+                      <div className="dl-ai-problem-head">
+                        <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
+                          {problem.severity && (
+                            <span className={`dl-ai-severity${severityClass}`}>
+                              {problem.severity}
+                            </span>
+                          )}
+                          <span className="dl-ai-sev-cat">{categoryTitle}</span>
+                          <button
+                            type="button"
+                            className="dl-ai-action-btn"
+                            style={{
+                              padding: 0,
+                              height: "auto",
+                              fontWeight: 600,
+                              textAlign: "left",
+                            }}
+                            onClick={() =>
+                              onAskSelection({
+                                text: `${problem.title}${problem.location ? ` (${problem.location})` : ""}${hasDistinctDescription ? `: ${problem.description}` : ""}`,
+                                heading: categoryTitle,
                               })
                             }
                           >
