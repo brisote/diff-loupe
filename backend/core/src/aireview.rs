@@ -1,5 +1,6 @@
 use std::io::{BufRead, Write};
 use std::path::Path;
+use std::sync::Mutex;
 
 use crate::api::CloudAccount;
 use crate::error::{Error, Result};
@@ -258,7 +259,7 @@ pub fn stream_sse(
     watch: &Watch,
     events: &dyn EventSink,
     task: &mut Task,
-    store: &Store,
+    store: &Mutex<Store>,
 ) -> Result<()> {
     let reader = resp.into_reader();
     let mut buf = std::io::BufReader::new(reader);
@@ -308,7 +309,7 @@ fn dispatch_sse_event(
     ctx: &StreamContext<'_>,
     events: &dyn EventSink,
     task: &mut Task,
-    store: &Store,
+    store: &Mutex<Store>,
     acc: &mut StreamAccumulator,
 ) -> Result<()> {
     let val: serde_json::Value = serde_json::from_str(data)
@@ -429,53 +430,55 @@ fn dispatch_sse_event(
             };
 
             let mut active_review_id = ctx.review_id;
-            if let Some(rid) = active_review_id {
-                if let Ok(Some(existing)) = store.get_ai_review(rid) {
-                    let accumulated = crate::store::accumulate_cost(
-                        existing.cost_usd.as_deref(),
-                        turn_cost.as_deref(),
-                    );
-                    let mut updated = existing;
-                    if !final_report.is_empty() {
-                        updated.report_markdown = final_report.clone();
+            if let Ok(store_guard) = store.lock() {
+                if let Some(rid) = active_review_id {
+                    if let Ok(Some(existing)) = store_guard.get_ai_review(rid) {
+                        let accumulated = crate::store::accumulate_cost(
+                            existing.cost_usd.as_deref(),
+                            turn_cost.as_deref(),
+                        );
+                        let mut updated = existing;
+                        if !final_report.is_empty() {
+                            updated.report_markdown = final_report.clone();
+                        }
+                        updated.cost_usd = accumulated;
+                        updated.updated_at = now;
+                        let _ = store_guard.save_ai_review(&updated);
                     }
-                    updated.cost_usd = accumulated;
-                    updated.updated_at = now;
-                    let _ = store.save_ai_review(&updated);
+                } else if !final_report.is_empty() {
+                    let saved_id = store_guard.save_ai_review(&StoredAiReview {
+                        id: 0,
+                        repo: ctx.repo.to_string(),
+                        branch: ctx.branch.to_string(),
+                        target_branch: ctx.target_branch.to_string(),
+                        report_markdown: final_report.clone(),
+                        cost_usd: turn_cost.clone(),
+                        head_oid: ctx.head_oid.map(|s| s.to_string()),
+                        base_oid: ctx.base_oid.map(|s| s.to_string()),
+                        model: ctx.model.map(|s| s.to_string()),
+                        effort: ctx.effort.map(|s| s.to_string()),
+                        created_at: now,
+                        updated_at: now,
+                        versions: Vec::new(),
+                    });
+                    if let Ok(id) = saved_id {
+                        active_review_id = Some(id);
+                    }
                 }
-            } else if !final_report.is_empty() {
-                let saved_id = store.save_ai_review(&StoredAiReview {
-                    id: 0,
-                    repo: ctx.repo.to_string(),
-                    branch: ctx.branch.to_string(),
-                    target_branch: ctx.target_branch.to_string(),
-                    report_markdown: final_report.clone(),
-                    cost_usd: turn_cost.clone(),
-                    head_oid: ctx.head_oid.map(|s| s.to_string()),
-                    base_oid: ctx.base_oid.map(|s| s.to_string()),
-                    model: ctx.model.map(|s| s.to_string()),
-                    effort: ctx.effort.map(|s| s.to_string()),
-                    created_at: now,
-                    updated_at: now,
-                    versions: Vec::new(),
-                });
-                if let Ok(id) = saved_id {
-                    active_review_id = Some(id);
-                }
-            }
 
-            if !final_chat.is_empty() {
-                let _ = store.append_ai_chat_message(&crate::store::NewAiChatMessage {
-                    review_id: active_review_id,
-                    repo: ctx.repo,
-                    branch: ctx.branch,
-                    target_branch: ctx.target_branch,
-                    role: "assistant",
-                    content: &final_chat,
-                    quoted_text: None,
-                    cost_usd: turn_cost.as_deref(),
-                    created_at: now,
-                });
+                if !final_chat.is_empty() {
+                    let _ = store_guard.append_ai_chat_message(&crate::store::NewAiChatMessage {
+                        review_id: active_review_id,
+                        repo: ctx.repo,
+                        branch: ctx.branch,
+                        target_branch: ctx.target_branch,
+                        role: "assistant",
+                        content: &final_chat,
+                        quoted_text: None,
+                        cost_usd: turn_cost.as_deref(),
+                        created_at: now,
+                    });
+                }
             }
             acc.terminal_seen = true;
             events.emit(CoreEvent::AiReviewStream {

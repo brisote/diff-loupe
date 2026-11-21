@@ -1457,7 +1457,6 @@ impl Core {
             .send_bytes(&body)
             .map_err(aireview::map_ureq_error)?;
 
-        let store_guard = self.store()?;
         let repo_str = root.display().to_string();
         let ctx = aireview::StreamContext {
             repo: &repo_str,
@@ -1477,7 +1476,7 @@ impl Core {
             &watch,
             self.events.as_ref(),
             &mut task,
-            &store_guard,
+            &self.store,
         )?;
 
         Ok(())
@@ -1553,18 +1552,20 @@ impl Core {
             }))
             .map_err(aireview::map_ureq_error)?;
 
-        let store_guard = self.store()?;
-        store_guard.append_ai_chat_message(&NewAiChatMessage {
-            review_id,
-            repo: &repo_str,
-            branch: &branch,
-            target_branch: &target_branch,
-            role: "user",
-            content: &a.prompt,
-            quoted_text: a.quoted_text.as_deref(),
-            cost_usd: None,
-            created_at: now,
-        })?;
+        {
+            let store_guard = self.store()?;
+            store_guard.append_ai_chat_message(&NewAiChatMessage {
+                review_id,
+                repo: &repo_str,
+                branch: &branch,
+                target_branch: &target_branch,
+                role: "user",
+                content: &a.prompt,
+                quoted_text: a.quoted_text.as_deref(),
+                cost_usd: None,
+                created_at: now,
+            })?;
+        }
         let run_id = self.run_id("ai_followup", &root);
         let watch = self.cancels.watch(&run_id);
         let mut task = Task::cancellable(
@@ -1590,7 +1591,7 @@ impl Core {
             &watch,
             self.events.as_ref(),
             &mut task,
-            &store_guard,
+            &self.store,
         )?;
 
         Ok(())
