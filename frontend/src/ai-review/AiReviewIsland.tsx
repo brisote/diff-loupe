@@ -10,9 +10,9 @@ import { AiChatComposer } from "./AiChatComposer";
 import { AiChatThread } from "./AiChatThread";
 import {
   FINAL_LOADING_STEP,
-  LOADING_LABEL_INTERVAL_MS,
   MAJOR_REVIEW_STEPS,
   majorStepIndexForStage,
+  pickRandomLoadingDelayMs,
   pickRandomLoadingLabel,
 } from "./loadingSteps";
 import { EffortPicker, ModelPicker } from "./ModelPicker";
@@ -245,10 +245,17 @@ export function AiReviewIsland() {
 
   useEffect(() => {
     if (!initialRunId || isBuildingView) return;
-    const timer = window.setInterval(() => {
-      setLoadingLabel((prev) => pickRandomLoadingLabel(prev));
-    }, LOADING_LABEL_INTERVAL_MS);
-    return () => window.clearInterval(timer);
+    let timer: number | null = null;
+    const scheduleNext = () => {
+      timer = window.setTimeout(() => {
+        setLoadingLabel((prev) => pickRandomLoadingLabel(prev));
+        scheduleNext();
+      }, pickRandomLoadingDelayMs());
+    };
+    scheduleNext();
+    return () => {
+      if (timer !== null) window.clearTimeout(timer);
+    };
   }, [initialRunId, isBuildingView]);
 
   const visibleSteps = isInitialStreaming ? MAJOR_REVIEW_STEPS.slice(0, activeMajorStep + 1) : [];

@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   FINAL_LOADING_STEP,
-  LOADING_LABEL_INTERVAL_MS,
+  LOADING_LABEL_INTERVALS_MS,
   MAJOR_REVIEW_STEPS,
   majorStepIndexForStage,
+  pickRandomLoadingDelayMs,
   pickRandomLoadingLabel,
   REVIEW_LOADING_LABELS,
 } from "./loadingSteps";
@@ -13,7 +14,8 @@ describe("loadingSteps", () => {
     expect(REVIEW_LOADING_LABELS).toHaveLength(1000);
     expect(new Set(REVIEW_LOADING_LABELS).size).toBe(1000);
     expect(REVIEW_LOADING_LABELS.every((label) => label.trim().length > 0)).toBe(true);
-    expect(LOADING_LABEL_INTERVAL_MS).toBeGreaterThanOrEqual(8000);
+    expect(LOADING_LABEL_INTERVALS_MS).toEqual([8000, 16000, 24000]);
+    expect(LOADING_LABEL_INTERVALS_MS).toContain(pickRandomLoadingDelayMs());
     expect(MAJOR_REVIEW_STEPS).toEqual([
       "Preparing repository snapshot and diff",
       "Analyzing repository structure and conventions",

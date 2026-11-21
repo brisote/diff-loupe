@@ -1,6 +1,11 @@
 export const FINAL_LOADING_STEP = "Building the view";
 
-export const LOADING_LABEL_INTERVAL_MS = 8000;
+export const LOADING_LABEL_INTERVALS_MS: readonly number[] = [8000, 16000, 24000];
+
+export function pickRandomLoadingDelayMs(): number {
+  const index = Math.floor(Math.random() * LOADING_LABEL_INTERVALS_MS.length);
+  return LOADING_LABEL_INTERVALS_MS[index] ?? 8000;
+}
 
 export const MAJOR_REVIEW_STEPS: readonly string[] = [
   "Preparing repository snapshot and diff",
