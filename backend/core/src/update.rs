@@ -148,10 +148,7 @@ pub fn allowed_link(url: &str) -> bool {
         return true;
     }
     let cloud = cloud_source();
-    if loopback(&cloud) && safe_prefix(cloud.trim_end_matches('/'), url) {
-        return true;
-    }
-    false
+    loopback(&cloud) && safe_prefix(cloud.trim_end_matches('/'), url)
 }
 
 fn safe_prefix(prefix: &str, url: &str) -> bool {
