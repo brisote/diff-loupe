@@ -1,5 +1,5 @@
 import type { RefObject } from "react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Dialog } from "../lib/dialog";
 import { Icon } from "../lib/icon";
 import { Popup, useBelow } from "../lib/popup";
@@ -8,7 +8,12 @@ import { useApp } from "../state/context";
 import { isFollowupRunId, PENDING_REVIEW_ID } from "../state/store";
 import { AiChatComposer } from "./AiChatComposer";
 import { AiChatThread } from "./AiChatThread";
-import { FINAL_LOADING_STEP, pickLoadingSequence } from "./loadingSteps";
+import {
+  FINAL_LOADING_STEP,
+  MAJOR_REVIEW_STEPS,
+  majorStepIndexForStage,
+  pickRandomLoadingLabel,
+} from "./loadingSteps";
 import { EffortPicker, ModelPicker } from "./ModelPicker";
 import { formatBalanceUsd, formatReviewCostUsd } from "./money";
 import { ReportViewer } from "./ReportViewer";
@@ -214,38 +219,39 @@ export function AiReviewIsland() {
     activeReviewId === PENDING_REVIEW_ID ||
     isFollowupStreaming;
   const initialRunId = isInitialStreaming ? (activeRun?.runId ?? null) : null;
-  const isBuildingView =
-    isInitialStreaming &&
-    (activeRun?.stage === "writing" ||
-      activeRun?.stage === "formatting" ||
-      Boolean(activeRun?.streamingReport));
-  const loadingPool = useMemo(
-    () => (initialRunId ? pickLoadingSequence(initialRunId) : []),
-    [initialRunId],
-  );
-  const [simulatedStepCount, setSimulatedStepCount] = useState(1);
+  const stageStepIndex = isInitialStreaming
+    ? majorStepIndexForStage(activeRun?.stage ?? "", Boolean(activeRun?.streamingReport))
+    : 0;
+  const [maxStepIndex, setMaxStepIndex] = useState(0);
+  const [loadingLabel, setLoadingLabel] = useState(() => pickRandomLoadingLabel());
 
   useEffect(() => {
     if (!initialRunId) {
-      setSimulatedStepCount(1);
+      setMaxStepIndex(0);
       return;
     }
-    setSimulatedStepCount(1);
+    setMaxStepIndex(0);
+    setLoadingLabel(pickRandomLoadingLabel());
   }, [initialRunId]);
 
   useEffect(() => {
-    if (!initialRunId || isBuildingView || loadingPool.length <= 1) return;
-    const timer = window.setInterval(() => {
-      setSimulatedStepCount((count) => Math.min(count + 1, loadingPool.length));
-    }, 2200);
-    return () => window.clearInterval(timer);
-  }, [initialRunId, isBuildingView, loadingPool.length]);
+    if (!initialRunId) return;
+    setMaxStepIndex((prev) => Math.max(prev, stageStepIndex));
+  }, [initialRunId, stageStepIndex]);
 
-  const visibleSteps = isInitialStreaming
-    ? isBuildingView
-      ? [...loadingPool.slice(0, simulatedStepCount), FINAL_LOADING_STEP]
-      : loadingPool.slice(0, simulatedStepCount)
-    : [];
+  const activeMajorStep = Math.max(maxStepIndex, stageStepIndex);
+  const isBuildingView = isInitialStreaming && activeMajorStep >= MAJOR_REVIEW_STEPS.length - 1;
+
+  useEffect(() => {
+    if (!initialRunId || isBuildingView) return;
+    const timer = window.setInterval(() => {
+      setLoadingLabel((prev) => pickRandomLoadingLabel(prev));
+    }, 2500);
+    return () => window.clearInterval(timer);
+  }, [initialRunId, isBuildingView]);
+
+  const visibleSteps = isInitialStreaming ? MAJOR_REVIEW_STEPS.slice(0, activeMajorStep + 1) : [];
+  const activeLoadingText = isBuildingView ? FINAL_LOADING_STEP : loadingLabel;
 
   useEffect(() => {
     const el = thinkingRef.current;
@@ -919,7 +925,7 @@ export function AiReviewIsland() {
 
                     <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13 }}>
                       <span style={{ fontWeight: 500, color: "var(--text)" }}>
-                        {visibleSteps[visibleSteps.length - 1] ?? "Analyzing branch changes…"}
+                        {activeLoadingText}
                       </span>
                     </div>
 

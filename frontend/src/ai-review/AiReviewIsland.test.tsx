@@ -1785,7 +1785,7 @@ describe("AiReviewIsland", () => {
     const progressBox = progressHeading.parentElement;
     expect(progressBox).not.toBeNull();
     if (progressBox) {
-      expect(within(progressBox).getAllByText("✓")).toHaveLength(1);
+      expect(within(progressBox).getAllByText("✓")).toHaveLength(3);
       expect(progressBox.querySelectorAll(".dl-ai-pulse-dot")).toHaveLength(1);
     }
   });

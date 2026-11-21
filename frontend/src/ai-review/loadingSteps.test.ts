@@ -1,20 +1,37 @@
 import { describe, expect, it } from "vitest";
-import { FINAL_LOADING_STEP, pickLoadingSequence, REVIEW_LOADING_LABELS } from "./loadingSteps";
+import {
+  FINAL_LOADING_STEP,
+  MAJOR_REVIEW_STEPS,
+  majorStepIndexForStage,
+  pickRandomLoadingLabel,
+  REVIEW_LOADING_LABELS,
+} from "./loadingSteps";
 
 describe("loadingSteps", () => {
-  it("provides 100 unique diff and review loading labels", () => {
+  it("provides 100 unique diff and review loading labels and fixed major steps", () => {
     expect(REVIEW_LOADING_LABELS).toHaveLength(100);
     expect(new Set(REVIEW_LOADING_LABELS).size).toBe(100);
     expect(REVIEW_LOADING_LABELS.every((label) => label.trim().length > 0)).toBe(true);
+    expect(MAJOR_REVIEW_STEPS).toEqual([
+      "Preparing repository snapshot and diff",
+      "Analyzing repository structure and conventions",
+      "Reviewing branch changes",
+      FINAL_LOADING_STEP,
+    ]);
     expect(FINAL_LOADING_STEP).toBe("Building the view");
   });
 
-  it("picks a deterministic sequence starting with repository snapshot preparation", () => {
-    const first = pickLoadingSequence("run-1", 12);
-    const repeat = pickLoadingSequence("run-1", 12);
-    expect(first).toHaveLength(12);
-    expect(first).toEqual(repeat);
-    expect(first[0]).toBe(REVIEW_LOADING_LABELS[0]);
-    expect(new Set(first).size).toBe(12);
+  it("maps review stages to fixed major steps and avoids immediate label repeats", () => {
+    expect(majorStepIndexForStage("preparing", false)).toBe(0);
+    expect(majorStepIndexForStage("memory", false)).toBe(1);
+    expect(majorStepIndexForStage("reviewing", false)).toBe(2);
+    expect(majorStepIndexForStage("writing", false)).toBe(3);
+    expect(majorStepIndexForStage("reviewing", true)).toBe(3);
+
+    const first = pickRandomLoadingLabel();
+    expect(REVIEW_LOADING_LABELS).toContain(first);
+    const second = pickRandomLoadingLabel(first);
+    expect(REVIEW_LOADING_LABELS).toContain(second);
+    expect(second).not.toBe(first);
   });
 });

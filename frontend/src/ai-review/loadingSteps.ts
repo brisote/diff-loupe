@@ -1,5 +1,31 @@
 export const FINAL_LOADING_STEP = "Building the view";
 
+export const MAJOR_REVIEW_STEPS: readonly string[] = [
+  "Preparing repository snapshot and diff",
+  "Analyzing repository structure and conventions",
+  "Reviewing branch changes",
+  FINAL_LOADING_STEP,
+];
+
+export function majorStepIndexForStage(stage: string, hasStreamingReport: boolean): number {
+  if (hasStreamingReport || stage === "writing" || stage === "formatting") {
+    return 3;
+  }
+  if (
+    stage === "reviewing" ||
+    stage === "review" ||
+    stage === "thinking" ||
+    stage === "analysis" ||
+    stage === "analyzing"
+  ) {
+    return 2;
+  }
+  if (stage === "memory" || stage === "indexing") {
+    return 1;
+  }
+  return 0;
+}
+
 export const REVIEW_LOADING_LABELS: readonly string[] = [
   "Preparing repository snapshot and diff",
   "Indexing modified files and hunks",
@@ -103,29 +129,14 @@ export const REVIEW_LOADING_LABELS: readonly string[] = [
   "Finalizing structured review summary",
 ];
 
-function hashSeed(seed: string): number {
-  let hash = 2166136261;
-  for (let i = 0; i < seed.length; i += 1) {
-    hash ^= seed.charCodeAt(i);
-    hash = Math.imul(hash, 16777619);
+export function pickRandomLoadingLabel(previous?: string): string {
+  const count = REVIEW_LOADING_LABELS.length;
+  if (count === 0) return FINAL_LOADING_STEP;
+  if (count === 1) return REVIEW_LOADING_LABELS[0] ?? FINAL_LOADING_STEP;
+  let next = REVIEW_LOADING_LABELS[Math.floor(Math.random() * count)] ?? FINAL_LOADING_STEP;
+  if (next === previous) {
+    const idx = REVIEW_LOADING_LABELS.indexOf(next);
+    next = REVIEW_LOADING_LABELS[(idx + 1) % count] ?? FINAL_LOADING_STEP;
   }
-  return hash >>> 0;
-}
-
-export function pickLoadingSequence(seed: string, count = 24): string[] {
-  const first = REVIEW_LOADING_LABELS[0];
-  const rest = REVIEW_LOADING_LABELS.slice(1);
-  let state = hashSeed(seed) || 1;
-  for (let i = rest.length - 1; i > 0; i -= 1) {
-    state = (Math.imul(state, 1664525) + 1013904223) >>> 0;
-    const j = state % (i + 1);
-    const tmp = rest[i];
-    const swap = rest[j];
-    if (tmp !== undefined && swap !== undefined) {
-      rest[i] = swap;
-      rest[j] = tmp;
-    }
-  }
-  const limit = Math.max(1, Math.min(count, REVIEW_LOADING_LABELS.length));
-  return first ? [first, ...rest.slice(0, limit - 1)] : rest.slice(0, limit);
+  return next;
 }
