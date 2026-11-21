@@ -237,10 +237,13 @@ fn removes_app() -> bool {
 
 fn touches_system() -> bool {
     #[cfg(debug_assertions)]
-    if smoke::active() || std::env::var_os("DIFFLOUPE_DATA_DIR").is_some() {
-        return false;
+    {
+        !(smoke::active() || std::env::var_os("DIFFLOUPE_DATA_DIR").is_some())
     }
-    true
+    #[cfg(not(debug_assertions))]
+    {
+        true
+    }
 }
 
 #[cfg(windows)]
