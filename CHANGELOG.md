@@ -2,6 +2,21 @@
 
 Each release lists what changed for the person who uses Diffloupe, and every change to stored data with its migration.
 
+## 0.7.0
+
+A Project file browser in the sidebar with read-only file viewing, rendered Markdown, JSON and YAML formatting, and symbol navigation.
+
+### Project
+
+- Browse every file in the repository from the new Project sidebar tree.
+- Open repository files in a read-only viewer with syntax highlighting and expanded file-type icons.
+- View Markdown files rendered or raw, and inspect JSON and YAML files with pretty-printing.
+- Command-click (Ctrl-click on Windows and Linux) any symbol to search and jump to declarations and references across the repository.
+
+### Install
+
+- Nothing in your stored data changes.
+
 ## 0.6.3
 
 Simplified file list appearance in changes and commit history views.
