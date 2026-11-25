@@ -10,8 +10,8 @@ publish = false
 [workspace.dependencies]
 diffloupe-core = { path = "core" }
 dunce = "1"
-gix = "0.89"
-rusqlite = { version = "0.40", features = ["bundled"] }
+gix = "0.90"
+rusqlite = { version = "0.43", features = ["bundled"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
@@ -22,10 +22,10 @@ tokio-tungstenite = "0.30"
 futures-util = "0.3"
 clap = { version = "4", features = ["derive"] }
 imara-diff = "0.2"
-notify = "8.2"
+notify = "9.0"
 rustix = { version = "1.1", features = ["process"] }
 portable-pty = "0.9"
-sha2 = "0.10"
+sha2 = "0.11"
 winreg = "0.56"
 flate2 = "1"
 tar = "0.4"
